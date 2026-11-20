@@ -85,6 +85,7 @@ namespace {
 		        howdy::pam::ProductionPromptCoordinatorOperations(compare_operations),
 		    .eligibility =
 		        howdy::pam::auth_eligibility::ProductionAuthenticationEligibilityOperations(),
+		    .runtime_owner_uid = 0,
 		};
 	}
 

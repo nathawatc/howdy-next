@@ -5,6 +5,7 @@
 #include "support/file_security.hpp"
 #include "test_support.hpp"
 
+#include <array>
 #include <cerrno>
 #include <cstdio>
 #include <filesystem>
@@ -13,6 +14,7 @@
 #include <string>
 #include <system_error>
 
+#include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -34,6 +36,145 @@ namespace {
 		ok &= Expect(!result.ok, message + " is not ok");
 		ok &= Expect(!result.config.has_value(), message + " has no config");
 		ok &= Expect(!result.error_message.empty(), message + " has stable caller error");
+		return ok;
+	}
+
+	auto WriteSecureConfig(const std::filesystem::path &path, const std::string &content) -> bool {
+		return WriteFile(path, content) && chmod(path.c_str(), 0644) == 0;
+	}
+
+	// Descriptors stand in for ones another process opened: no path is walked, so only the
+	// descriptor itself decides, and the shared file offset must not move.
+	auto ExpectDescriptorLoading(const std::filesystem::path &temp_root) -> bool {
+		using howdy::native::LoadRuntimeConfigFromFd;
+		using howdy::native::RuntimeConfigLoadStatus;
+		using howdy::test::ScopedFd;
+		bool                        ok           = true;
+		const uid_t                 owner        = geteuid();
+		const std::filesystem::path display_path = "/etc/howdy/config.ini";
+
+		const auto valid_path = temp_root / "fd-valid.ini";
+		ok &=
+		    Expect(WriteSecureConfig(valid_path, "[core]\ndisabled = true\n[video]\ntimeout = 7\n"),
+			       "write descriptor config");
+		const ScopedFd valid_fd(open(valid_path.c_str(), O_RDONLY | O_CLOEXEC));
+		ok &= Expect(valid_fd.Valid() && lseek(valid_fd.Get(), 3, SEEK_SET) == 3,
+		             "open descriptor config away from offset 0");
+		const auto valid = LoadRuntimeConfigFromFd(valid_fd.Get(), display_path, owner);
+		ok &= Expect(valid.ok && valid.status == RuntimeConfigLoadStatus::kOk &&
+		                 valid.config.has_value() && valid.config->core.disabled &&
+		                 valid.config->video.timeout == 7,
+		             "descriptor config loads from the start of the file");
+		ok &= Expect(valid.path == display_path && valid.error_message.empty(),
+		             "descriptor config reports the display path");
+		ok &= Expect(lseek(valid_fd.Get(), 0, SEEK_CUR) == 3,
+		             "descriptor config load leaves the shared offset alone");
+		ok &= Expect(LoadRuntimeConfigFromFd(valid_fd.Get(), display_path, owner).ok,
+		             "descriptor config loads again from the same descriptor");
+
+		{
+			// The descriptor keeps naming the inode it was opened on and never reads the path.
+			const auto snapshot_path = temp_root / "fd-snapshot.ini";
+			const auto moved_path    = temp_root / "fd-snapshot-moved.ini";
+			ok &= Expect(WriteSecureConfig(snapshot_path, "[video]\ntimeout = 7\n"),
+			             "write snapshot descriptor config");
+			const ScopedFd snapshot_fd(open(snapshot_path.c_str(), O_RDONLY | O_CLOEXEC));
+			ok &= Expect(rename(snapshot_path.c_str(), moved_path.c_str()) == 0 &&
+			                 WriteSecureConfig(snapshot_path, "[video]\ntimeout = 9\n"),
+			             "move snapshot config and write another at its path");
+			const auto moved = LoadRuntimeConfigFromFd(snapshot_fd.Get(), display_path, owner);
+			ok &= Expect(moved.ok && moved.config.has_value() && moved.config->video.timeout == 7,
+			             "descriptor config ignores what its old path now names");
+
+			// Once the file is unlinked (replaced or removed) it has no link left, and the
+			// load fails closed instead of using the stale contents.
+			ok &= Expect(unlink(moved_path.c_str()) == 0, "unlink snapshot descriptor config");
+			ok &= ExpectFailure(LoadRuntimeConfigFromFd(snapshot_fd.Get(), display_path, owner),
+			                    RuntimeConfigLoadStatus::kPathError, "unlinked descriptor config");
+		}
+
+		const auto wrong_owner =
+		    LoadRuntimeConfigFromFd(valid_fd.Get(), display_path, static_cast<uid_t>(owner + 1));
+		ok &= ExpectFailure(wrong_owner, RuntimeConfigLoadStatus::kPathError,
+		                    "descriptor config with another owner");
+		ok &= Expect(wrong_owner.error_message.contains("owned by UID") &&
+		                 wrong_owner.error_message.contains(display_path.string()),
+		             "descriptor owner error names the display path");
+
+		ok &= Expect(fchmod(valid_fd.Get(), 0664) == 0, "make descriptor config group-writable");
+		ok &=
+		    ExpectFailure(LoadRuntimeConfigFromFd(valid_fd.Get(), display_path, owner),
+			              RuntimeConfigLoadStatus::kPathError, "group-writable descriptor config");
+		ok &= Expect(fchmod(valid_fd.Get(), 0646) == 0, "make descriptor config world-writable");
+		ok &=
+		    ExpectFailure(LoadRuntimeConfigFromFd(valid_fd.Get(), display_path, owner),
+			              RuntimeConfigLoadStatus::kPathError, "world-writable descriptor config");
+		ok &= Expect(fchmod(valid_fd.Get(), 0644) == 0, "restore descriptor config mode");
+
+		const auto linked_path = temp_root / "fd-linked.ini";
+		ok &= Expect(link(valid_path.c_str(), linked_path.c_str()) == 0,
+		             "hard-link descriptor config");
+		const ScopedFd linked_fd(open(valid_path.c_str(), O_RDONLY | O_CLOEXEC));
+		const auto     linked = LoadRuntimeConfigFromFd(linked_fd.Get(), display_path, owner);
+		ok &= ExpectFailure(linked, RuntimeConfigLoadStatus::kPathError,
+		                    "hard-linked descriptor config");
+		ok &= Expect(linked.error_message.contains("hard-linked"),
+		             "hard-linked descriptor config reports the link");
+		ok &= Expect(unlink(linked_path.c_str()) == 0, "remove descriptor config hard link");
+
+		const ScopedFd read_write_fd(open(valid_path.c_str(), O_RDWR | O_CLOEXEC));
+		const auto read_write = LoadRuntimeConfigFromFd(read_write_fd.Get(), display_path, owner);
+		ok &= ExpectFailure(read_write, RuntimeConfigLoadStatus::kPathError,
+		                    "writable descriptor config");
+		ok &= Expect(read_write.error_message.contains("must be open read-only"),
+		             "writable descriptor config reports its open mode");
+
+		const ScopedFd path_fd(open(valid_path.c_str(), O_PATH | O_CLOEXEC));
+		ok &= ExpectFailure(LoadRuntimeConfigFromFd(path_fd.Get(), display_path, owner),
+		                    RuntimeConfigLoadStatus::kPathError, "O_PATH descriptor config");
+
+		const ScopedFd directory_fd(open(temp_root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+		ok &= ExpectFailure(LoadRuntimeConfigFromFd(directory_fd.Get(), display_path, owner),
+		                    RuntimeConfigLoadStatus::kPathError, "directory descriptor config");
+
+		std::array<int, 2> pipe_fds{{-1, -1}};
+		ok &= Expect(pipe2(pipe_fds.data(), O_CLOEXEC) == 0, "create descriptor config pipe");
+		const ScopedFd pipe_read(pipe_fds.at(0));
+		const ScopedFd pipe_write(pipe_fds.at(1));
+		ok &= ExpectFailure(LoadRuntimeConfigFromFd(pipe_read.Get(), display_path, owner),
+		                    RuntimeConfigLoadStatus::kPathError, "pipe descriptor config");
+
+		const auto invalid_fd = LoadRuntimeConfigFromFd(-1, display_path, owner);
+		ok &= ExpectFailure(invalid_fd, RuntimeConfigLoadStatus::kPathError,
+		                    "negative descriptor config");
+		ok &= Expect(invalid_fd.error_code == EBADF, "negative descriptor config is EBADF");
+
+		const auto large_path = temp_root / "fd-large.ini";
+		ok &= Expect(
+		    WriteSecureConfig(large_path, "[core]\ndisabled = false\n" +
+			                                  std::string(howdy::native::kMaxConfigFileSize, '\n')),
+		    "write oversized descriptor config");
+		const ScopedFd large_fd(open(large_path.c_str(), O_RDONLY | O_CLOEXEC));
+		ok &= ExpectFailure(LoadRuntimeConfigFromFd(large_fd.Get(), display_path, owner),
+		                    RuntimeConfigLoadStatus::kParseError, "oversized descriptor config");
+
+		const auto malformed_path = temp_root / "fd-malformed.ini";
+		ok &= Expect(WriteSecureConfig(malformed_path, "[core\n"),
+		             "write malformed descriptor config");
+		const ScopedFd malformed_fd(open(malformed_path.c_str(), O_RDONLY | O_CLOEXEC));
+		const auto     malformed = LoadRuntimeConfigFromFd(malformed_fd.Get(), display_path, owner);
+		ok &= ExpectFailure(malformed, RuntimeConfigLoadStatus::kParseError,
+		                    "malformed descriptor config");
+		ok &= Expect(malformed.error_message.contains(display_path.string()),
+		             "malformed descriptor config names the display path");
+
+		const auto invalid_value_path = temp_root / "fd-invalid.ini";
+		ok &= Expect(WriteSecureConfig(invalid_value_path, "[video]\ntimeout = 0\n"),
+		             "write invalid descriptor config");
+		const ScopedFd invalid_value_fd(open(invalid_value_path.c_str(), O_RDONLY | O_CLOEXEC));
+		ok &= ExpectFailure(LoadRuntimeConfigFromFd(invalid_value_fd.Get(), display_path, owner),
+		                    RuntimeConfigLoadStatus::kInvalidRuntimeValue,
+		                    "invalid descriptor config value");
 		return ok;
 	}
 
@@ -209,6 +350,8 @@ auto main() -> int {
 	const auto insecure_trust =
 	    howdy::native::LoadRuntimeConfig(insecure_root_config, std::nullopt, {temp_root});
 	ok &= ExpectFailure(insecure_trust, RuntimeConfigLoadStatus::kPathError, "insecure trust root");
+
+	ok &= ExpectDescriptorLoading(temp_root);
 
 	return ok ? 0 : 1;
 }

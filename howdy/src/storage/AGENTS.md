@@ -13,7 +13,6 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `user_model_store.cpp`: secure user-model transaction boundary
 - `user_models.cpp`: high-level list/mutation/load operations
 - `user_model_readiness.cpp`: readiness routing and canonical checks
-- `user_model_readiness/staged.cpp`: staged-runtime ACL/path/model validation
 
 Private cross-TU contracts live under the matching `src/storage/<component>/internal.hpp`. Public
 `user_model_types.hpp` value/result consumers must not inherit codec, locking, transaction, path, or
@@ -25,9 +24,17 @@ Preserve codec grammar, strict/non-strict behavior, numeric and nesting limits, 
 rejection, finite encodings, model-count/encoding-count bounds, IDs, compatibility checks, and
 serialization behavior.
 
-`user_model_store.cpp` owns secure open → lock → snapshot/identity check → mutate/remove → staged
-commit/exchange → rollback/cleanup → durability. Keep this transaction cohesive; do not split it for
-LOC.
+`user_model_store.cpp` owns namespace lock → secure open → snapshot/identity check → mutate/remove
+→ staged commit/exchange → rollback/cleanup → durability. Keep this transaction cohesive; do not
+split it for LOC.
+
+Writers lock only the user-models directory (`LockModelNamespace`), never the model file: the auth
+helper hands each user a read-only descriptor to their own model, and a `flock` a user holds on it
+must not stall root's writers.
+
+`LoadUserModelsFromFd` loads from a descriptor another process opened, with the same rules as
+`LoadRuntimeConfigFromFd`: no path walk, an explicit owner, open read-only and not `O_PATH`, one
+link, and a positional read.
 
 `user_model_readiness` remains descriptor-relative and fail closed. Keep
 `storage/user_model_store/test_hooks.hpp` in production includes because the production store

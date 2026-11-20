@@ -1,7 +1,6 @@
 #pragma once
 
 #include "protocol/compare_exit.hpp"
-#include "protocol/compare_invocation.hpp"
 
 #include <cstdint>
 #include <string>
@@ -9,7 +8,6 @@
 namespace howdy::native {
 	struct CompareArgs {
 		std::string user;
-		std::string config_path;
 	};
 
 	enum class CompareArgsStatus : std::uint8_t {
@@ -25,7 +23,8 @@ namespace howdy::native {
 		CompareArgs       args;
 	};
 
-	auto ParseCompareArgs(int argc, char **argv, const std::string &default_config_path)
-	    -> CompareArgsParseResult;
+	// Compare takes one argument, the user; its config and model come as descriptors
+	// (protocol/compare_descriptors.hpp).
+	auto ParseCompareArgs(int argc, char **argv) -> CompareArgsParseResult;
 
 }  // namespace howdy::native

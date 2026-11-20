@@ -3,7 +3,6 @@
 #include "module/auth_flow_test_groups.hpp"
 #include "module/auth_flow_test_support.hpp"
 #include "prompt/pam_conversation.hpp"
-#include "protocol/auth_helper_protocol.hpp"
 #include "protocol/compare_exit.hpp"
 #include "support/process_status.hpp"
 #include "test_support.hpp"
@@ -174,23 +173,13 @@ namespace {
 }  // namespace
 
 auto main() -> int {
-	using howdy::native::auth_helper_protocol::kConfigPathKey;
-	using howdy::native::auth_helper_protocol::kUserModelsDirKey;
-
 	bool ok = true;
 
-	ok &= RunAuthHelperFdTests();
 	ok &= RunProcessWaitTests();
-	ok &= RunAuthHelperOutputTests();
 	ok &= ExpectConversationHelpers();
 	ok &= ExpectStatusHelpers();
 	ok &= ExpectAuthenticationGuards();
 	ok &= RunAuthFlowIntegrationTests();
-
-	ok &= Expect(std::string(kConfigPathKey) == "CONFIG_PATH",
-	             "config path protocol key remains unchanged");
-	ok &= Expect(std::string(kUserModelsDirKey) == "USER_MODELS_DIR",
-	             "user models directory protocol key remains unchanged");
 
 	return ok ? 0 : 1;
 }

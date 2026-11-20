@@ -1,7 +1,6 @@
 #include "cli/remove.hpp"
 
 #include "app/command_invocation.hpp"
-#include "auth_helper/staged_copies.hpp"
 #include "cli/remove/internal.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
@@ -44,11 +43,7 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 	if (!invocation.resolved_user.has_value() || invocation.positionals.empty()) {
 		return kRemoveExitAbort;
 	}
-	const auto &user = *invocation.resolved_user;
-	// Staged copies go whenever the stored models may have changed or are gone.
-	using howdy::native::auth_helper::StagedPurgeTrigger;
-	const howdy::native::auth_helper::StagedCopyPurger purge_staged_copies(
-	    dependencies.purge_staged_copies, dependencies.context, user);
+	const auto &user    = *invocation.resolved_user;
 	const auto &id_text = invocation.positionals.front();
 
 	const auto models = dependencies.list_user_model_entries(dependencies.context, user);
@@ -56,8 +51,6 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 	    models.status == howdy::native::UserModelStatus::kNoModel) {
 		std::cout << "No face models found. Please run:\n";
 		std::cout << "\n\thowdy add\n\n";
-		// An earlier run may have left a staged copy that was in use; this retries its removal.
-		purge_staged_copies(StagedPurgeTrigger::kRetry);
 		return kRemoveExitAbort;
 	}
 	if (models.status != howdy::native::UserModelStatus::kOk) {
@@ -92,8 +85,6 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 
 	if (!found) {
 		std::cout << "No model with ID " << id_text << " exists for " << user << "\n";
-		// Repeating a remove whose staged copy was in use lands here; finish that purge.
-		purge_staged_copies(StagedPurgeTrigger::kRetry);
 		return kRemoveExitAbort;
 	}
 
@@ -118,12 +109,6 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 	} else {
 		std::cout << "Removed model " << remove_result.entry.id << "\n";
 	}
-	// The staged copy holds every model of the user, including the one just removed, and an
-	// uncertain commit may have removed it too. It goes after the outcome is reported, so any
-	// notice about it follows that line.
-	if (howdy::native::UserModelMutationMayHaveCommitted(remove_result.status)) {
-		purge_staged_copies(StagedPurgeTrigger::kModelsChanged);
-	}
 	return remove_result.status == howdy::native::UserModelStatus::kOk ? kRemoveExitOk
 	                                                                   : kRemoveExitAbort;
 }
@@ -134,6 +119,5 @@ auto RemoveMain(const howdy::native::CommandInvocation &invocation) -> int {
 	    howdy::native::remove_internal::RemoveDependencies{
 	        .list_user_model_entries            = RemoveCliUserModelEntriesDependency,
 	        .remove_user_model_entry_if_matches = RemoveUserModelEntryIfMatchesDependency,
-	        .purge_staged_copies = howdy::native::auth_helper::PurgeStagedCopiesToStdout,
 	    });
 }

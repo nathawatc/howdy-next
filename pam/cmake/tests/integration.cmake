@@ -5,7 +5,7 @@ howdy_configure_pam_test_target(pam_installed_path_validator)
 add_executable(pam_installed_state_verifier
                tests/integration/installed_pam_state_verifier.cpp)
 howdy_configure_pam_test_target(pam_installed_state_verifier)
-target_link_libraries(pam_installed_state_verifier PRIVATE PkgConfig::LIBACL)
+target_link_libraries(pam_installed_state_verifier PRIVATE howdy_runtime_descriptor_message)
 add_test(
  NAME pam-installed-setuid-path-validation
  COMMAND pam_installed_path_validator --self-test
@@ -37,7 +37,7 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
     howdy_configure_pam_test_target(pam_installed_install_environment_test)
     target_link_libraries(
    pam_installed_runtime_e2e_driver
-   PRIVATE pam_runtime howdy_user_models howdy_user_model_readiness
+   PRIVATE pam_runtime howdy_user_models
   )
     add_custom_target(
    howdy-installed-e2e-artifacts

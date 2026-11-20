@@ -6,7 +6,6 @@ RUN sed -i 's|usr/share/i18n/\*||' /etc/pacman.conf \
 	&& pacman -Syu --noconfirm \
 		'glibc>=2.36' \
 		'cmake>=3.31' \
-		acl \
 		ccache \
 		'clang>=23' \
 		curl \

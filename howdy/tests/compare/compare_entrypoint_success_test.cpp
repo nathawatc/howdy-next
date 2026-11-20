@@ -1,10 +1,12 @@
 #include "compare/capture_session.hpp"
+#include "compare/compare_descriptor_test_support.hpp"
 #include "compare/entrypoint.hpp"
 #include "compare/entrypoint/dependencies.hpp"
 #include "compare/privileges.hpp"
 #include "compare/sandbox.hpp"
+#include "protocol/compare_descriptors.hpp"
 #include "protocol/compare_exit.hpp"
-#include "support/file_security/validation_root.hpp"
+#include "protocol/compare_verdict.hpp"
 #include "test_support.hpp"
 #include "vision/face_detection.hpp"
 #include "vision/face_encoding.hpp"
@@ -19,8 +21,10 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
+#include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -225,6 +229,44 @@ namespace {
 		       chmod(model_path.c_str(), 0600) == 0;
 	}
 
+	// Runs compare as PAM does: config at fd 4, model at fd 5, the verdict socket at fd 3, all
+	// announced, with the user as the only argument.
+	class DescriptorRun {
+	public:
+		explicit DescriptorRun(fs::path root)
+		    : root_(std::move(root)) {}
+
+		auto operator()(uid_t                                               owner,
+		                const howdy::native::CompareEntrypointDependencies &dependencies) -> int {
+			namespace descriptors = howdy::native::compare_descriptors;
+			namespace verdict     = howdy::native::compare_verdict;
+			using howdy::test::compare::OpenAboveProtocol;
+			using howdy::test::compare::ScopedDescriptorAt;
+			const auto config = OpenAboveProtocol(root_ / "config.ini", O_RDONLY);
+			const auto model  = OpenAboveProtocol(root_ / "models" / "fixture-user.dat", O_RDONLY);
+			const auto pair   = howdy::test::compare::MakeVerdictPair();
+			const ScopedDescriptorAt   verdict_at(verdict::kFd, pair.compare_end.Get());
+			const ScopedDescriptorAt   config_at(descriptors::kConfigFd, config.Get());
+			const ScopedDescriptorAt   model_at(descriptors::kModelFd, model.Get());
+			std::array<std::string, 2> arguments{"howdy-compare", "fixture-user"};
+			std::array<char *, 2>      argv{arguments.at(0).data(), arguments.at(1).data()};
+			return howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()), argv.data(),
+			                                           owner, dependencies);
+		}
+
+	private:
+		fs::path                               root_;
+		howdy::test::ScopedEnvironmentVariable verdict_env_{
+		    howdy::native::compare_verdict::kEnvironmentName,
+		    howdy::native::compare_verdict::kEnvironmentValue};
+		howdy::test::ScopedEnvironmentVariable config_env_{
+		    howdy::native::compare_descriptors::kConfigEnvironmentName,
+		    howdy::native::compare_descriptors::kConfigEnvironmentValue};
+		howdy::test::ScopedEnvironmentVariable model_env_{
+		    howdy::native::compare_descriptors::kModelEnvironmentName,
+		    howdy::native::compare_descriptors::kModelEnvironmentValue};
+	};
+
 }  // namespace
 
 auto main() -> int {
@@ -233,31 +275,16 @@ auto main() -> int {
 	if (!Expect(PrepareFixture(root), "prepare secure compare success fixture")) {
 		return 1;
 	}
-	const auto models_path = (root / "models").string();
-	bool       ok          = Expect(setenv("HOWDY_USER_MODELS_DIR", models_path.c_str(), 1) == 0,
-	                                "select fixture user-model directory");
-	std::array<std::string, 4> arguments{
-	    "howdy-compare",
-	    "--config",
-	    (root / "config.ini").string(),
-	    "fixture-user",
-	};
-	std::array<char *, 4> argv{
-	    arguments.at(0).data(),
-	    arguments.at(1).data(),
-	    arguments.at(2).data(),
-	    arguments.at(3).data(),
-	};
-	const auto validation_root =
-	    howdy::native::file_security_internal::ValidationRoot{.path = root};
+	bool          ok = true;
+	DescriptorRun run(root);
 
 	FixtureContext           success;
-	const auto               dependencies = DependenciesFor(success);
 	const std::ostringstream report;
-	auto                    *original = std::cout.rdbuf(report.rdbuf());
-	const int                result   = howdy::native::RunCompareEntrypoint(
-	    static_cast<int>(argv.size()), argv.data(), geteuid(), validation_root, dependencies);
-	std::cout.rdbuf(original);
+	int                      result = -1;
+	{
+		const howdy::test::StreamRedirect redirect(std::cout, report.rdbuf());
+		result = run(geteuid(), DependenciesFor(success));
+	}
 	ok &= Expect(result == static_cast<int>(howdy::native::CompareExit::kSuccess),
 	             "production compare entrypoint returns kSuccess after matching fixture face");
 	ok &=
@@ -267,18 +294,16 @@ auto main() -> int {
 		           success.warm_calls.load() == 1 && success.encoded_after_warm,
 		       "entrypoint runs capture, preprocessing, inference, sandbox, and privilege stages");
 	ok &= Expect(report.str().contains("Winning model: 7 (\"fixture\")"),
-	             "success report identifies the loaded stored model");
+	             "success report identifies the model read from its descriptor");
 
 	FixtureContext rejection;
-	rejection.probe_value                           = -1.0F;
-	const auto               rejection_dependencies = DependenciesFor(rejection);
+	rejection.probe_value = -1.0F;
 	const std::ostringstream rejection_error;
-	original = std::cerr.rdbuf(rejection_error.rdbuf());
-	const int rejection_result =
-	    howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()), argv.data(), geteuid(),
-		                                    validation_root, rejection_dependencies);
-	std::cerr.rdbuf(original);
-	ok &= Expect(rejection_result == static_cast<int>(howdy::native::CompareExit::kInvalidDevice) &&
+	{
+		const howdy::test::StreamRedirect redirect(std::cerr, rejection_error.rdbuf());
+		result = run(geteuid(), DependenciesFor(rejection));
+	}
+	ok &= Expect(result == static_cast<int>(howdy::native::CompareExit::kInvalidDevice) &&
 	                 rejection.read_calls == 2 && rejection.encode_calls == 1 &&
 	                 rejection.seccomp_calls == 1 &&
 	                 rejection_error.str().contains("Unexpected second capture read"),
@@ -288,16 +313,14 @@ auto main() -> int {
 	auto           unsupported_dependencies = DependenciesFor(unsupported);
 	unsupported_dependencies.apply_seccomp  = UnsupportedSeccomp;
 	const std::ostringstream unsupported_error;
-	original = std::cerr.rdbuf(unsupported_error.rdbuf());
 	const std::ostringstream unsupported_report;
-	auto                    *original_out = std::cout.rdbuf(unsupported_report.rdbuf());
-	const int                unsupported_result =
-	    howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()), argv.data(), geteuid(),
-		                                    validation_root, unsupported_dependencies);
-	std::cout.rdbuf(original_out);
-	std::cerr.rdbuf(original);
+	{
+		const howdy::test::StreamRedirect redirect(std::cout, unsupported_report.rdbuf(), std::cerr,
+		                                           unsupported_error.rdbuf());
+		result = run(geteuid(), unsupported_dependencies);
+	}
 	ok &= Expect(
-	    unsupported_result == static_cast<int>(howdy::native::CompareExit::kSuccess) &&
+	    result == static_cast<int>(howdy::native::CompareExit::kSuccess) &&
 	        unsupported.seccomp_calls == 1 &&
 	        unsupported_error.str().contains("Seccomp filter sandboxing is not supported"),
 	    "best-effort seccomp logs warning and continues authentication on unsupported kernel");
@@ -306,12 +329,11 @@ auto main() -> int {
 	auto           failed_dependencies = DependenciesFor(failed);
 	failed_dependencies.apply_seccomp  = FailedSeccomp;
 	const std::ostringstream failed_error;
-	original = std::cerr.rdbuf(failed_error.rdbuf());
-	const int failed_result =
-	    howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()), argv.data(), geteuid(),
-		                                    validation_root, failed_dependencies);
-	std::cerr.rdbuf(original);
-	ok &= Expect(failed_result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
+	{
+		const howdy::test::StreamRedirect redirect(std::cerr, failed_error.rdbuf());
+		result = run(geteuid(), failed_dependencies);
+	}
+	ok &= Expect(result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
 	                 failed.seccomp_calls == 1 && failed.read_calls == 0,
 	             "seccomp installation failure aborts before reading any frame");
 
@@ -319,12 +341,11 @@ auto main() -> int {
 	auto           invalid_dependencies = DependenciesFor(invalid);
 	invalid_dependencies.apply_seccomp  = InvalidSeccomp;
 	const std::ostringstream invalid_error;
-	original = std::cerr.rdbuf(invalid_error.rdbuf());
-	const int invalid_result =
-	    howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()), argv.data(), geteuid(),
-		                                    validation_root, invalid_dependencies);
-	std::cerr.rdbuf(original);
-	ok &= Expect(invalid_result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
+	{
+		const howdy::test::StreamRedirect redirect(std::cerr, invalid_error.rdbuf());
+		result = run(geteuid(), invalid_dependencies);
+	}
+	ok &= Expect(result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
 	                 invalid.seccomp_calls == 1 && invalid.read_calls == 0 &&
 	                 invalid_error.str().contains("Invalid compare seccomp dependencies"),
 	             "seccomp invalid dependencies abort before reading any frame");
@@ -336,13 +357,13 @@ auto main() -> int {
 		auto           case_dependencies = DependenciesFor(context);
 		configure(case_dependencies);
 		const std::ostringstream case_error;
-		auto                    *saved  = std::cerr.rdbuf(case_error.rdbuf());
-		const int                status = howdy::native::RunCompareEntrypoint(
-		    static_cast<int>(argv.size()), argv.data(), owner, validation_root, case_dependencies);
-		std::cerr.rdbuf(saved);
+		int                      status = -1;
+		{
+			const howdy::test::StreamRedirect redirect(std::cerr, case_error.rdbuf());
+			status = run(owner, case_dependencies);
+		}
 		return Expect(status == static_cast<int>(howdy::native::CompareExit::kAbort) &&
-		                  context.read_calls == 0 && !case_error.str().empty() &&
-		                  case_error.str().contains(diagnostic),
+		                  context.read_calls == 0 && case_error.str().contains(diagnostic),
 		              label);
 	};
 	const auto keep = [](howdy::native::CompareEntrypointDependencies &) -> void {};
@@ -361,14 +382,14 @@ auto main() -> int {
 	ok &= expect_abort("failing privilege drop aborts before reading any frame", geteuid(),
 	                   fail_drop, "Failed to drop compare privileges: injected");
 	ok &= expect_abort("untrusted config owner aborts", geteuid() + 1, keep,
-	                   "Config directory must be owned by UID");
+	                   "Config file must be owned by UID");
 	ok &= Expect(chmod(config_file.c_str(), 0666) == 0, "make config world-writable");
 	ok &= expect_abort("world-writable config aborts", geteuid(), keep,
 	                   "Config file must not be group-writable");
 	ok &= Expect(chmod(config_file.c_str(), 0644) == 0, "restore config mode");
 	ok &= Expect(chmod(model_file.c_str(), 0666) == 0, "make user model world-writable");
 	ok &= expect_abort("world-writable user model aborts", geteuid(), keep,
-	                   "User model file must not be group-writable");
+	                   "Opened user model file failed security validation");
 	ok &= Expect(chmod(model_file.c_str(), 0600) == 0, "restore user model mode");
 	ok &= Expect(howdy::test::WriteFile(model_file, "not json") &&
 	                 chmod(model_file.c_str(), 0600) == 0,

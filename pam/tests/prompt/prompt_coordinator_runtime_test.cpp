@@ -2,6 +2,7 @@
 #include "prompt/prompt_coordinator.hpp"
 #include "prompt/prompt_coordinator_fake.hpp"
 #include "prompt/workaround.hpp"
+#include "protocol/compare_descriptors.hpp"
 #include "protocol/compare_exit.hpp"
 #include "protocol/compare_verdict.hpp"
 #include "runtime/child_process.hpp"
@@ -22,6 +23,7 @@
 #include <cstddef>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <fcntl.h>
@@ -203,6 +205,7 @@ namespace {
 	using howdy::test::process::ScopedSignalBlock;
 	using howdy::test::process::SpawnBlockedChild;
 	using howdy::test::process::SpawnSigtermIgnoringChild;
+	using howdy::test::prompt_coordinator::CompareRequestFiles;
 	using howdy::test::prompt_coordinator::FakeContext;
 	using howdy::test::prompt_coordinator::MakeCompareRequest;
 	using howdy::test::prompt_coordinator::PosixSpawnCapture;
@@ -211,7 +214,33 @@ namespace {
 
 	using howdy::test::Expect;
 
-	constexpr int kVerdictFd = howdy::native::compare_verdict::kFd;
+	constexpr int kVerdictFd     = howdy::native::compare_verdict::kFd;
+	constexpr int kConfigFd      = howdy::native::compare_descriptors::kConfigFd;
+	constexpr int kModelFd       = howdy::native::compare_descriptors::kModelFd;
+	constexpr int kFirstUnusedFd = howdy::native::compare_descriptors::kFirstUnusedFd;
+
+	// The environment compare gets in descriptor mode, in order.
+	auto DescriptorModeEnvironment() -> std::vector<std::string> {
+		return {
+		    "OPENBLAS_NUM_THREADS=1",    "OMP_NUM_THREADS=1",        "HOWDY_COMPARE_VERDICT_FD=3",
+		    "HOWDY_COMPARE_CONFIG_FD=4", "HOWDY_COMPARE_MODEL_FD=5",
+		};
+	}
+
+	// Whether Spawn placed a source above every fixed number at each of fds 3, 4 and 5, in order.
+	auto PlacesDescriptors(const PosixSpawnCapture &capture) -> bool {
+		const std::array targets{kVerdictFd, kConfigFd, kModelFd};
+		if (capture.adddup2.size() != targets.size()) {
+			return false;
+		}
+		for (std::size_t index = 0; index < targets.size(); ++index) {
+			const auto &action = capture.adddup2.at(index);
+			if (action.new_fd != targets.at(index) || action.fd < kFirstUnusedFd) {
+				return false;
+			}
+		}
+		return true;
+	}
 
 	auto WatchdogWaitForCompare(void *context, pid_t child_pid, int child_pidfd, int verdict_fd,
 	                            std::chrono::steady_clock::time_point      deadline,
@@ -610,14 +639,13 @@ namespace {
 		       Expect(pidfd.Get() > STDERR_FILENO, label + " takes a pidfd for the child") &&
 		       Expect(verdict_fd.Get() > STDERR_FILENO,
 		              label + " returns the verdict socket above stdio") &&
-		       Expect(capture.adddup2_calls == 1 && capture.adddup2_new_fd == kVerdictFd &&
-		                  capture.adddup2_fd > kVerdictFd,
-		              label + " places the verdict socket at its descriptor") &&
+		       Expect(PlacesDescriptors(capture),
+		              label + " places the verdict socket, config and model at fds 3 to 5") &&
 		       Expect(reaped, label + " leaves the child for the caller to reap") &&
 		       Expect(capture.init_calls == 1, label + " initializes file actions once") &&
 		       Expect(capture.addclosefrom_calls == 1, label + " adds close-from action once") &&
-		       Expect(capture.closefrom_fd == kVerdictFd + 1,
-		              label + " closes descriptors above the verdict descriptor") &&
+		       Expect(capture.closefrom_fd == kFirstUnusedFd,
+		              label + " closes descriptors above the model descriptor") &&
 		       Expect(capture.spawn_calls == 1, label + " calls posix_spawn once") &&
 		       Expect(capture.spawn_actions != nullptr,
 		              label + " passes non-null file actions to spawn") &&
@@ -634,56 +662,67 @@ namespace {
 		              label + " preserves exact environment");
 	}
 
-	auto TestProductionDirectRuntimeEnvironment() -> bool {
-		return TestProductionSpawnAdapter(
-		    MakeCompareRequest("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
-		    {kCompareProcessPath, "--config", "/etc/howdy/config.ini", "alice"},
-		    "production direct runtime",
-		    {"OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1", "HOWDY_COMPARE_VERDICT_FD=3"});
-	}
-
-	auto TestProductionStagedRuntimeEnvironment() -> bool {
-		return TestProductionSpawnAdapter(
-		    MakeCompareRequest("/run/howdy/runtime/config.ini", "alice",
-			                   "/run/howdy/runtime/models", true),
-		    {kCompareProcessPath, "--config", "/run/howdy/runtime/config.ini", "alice"},
-		    "production staged runtime",
-		    {
-		        "HOWDY_USER_MODELS_DIR=/run/howdy/runtime/models",
-		        "OPENBLAS_NUM_THREADS=1",
-		        "OMP_NUM_THREADS=1",
-		        "HOWDY_COMPARE_VERDICT_FD=3",
-		    });
+	auto TestProductionDescriptorEnvironment() -> bool {
+		const CompareRequestFiles files;
+		return TestProductionSpawnAdapter(files.Request(), {kCompareProcessPath, "alice"},
+		                                  "production descriptor mode",
+		                                  DescriptorModeEnvironment());
 	}
 
 	auto TestOwnedLaunchRequestFromTemporaries() -> bool {
-		const howdy::pam::CompareLaunchRequest request = {
-		    .config_path     = std::string("/run/howdy/temporary/config.ini"),
-		    .username        = std::string("temporary-user"),
-		    .user_models_dir = std::string("/run/howdy/temporary/models"),
-		    .staged_runtime  = true,
-		};
+		const CompareRequestFiles              files;
+		const howdy::pam::CompareLaunchRequest request =
+		    files.Request(std::string("temporary-user"));
+		return TestProductionSpawnAdapter(request, {kCompareProcessPath, "temporary-user"},
+		                                  "owned temporary request", DescriptorModeEnvironment());
+	}
 
-		return TestProductionSpawnAdapter(
-		    request,
-		    {kCompareProcessPath, "--config", "/run/howdy/temporary/config.ini", "temporary-user"},
-		    "owned temporary request",
-		    {
-		        "HOWDY_USER_MODELS_DIR=/run/howdy/temporary/models",
-		        "OPENBLAS_NUM_THREADS=1",
-		        "OMP_NUM_THREADS=1",
-		        "HOWDY_COMPARE_VERDICT_FD=3",
-		    });
+	// The descriptors are required: a request without them never reaches posix_spawn.
+	auto TestProductionRejectsIncompleteRequest() -> bool {
+		bool                      ok = true;
+		const CompareRequestFiles files;
+		for (const auto &[request, label] : {
+		         std::pair{howdy::pam::CompareLaunchRequest{
+		                       .username  = "alice",
+		                       .config_fd = -1,
+		                       .model_fd  = files.ModelFd(),
+		                   },
+				           "request without a config descriptor"},
+		         std::pair{howdy::pam::CompareLaunchRequest{
+		                       .username  = "alice",
+		                       .config_fd = files.ConfigFd(),
+		                       .model_fd  = -1,
+		                   },
+				           "request without a model descriptor"},
+		         std::pair{howdy::pam::CompareLaunchRequest{
+		                       .username  = "",
+		                       .config_fd = files.ConfigFd(),
+		                       .model_fd  = files.ModelFd(),
+		                   },
+				           "request without a username"},
+		     }) {
+			PosixSpawnCapture capture;
+			pid_t             child_pid      = -1;
+			int               unused_pidfd   = -1;
+			int               unused_verdict = -1;
+			const int         result =
+			    howdy::pam::compare_process::Spawn(request, &child_pid, &unused_pidfd,
+				                                   &unused_verdict, PosixSpawnOperations(&capture));
+			ok &= Expect(result == EINVAL && capture.init_calls == 0 && capture.spawn_calls == 0,
+			             std::string(label) + " is rejected before spawning");
+		}
+		return ok;
 	}
 
 	auto TestProductionFileActionsInitFailure() -> bool {
-		PosixSpawnCapture capture;
+		const CompareRequestFiles files;
+		PosixSpawnCapture         capture;
 		capture.init_result      = ENOMEM;
 		pid_t     child_pid      = -1;
 		int       unused_pidfd   = -1;
 		int       unused_verdict = -1;
 		const int result =
-		    howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid, &unused_pidfd,
+		    howdy::pam::compare_process::Spawn(files.Request(), &child_pid, &unused_pidfd,
 			                                   &unused_verdict, PosixSpawnOperations(&capture));
 
 		return Expect(result == ENOMEM, "file-actions init failure preserves error") &&
@@ -699,21 +738,22 @@ namespace {
 	}
 
 	auto TestProductionClosefromFailure() -> bool {
-		PosixSpawnCapture capture;
+		const CompareRequestFiles files;
+		PosixSpawnCapture         capture;
 		capture.addclosefrom_result = EINVAL;
 		pid_t     child_pid         = -1;
 		int       unused_pidfd      = -1;
 		int       unused_verdict    = -1;
 		const int result =
-		    howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid, &unused_pidfd,
+		    howdy::pam::compare_process::Spawn(files.Request(), &child_pid, &unused_pidfd,
 			                                   &unused_verdict, PosixSpawnOperations(&capture));
 
 		return Expect(result == EINVAL, "close-from setup failure preserves error") &&
 		       Expect(capture.init_calls == 1, "close-from setup failure initializes once") &&
 		       Expect(capture.addclosefrom_calls == 1,
 		              "close-from setup failure adds action once") &&
-		       Expect(capture.adddup2_calls == 1 && capture.closefrom_fd == kVerdictFd + 1,
-		              "close-from setup failure begins above the verdict descriptor") &&
+		       Expect(PlacesDescriptors(capture) && capture.closefrom_fd == kFirstUnusedFd,
+		              "close-from setup failure begins above the model descriptor") &&
 		       Expect(unused_verdict == -1, "close-from setup failure returns no verdict socket") &&
 		       Expect(capture.spawn_calls == 0, "close-from setup failure does not spawn") &&
 		       Expect(capture.destroy_calls == 1,
@@ -721,6 +761,54 @@ namespace {
 		       Expect(capture.destroyed_actions == capture.initialized_actions,
 		              "close-from setup failure destroys initialized file actions") &&
 		       Expect(child_pid == -1, "close-from setup failure leaves child PID unchanged");
+	}
+
+#ifdef HOWDY_HAVE_PIDFD_SPAWN
+	// The production spawn path on a shell that exits at once.
+	auto SpawnShellWithPidfd(const howdy::pam::compare_process::SpawnRequest &request) -> int {
+		std::string           shell("/bin/sh");
+		std::string           flag("-c");
+		std::string           script("exit 0");
+		std::array<char *, 4> argv{shell.data(), flag.data(), script.data(), nullptr};
+		std::array<char *, 1> envp{nullptr};
+		return howdy::pam::runtime::SpawnChild(request.child_pid, request.child_pidfd,
+		                                       {
+		                                           .path    = shell.c_str(),
+		                                           .actions = request.actions,
+		                                           .argv    = argv.data(),
+		                                           .envp    = envp.data(),
+		                                       });
+	}
+#endif
+
+	// Where pidfd_spawn exists, the pidfd comes with compare, so Spawn never opens one: with
+	// pidfd_open failing everywhere (SpawnChild's pidfd_getpid probe then proves nothing and
+	// pidfd_spawn is still tried), the spawn still succeeds and hands back that pidfd.
+	auto TestProductionSpawnTakesPidfdWithChild() -> bool {
+#ifdef HOWDY_HAVE_PIDFD_SPAWN
+		const CompareRequestFiles files;
+		auto                      operations = howdy::pam::compare_process::ProductionOperations();
+		operations.spawn                     = SpawnShellWithPidfd;
+		pid_t child_pid                      = -1;
+		int   raw_pidfd                      = -1;
+		int   raw_verdict_fd                 = -1;
+		WaitState().fail_pidfd               = true;
+		const int result                     = howdy::pam::compare_process::Spawn(
+		    files.Request(), &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
+		WaitState().fail_pidfd = false;
+		const howdy::native::ScopedFd     pidfd(raw_pidfd);
+		const howdy::native::ScopedFd     verdict_fd(raw_verdict_fd);
+		howdy::pam::runtime::TrackedChild child(child_pid, pidfd.Get());
+		int                               status = 0;
+		return Expect(result == 0 && child_pid > 0 && pidfd.Get() > STDERR_FILENO &&
+		                  verdict_fd.Valid(),
+		              "compare's pidfd comes from pidfd_spawn without a pidfd_open") &&
+		       Expect(child.Wait(true, &status) == howdy::pam::runtime::ChildState::kReaped &&
+		                  WIFEXITED(status) && WEXITSTATUS(status) == 0,
+		              "the compare child is reaped through the spawn-time pidfd");
+#else
+		return true;
+#endif
 	}
 
 	auto SpawnBlockedForTest(const howdy::pam::compare_process::SpawnRequest &request) -> int {
@@ -738,13 +826,14 @@ namespace {
 	// application reaps it and the PID is reused before the wait starts.
 	auto TestProductionSpawnReturnsPidfd() -> bool {
 		PosixSpawnCapture capture;
-		auto              operations = PosixSpawnOperations(&capture);
-		operations.spawn             = SpawnBlockedForTest;
-		pid_t     child_pid          = -1;
-		int       raw_pidfd          = -1;
-		int       raw_verdict_fd     = -1;
-		const int result             = howdy::pam::compare_process::Spawn(
-		    MakeCompareRequest(), &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
+		auto              operations             = PosixSpawnOperations(&capture);
+		operations.spawn                         = SpawnBlockedForTest;
+		pid_t                     child_pid      = -1;
+		int                       raw_pidfd      = -1;
+		int                       raw_verdict_fd = -1;
+		const CompareRequestFiles files;
+		const int                 result = howdy::pam::compare_process::Spawn(
+		    files.Request(), &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
 		const howdy::native::ScopedFd pidfd(raw_pidfd);
 		const howdy::native::ScopedFd verdict_fd(raw_verdict_fd);
 		if (!Expect(result == 0 && child_pid > 0, "spawn with pidfd starts the child")) {
@@ -793,8 +882,9 @@ namespace {
 		int   raw_pidfd              = -1;
 		int   raw_verdict_fd         = -1;
 		WaitState().fail_pidfd       = true;
-		const int result             = howdy::pam::compare_process::Spawn(
-		    MakeCompareRequest(), &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
+		const CompareRequestFiles files;
+		const int                 result = howdy::pam::compare_process::Spawn(
+		    files.Request(), &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
 		WaitState().fail_pidfd = false;
 		const pid_t spawned    = capture.next_pid;
 		return Expect(result != 0, "spawn without a pidfd reports failure") &&
@@ -980,49 +1070,58 @@ namespace {
 		       Expect(ChildReaped(child_pid), "pidfd carry test reaps the child");
 	}
 
-	// The verdict socket only matters when the application reaps compare first, so failing to
-	// set it up must not stop face unlock everywhere: compare runs without it, as before.
-	auto ExpectSpawnWithoutVerdictSocket(PosixSpawnCapture &capture, const std::string &label)
-	    -> bool {
-		pid_t     child_pid      = -1;
-		int       raw_pidfd      = -1;
-		int       raw_verdict_fd = -1;
-		const int result =
-		    howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid, &raw_pidfd,
+	// The verdict socket is required in descriptor mode: when it cannot be set up or passed,
+	// compare is not started.
+	auto ExpectSpawnFailsWithoutVerdictSocket(PosixSpawnCapture &capture, int expected_error,
+	                                          const std::string &label) -> bool {
+		const CompareRequestFiles files;
+		pid_t                     child_pid      = -1;
+		int                       raw_pidfd      = -1;
+		int                       raw_verdict_fd = -1;
+		const int                 result =
+		    howdy::pam::compare_process::Spawn(files.Request(), &child_pid, &raw_pidfd,
 			                                   &raw_verdict_fd, PosixSpawnOperations(&capture));
-		const howdy::native::ScopedFd pidfd(raw_pidfd);
-		const bool reaped = child_pid > 0 && waitpid(child_pid, nullptr, 0) == child_pid;
-		return Expect(result == 0 && pidfd.Valid() && reaped, label + " still starts compare") &&
-		       Expect(raw_verdict_fd == -1, label + " returns no verdict socket") &&
-		       Expect(capture.closefrom_fd == STDERR_FILENO + 1,
-		              label + " closes everything above stdio") &&
-		       Expect(capture.environment ==
-		                  std::vector<std::string>{"OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1"},
-		              label + " does not announce a verdict socket");
+		return Expect(result == expected_error, label + " fails the spawn") &&
+		       Expect(capture.spawn_calls == 0 && child_pid == -1, label + " starts no compare") &&
+		       Expect(raw_pidfd == -1 && raw_verdict_fd == -1,
+		              label + " returns no pidfd or verdict socket");
 	}
 
 	auto TestProductionSpawnWithoutVerdictSocket() -> bool {
 		PosixSpawnCapture unopened;
 		unopened.socketpair_error = EMFILE;
 		PosixSpawnCapture unpassed;
-		unpassed.adddup2_result = ENOMEM;
-		return ExpectSpawnWithoutVerdictSocket(unopened, "spawn without a verdict socket") &&
-		       Expect(unopened.adddup2_calls == 0,
-		              "spawn without a verdict socket adds no dup2 action") &&
-		       ExpectSpawnWithoutVerdictSocket(unpassed,
-		                                       "spawn that cannot pass the verdict socket") &&
-		       Expect(unpassed.adddup2_calls == 1,
-		              "spawn that cannot pass the verdict socket tried once");
+		unpassed.adddup2_fail_index = 0;
+		unpassed.adddup2_result     = ENOMEM;
+		PosixSpawnCapture no_config;
+		no_config.adddup2_fail_index = 1;
+		no_config.adddup2_result     = ENOMEM;
+		PosixSpawnCapture no_model;
+		no_model.adddup2_fail_index = 2;
+		no_model.adddup2_result     = EBADF;
+		return ExpectSpawnFailsWithoutVerdictSocket(unopened, EMFILE,
+		                                            "a verdict socket that cannot be opened") &&
+		       Expect(unopened.init_calls == 0,
+		              "an unopened verdict socket adds no file actions") &&
+		       ExpectSpawnFailsWithoutVerdictSocket(unpassed, ENOMEM,
+		                                            "a verdict socket that cannot be passed") &&
+		       Expect(unpassed.destroy_calls == 1,
+		              "an unpassed verdict socket destroys the file actions") &&
+		       ExpectSpawnFailsWithoutVerdictSocket(no_config, ENOMEM,
+		                                            "a config descriptor that cannot be passed") &&
+		       ExpectSpawnFailsWithoutVerdictSocket(no_model, EBADF,
+		                                            "a model descriptor that cannot be passed");
 	}
 
 	auto TestProductionSpawnFailure() -> bool {
-		PosixSpawnCapture capture;
+		const CompareRequestFiles files;
+		PosixSpawnCapture         capture;
 		capture.spawn_result     = EACCES;
 		pid_t     child_pid      = -1;
 		int       unused_pidfd   = -1;
 		int       unused_verdict = -1;
 		const int result =
-		    howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid, &unused_pidfd,
+		    howdy::pam::compare_process::Spawn(files.Request(), &child_pid, &unused_pidfd,
 			                                   &unused_verdict, PosixSpawnOperations(&capture));
 
 		return Expect(result == EACCES, "production spawn failure preserves error") &&
@@ -1038,22 +1137,11 @@ namespace {
 		       Expect(child_pid == -1, "production spawn failure leaves child PID unchanged") &&
 		       Expect(capture.path == kCompareProcessPath,
 		              "production spawn failure preserves executable path") &&
-		       Expect(capture.argv ==
-		                  std::vector<std::string>{
-		                      kCompareProcessPath,
-		                      "--config",
-		                      "/etc/howdy/config.ini",
-		                      "alice",
-		                  },
+		       Expect(capture.argv == std::vector<std::string>{kCompareProcessPath, "alice"},
 		              "production spawn failure preserves exact argv") &&
 		       Expect(unused_verdict == -1, "production spawn failure returns no verdict socket") &&
-		       Expect(capture.environment ==
-		                  std::vector<std::string>{
-		                      "OPENBLAS_NUM_THREADS=1",
-		                      "OMP_NUM_THREADS=1",
-		                      "HOWDY_COMPARE_VERDICT_FD=3",
-		                  },
-		              "production spawn failure preserves fixed direct environment");
+		       Expect(capture.environment == DescriptorModeEnvironment(),
+		              "production spawn failure preserves the fixed descriptor-mode environment");
 	}
 
 }  // namespace
@@ -1080,14 +1168,15 @@ auto main() -> int {
 	ok &= TestWatchdogBlockedSigtermTimeout();
 	ok &= TestWatchdogTimeoutKeepsPasswordFallback();
 	ok &= TestPamSuccessReapsBeforeWatchdog();
-	ok &= TestProductionDirectRuntimeEnvironment();
-	ok &= TestProductionStagedRuntimeEnvironment();
+	ok &= TestProductionDescriptorEnvironment();
+	ok &= TestProductionRejectsIncompleteRequest();
 	ok &= TestOwnedLaunchRequestFromTemporaries();
 	ok &= TestProductionFileActionsInitFailure();
 	ok &= TestProductionClosefromFailure();
 	ok &= TestProductionSpawnFailure();
 	ok &= TestProductionSpawnWithoutVerdictSocket();
 	ok &= TestProductionSpawnReturnsPidfd();
+	ok &= TestProductionSpawnTakesPidfdWithChild();
 	ok &= TestCoordinatorCarriesSpawnPidfd();
 	ok &= TestChildPidfdAvoidsClosedStdio();
 	ok &= TestReapedElsewhereStopsPidFallback();

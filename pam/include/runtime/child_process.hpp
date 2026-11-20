@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <optional>
 
+#include <spawn.h>
+
 #include <sys/types.h>
 
 namespace howdy::pam::runtime {
@@ -38,7 +40,8 @@ namespace howdy::pam::runtime {
 	// weaker than the pidfd: it cannot tell the tracked child from another child of the application
 	// that reused the PID, which no PID-based call can, and a short window remains between the
 	// check and the kill in which the application could reap the child. Constructed with pidfd -1,
-	// every operation uses that PID mode.
+	// every operation uses that PID mode. A PID at or below 0 (unknown) is never used: those
+	// fallbacks then report the child as reaped elsewhere.
 	class __attribute__((visibility("hidden"))) TrackedChild {
 	public:
 		// `pidfd` is borrowed and may be -1.
@@ -95,6 +98,28 @@ namespace howdy::pam::runtime {
 	// touched; any other error leaves the child ours, and it is stopped and reaped by PID.
 	__attribute__((visibility("hidden"))) void StopChildWithoutPidfd(pid_t child_pid,
 	                                                                 int   open_error) noexcept;
+
+	struct SpawnArguments {
+		const char                       *path    = nullptr;
+		const posix_spawn_file_actions_t *actions = nullptr;
+		char *const                      *argv    = nullptr;
+		char *const                      *envp    = nullptr;
+	};
+
+	// Spawns `path` and returns 0, or the error from pidfd_spawn, pidfd_getpid or posix_spawn,
+	// whichever failed. Where the C library has pidfd_spawn (glibc 2.39), the kernel has clone3
+	// (Linux 5.3) and pidfd_getpid works here, the child's pidfd comes from the same call, so no
+	// reap by the PAM application can come between the two: `*pidfd` is close-on-exec and above
+	// STDERR_FILENO, and `*pid` is the child's PID, or -1 when the child had already exited and
+	// been reaped elsewhere by the time the PID was read (ESRCH); any other failure to read the PID
+	// stops the child and fails the spawn. A pidfd_open failure for this process leaves the probe
+	// inconclusive and pidfd_spawn is still tried, since the fallback needs pidfd_open too.
+	// Otherwise (an older glibc, a pidfd_getpid that fails for this process, or ENOSYS from a
+	// kernel or filter without clone3) the child comes from posix_spawn, `*pidfd` stays -1, and
+	// the caller takes it with TakeSpawnedChildPidfd.
+	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	SpawnChild(pid_t *pid, int *pidfd, const SpawnArguments &arguments) noexcept -> int;
 
 	// Takes the pidfd for a child just spawned. On failure returns -1, stores the error (never
 	// 0) in `*error`, and stops the child when that error leaves it ours.

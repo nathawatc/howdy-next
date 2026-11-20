@@ -31,7 +31,7 @@ include(CheckCXXSourceCompiles)
 include(CMakePushCheckState)
 find_package(PkgConfig REQUIRED)
 include(cmake/howdy_pkg_config.cmake)
-set(howdy_pkg_config_prefixes OPENCV5 INIREADER YYJSON LIBCURL OPENSSL LIBEVDEV LIBACL)
+set(howdy_pkg_config_prefixes OPENCV5 INIREADER YYJSON LIBCURL OPENSSL LIBEVDEV)
 howdy_isolate_cross_pkg_config(${howdy_pkg_config_prefixes})
 find_package(Threads REQUIRED)
 find_package(Git QUIET)
@@ -65,6 +65,22 @@ check_cxx_source_compiles(
 if(NOT HOWDY_HAVE_GLIBC_2_36)
   message(FATAL_ERROR "GNU libc 2.36 or newer is required.")
 endif()
+# pidfd_spawn and pidfd_getpid (glibc 2.39) let PAM take a child's pidfd as it spawns the child.
+check_cxx_source_compiles(
+ [=[
+  #include <spawn.h>
+  extern "C" {
+  #include <sys/pidfd.h>
+  }
+  int main() {
+   int   pidfd   = -1;
+   char *argv[1] = {nullptr};
+   (void)pidfd_spawn(&pidfd, "/", nullptr, nullptr, argv, argv);
+   return pidfd_getpid(pidfd);
+  }
+ ]=]
+ HOWDY_HAVE_PIDFD_SPAWN
+)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -92,6 +108,14 @@ option(
  "Enable installed PAM/setuid end-to-end tests"
  OFF
 )
+option(
+ HOWDY_ENABLE_FUZZING
+ "Build libFuzzer targets (requires Clang)"
+ OFF
+)
+if(HOWDY_ENABLE_FUZZING AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  message(FATAL_ERROR "HOWDY_ENABLE_FUZZING requires Clang (libFuzzer)")
+endif()
 
 if(HOWDY_USE_CCACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
   find_program(HOWDY_CCACHE_PROGRAM ccache)
@@ -152,7 +176,6 @@ howdy_pkg_check_modules(YYJSON IMPORTED_TARGET yyjson>=0.12.0)
 howdy_pkg_check_modules(LIBCURL IMPORTED_TARGET libcurl>=7.85.0)
 howdy_pkg_check_modules(OPENSSL IMPORTED_TARGET openssl)
 howdy_pkg_check_modules(LIBEVDEV IMPORTED_TARGET libevdev)
-howdy_pkg_check_modules(LIBACL IMPORTED_TARGET libacl)
 
 find_path(PAM_INCLUDE_DIR NAMES security/pam_modules.h REQUIRED)
 find_library(PAM_LIBRARY NAMES pam REQUIRED)

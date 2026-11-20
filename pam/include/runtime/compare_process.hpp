@@ -12,10 +12,13 @@
 namespace howdy::pam::compare_process {
 
 	struct SpawnRequest {
-		void                             *context   = nullptr;
-		pid_t                            *child_pid = nullptr;
-		const char                       *path      = nullptr;
-		const posix_spawn_file_actions_t *actions   = nullptr;
+		void  *context   = nullptr;
+		pid_t *child_pid = nullptr;
+		// Set to the child's pidfd when the spawn took one with the child (pidfd_spawn); left at
+		// -1 otherwise, and the caller takes it after the spawn.
+		int                              *child_pidfd = nullptr;
+		const char                       *path        = nullptr;
+		const posix_spawn_file_actions_t *actions     = nullptr;
 		std::span<char *const>            argv;
 		std::span<char *const>            envp;
 	};
@@ -33,20 +36,22 @@ namespace howdy::pam::compare_process {
 	};
 
 	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
-	// On success `child_pidfd` receives an owned pidfd for the child taken right after spawn, and
+	// Spawns compare in descriptor mode: the verdict socket at fd 3, the request's config and
+	// model at fds 4 and 5 (protocol/compare_descriptors.hpp), nothing above. All three are
+	// required, so a socket or file action that cannot be set up fails the spawn. On success
+	// `child_pidfd` receives an owned pidfd for the child taken right after spawn, and
 	// `verdict_fd` the owned, non-blocking PAM end of the verdict socket compare reports its exit
-	// code on (protocol/compare_verdict.hpp), or -1 when that socket could not be set up, in
-	// which case compare runs without it as before; the caller passes both to the wait. All
-	// out-parameters are required (EINVAL otherwise). When no pidfd can be taken, the child is
-	// stopped and Spawn returns the error.
+	// code on (protocol/compare_verdict.hpp); the caller passes both to the wait. All
+	// out-parameters, the username and both descriptors are required (EINVAL otherwise). When no
+	// pidfd can be taken, the child is stopped and Spawn returns the error.
 	__attribute__((visibility("hidden"))) auto Spawn(const CompareLaunchRequest &request,
 	                                                 pid_t *child_pid, int *child_pidfd,
 	                                                 int *verdict_fd, const Operations &operations)
 	    -> int;
 	// `child_pidfd` is the borrowed pidfd from Spawn and is required: with -1 the child is
 	// stopped by PID and the wait fails closed. `verdict_fd` is the borrowed verdict socket from
-	// Spawn, or -1; it is read only when the PAM application reaped compare and took the exit
-	// status, and without exactly one verdict byte that wait fails closed. A timeout or
+	// Spawn, or -1 for none; it is read only when the PAM application reaped compare and took
+	// the exit status, and without exactly one verdict byte that wait fails closed. A timeout or
 	// cancellation stays one when compare is gone by the time this wait ends it, whether this
 	// wait or the application reaped it.
 	// cancellation_fd is borrowed until return; signal it whenever cancellation becomes true. The

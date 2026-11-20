@@ -1,11 +1,10 @@
 #pragma once
 
 #include "config/runtime_config.hpp"
+#include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/lid_probe.hpp"
-#include "storage/user_model_readiness.hpp"
 
 #include <cstdint>
-#include <filesystem>
 #include <optional>
 #include <string>
 
@@ -44,23 +43,19 @@ namespace howdy::pam::auth_eligibility {
 		std::string               diagnostic_message;
 	};
 
-	using SshSessionPresentFn   = bool (*)(void *context, pam_handle_t *pamh);
-	using ReadLidStateFn        = howdy::pam::runtime::LidStateResult (*)(void *context);
-	using CheckModelReadinessFn = howdy::native::UserModelReadinessResult (*)(
-	    void *context, const std::filesystem::path &models_dir, const char *username);
+	using SshSessionPresentFn = bool (*)(void *context, pam_handle_t *pamh);
+	using ReadLidStateFn      = howdy::pam::runtime::LidStateResult (*)(void *context);
 
 	class AuthenticationEligibilityOperations {
 	public:
 		static auto Create(void *context, SshSessionPresentFn ssh_session_present,
-		                   ReadLidStateFn        read_lid_state,
-		                   CheckModelReadinessFn check_model_readiness)
+		                   ReadLidStateFn read_lid_state)
 		    -> std::optional<AuthenticationEligibilityOperations> {
-			if (ssh_session_present == nullptr || read_lid_state == nullptr ||
-			    check_model_readiness == nullptr) {
+			if (ssh_session_present == nullptr || read_lid_state == nullptr) {
 				return std::nullopt;
 			}
-			return AuthenticationEligibilityOperations(context, ssh_session_present, read_lid_state,
-			                                           check_model_readiness);
+			return AuthenticationEligibilityOperations(context, ssh_session_present,
+			                                           read_lid_state);
 		}
 
 		[[nodiscard]] auto SshSessionPresent(pam_handle_t *pamh) const -> bool {
@@ -71,29 +66,28 @@ namespace howdy::pam::auth_eligibility {
 			return read_lid_state_(context_);
 		}
 
-		[[nodiscard]] auto CheckModelReadiness(const std::filesystem::path &models_dir,
-		                                       const char                  *username) const
-		    -> howdy::native::UserModelReadinessResult {
-			return check_model_readiness_(context_, models_dir, username);
-		}
-
 	private:
 		AuthenticationEligibilityOperations(void *context, SshSessionPresentFn ssh_session_present,
-		                                    ReadLidStateFn        read_lid_state,
-		                                    CheckModelReadinessFn check_model_readiness)
+		                                    ReadLidStateFn read_lid_state)
 		    : context_(context)
 		    , ssh_session_present_(ssh_session_present)
-		    , read_lid_state_(read_lid_state)
-		    , check_model_readiness_(check_model_readiness) {}
+		    , read_lid_state_(read_lid_state) {}
 
-		void                 *context_               = nullptr;
-		SshSessionPresentFn   ssh_session_present_   = nullptr;
-		ReadLidStateFn        read_lid_state_        = nullptr;
-		CheckModelReadinessFn check_model_readiness_ = nullptr;
+		void               *context_             = nullptr;
+		SshSessionPresentFn ssh_session_present_ = nullptr;
+		ReadLidStateFn      read_lid_state_      = nullptr;
 	};
 
-	auto ClassifyModelReadiness(const howdy::native::UserModelReadinessResult &readiness)
+	// The model state the runtime session got from its opener or the auth helper.
+	auto ClassifyModelState(howdy::native::runtime_descriptor_message::ModelState state)
 	    -> ModelCondition;
+
+	// The user's model as the runtime session found it.
+	struct UserModelFinding {
+		ModelCondition condition = ModelCondition::kUnchecked;
+		// Why it is not usable, when known; logged for invalid storage.
+		std::string message;
+	};
 
 	auto ProductionAuthenticationEligibilityOperations() -> AuthenticationEligibilityOperations;
 
@@ -101,10 +95,9 @@ namespace howdy::pam::auth_eligibility {
 	                                     const AuthenticationConditions     &conditions)
 	    -> AuthenticationEligibilityResult;
 
-	auto EvaluateAuthenticationEligibility(pam_handle_t                              *pamh,
-	                                       const howdy::native::RuntimeConfig        &config,
-	                                       const char                                *username,
-	                                       const std::filesystem::path               &models_dir,
+	auto EvaluateAuthenticationEligibility(pam_handle_t                       *pamh,
+	                                       const howdy::native::RuntimeConfig &config,
+	                                       const char *username, const UserModelFinding &model,
 	                                       const AuthenticationEligibilityOperations &operations)
 	    -> AuthenticationEligibilityResult;
 

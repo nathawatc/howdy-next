@@ -1,6 +1,7 @@
 #include "../../src/runtime/auth_helper_process/internal.hpp"
 #include "module/auth_flow_test_groups.hpp"
 #include "protocol/compare_exit.hpp"
+#include "protocol/compare_verdict.hpp"
 #include "runtime/child_process.hpp"
 #include "runtime/compare_process.hpp"
 #include "runtime/compare_process_test_support.hpp"
@@ -383,8 +384,11 @@ namespace {
 			if (read(capture.spawn_gate_fd, &go, 1) != 1) {
 				_exit(EXIT_FAILURE);
 			}
-			const auto byte = static_cast<unsigned char>(howdy::native::CompareExit::kTooDark);
-			_exit(write(capture.adddup2_fd, &byte, 1) == 1 ? EXIT_SUCCESS : EXIT_FAILURE);
+			const auto byte    = static_cast<unsigned char>(howdy::native::CompareExit::kTooDark);
+			const auto verdict = howdy::test::prompt_coordinator::Dup2SourceFor(
+			    capture, howdy::native::compare_verdict::kFd);
+			_exit(verdict.has_value() && write(*verdict, &byte, 1) == 1 ? EXIT_SUCCESS
+			                                                            : EXIT_FAILURE);
 		}
 		capture.next_pid   = child_pid;
 		*request.child_pid = child_pid;
@@ -400,20 +404,15 @@ namespace {
 		const howdy::native::ScopedFd                      gate_write(gate.at(1));
 		const ScopedSigchldAction                          ignored(SIG_IGN, 0);
 		howdy::test::prompt_coordinator::PosixSpawnCapture capture;
-		capture.spawn_gate_fd    = gate_read.Get();
-		auto operations          = howdy::test::prompt_coordinator::PosixSpawnOperations(&capture);
-		operations.spawn         = SpawnVerdictWriter;
-		pid_t     child_pid      = -1;
-		int       raw_pidfd      = -1;
-		int       raw_verdict_fd = -1;
-		const int result         = howdy::pam::compare_process::Spawn(
-		    {
-		        .config_path     = "/etc/howdy/config.ini",
-		        .username        = "alice",
-		        .user_models_dir = "/etc/howdy/models",
-		        .staged_runtime  = false,
-		    },
-		    &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
+		capture.spawn_gate_fd = gate_read.Get();
+		auto operations       = howdy::test::prompt_coordinator::PosixSpawnOperations(&capture);
+		operations.spawn      = SpawnVerdictWriter;
+		pid_t                                                      child_pid      = -1;
+		int                                                        raw_pidfd      = -1;
+		int                                                        raw_verdict_fd = -1;
+		const howdy::test::prompt_coordinator::CompareRequestFiles files;
+		const int result = howdy::pam::compare_process::Spawn(
+		    files.Request(), &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
 		const howdy::native::ScopedFd pidfd(raw_pidfd);
 		const howdy::native::ScopedFd verdict_fd(raw_verdict_fd);
 		bool ok = Expect(ignored.Valid() && result == 0 && pidfd.Valid() && verdict_fd.Valid(),

@@ -1,17 +1,13 @@
 #include "module/auth_eligibility.hpp"
 
 #include "config/runtime_config.hpp"
+#include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/lid_probe.hpp"
 #include "runtime/session_probe.hpp"
-#include "storage/user_model_readiness.hpp"
-#include "storage/user_model_status.hpp"
 
-#include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <utility>
-
-#include <sys/types.h>
 
 namespace howdy::pam::auth_eligibility {
 
@@ -22,47 +18,19 @@ namespace howdy::pam::auth_eligibility {
 			return howdy::pam::runtime::ReadLidState();
 		}
 
-		auto ProductionCheckModelReadiness(void *context, const std::filesystem::path &models_dir,
-		                                   const char *username)
-		    -> howdy::native::UserModelReadinessResult {
-			(void)context;
-			if (username == nullptr || *username == '\0') {
-				return {
-				    .status        = howdy::native::UserModelStatus::kInvalidUser,
-				    .error_message = "Invalid username",
-				};
-			}
-			return howdy::native::CheckUserModelReadiness(models_dir, std::string(username),
-			                                              static_cast<uid_t>(0));
-		}
-
 	}  // namespace
 
-	auto ClassifyModelReadiness(const howdy::native::UserModelReadinessResult &readiness)
+	auto ClassifyModelState(howdy::native::runtime_descriptor_message::ModelState state)
 	    -> ModelCondition {
-		using enum howdy::native::UserModelStatus;
-		switch (readiness.status) {
-			case kOk:
+		using enum howdy::native::runtime_descriptor_message::ModelState;
+		switch (state) {
+			case kReady:
 				return ModelCondition::kReady;
+			case kMissing:
+				return ModelCondition::kMissingModel;
 			case kInvalidUser:
 				return ModelCondition::kInvalidUser;
-			case kNoModel:
-			case kNoModelDirectory:
-				return ModelCondition::kMissingModel;
-			case kIncompatibleBackend:
-			case kIncompatibleModel:
-			case kParseError:
-			case kInvalidShape:
-			case kOversized:
-			case kInsecurePath:
-			case kLockFailed:
-			case kWriteFailed:
-			case kAtomicExchangeUnsupported:
-			case kDeleteFailed:
-			case kDurabilityUncertain:
-			case kCommitStateUncertain:
-			case kDirectoryCreateFailed:
-			case kModelChanged:
+			case kInvalidStorage:
 				return ModelCondition::kInvalidStorage;
 		}
 		return ModelCondition::kInvalidStorage;
@@ -70,8 +38,7 @@ namespace howdy::pam::auth_eligibility {
 
 	auto ProductionAuthenticationEligibilityOperations() -> AuthenticationEligibilityOperations {
 		auto operations = AuthenticationEligibilityOperations::Create(
-		    nullptr, howdy::pam::runtime::ProductionSshSessionPresent, ProductionReadLidState,
-		    ProductionCheckModelReadiness);
+		    nullptr, howdy::pam::runtime::ProductionSshSessionPresent, ProductionReadLidState);
 		if (!operations.has_value()) {
 			throw std::logic_error(
 			    "Failed to create production authentication eligibility operations");
@@ -110,10 +77,9 @@ namespace howdy::pam::auth_eligibility {
 		return {.status = AuthenticationEligibility::kRuntimeError};
 	}
 
-	auto EvaluateAuthenticationEligibility(pam_handle_t                              *pamh,
-	                                       const howdy::native::RuntimeConfig        &config,
-	                                       const char                                *username,
-	                                       const std::filesystem::path               &models_dir,
+	auto EvaluateAuthenticationEligibility(pam_handle_t                       *pamh,
+	                                       const howdy::native::RuntimeConfig &config,
+	                                       const char *username, const UserModelFinding &model,
 	                                       const AuthenticationEligibilityOperations &operations)
 	    -> AuthenticationEligibilityResult {
 		AuthenticationConditions conditions;
@@ -150,12 +116,11 @@ namespace howdy::pam::auth_eligibility {
 			return result;
 		}
 
-		const auto readiness       = operations.CheckModelReadiness(models_dir, username);
-		conditions.model_condition = ClassifyModelReadiness(readiness);
+		conditions.model_condition = model.condition;
 		auto result                = DecideAuthenticationEligibility(config, conditions);
 		result.diagnostic_message  = std::move(lid_diagnostic);
 		if (result.status == AuthenticationEligibility::kInvalidModelStorage) {
-			result.error_message = readiness.error_message;
+			result.error_message = model.message;
 		}
 		return result;
 	}

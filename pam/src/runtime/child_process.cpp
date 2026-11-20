@@ -15,6 +15,7 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include <spawn.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
@@ -69,6 +70,24 @@ namespace {
 		return pidfd_wait_usable ? PeekChild(P_PIDFD, static_cast<id_t>(pidfd))
 		                         : PeekChild(P_PID, static_cast<id_t>(pid));
 	}
+
+#ifdef HOWDY_HAVE_PIDFD_SPAWN
+	// Whether pidfd_getpid may work in this process, tried on a pidfd for the process itself.
+	// Depending on the glibc and the kernel it reads /proc/self/fdinfo, which a chroot, a /proc
+	// from another PID namespace, or a security profile can make unreadable, or asks the kernel
+	// directly. Trying the call covers every case alike. When no pidfd for this process can be
+	// opened the probe proves nothing, and the posix_spawn fallback could not take its pidfd
+	// either, so pidfd_spawn is still tried: the check after it stops the child on a failure.
+	auto PidfdGetpidMayWork() noexcept -> bool {
+		const int self = pidfd_open(getpid(), 0);
+		if (self < 0) {
+			return true;
+		}
+		const bool works = pidfd_getpid(self) == getpid();
+		(void)close(self);
+		return works;
+	}
+#endif
 
 }  // namespace
 
@@ -152,6 +171,12 @@ namespace howdy::pam::runtime {
 			}
 			pidfd_wait_usable_ = false;
 		}
+		// Without a PID (the child was already gone when it was read), waitpid would take any
+		// child of the application.
+		if (pid_ <= 0) {
+			(void)ReapedElsewhere();
+			return ChildState::kError;
+		}
 		const pid_t result = howdy::native::RetryOnEintr([&] -> pid_t {
 			return waitpid(pid_, status, block ? 0 : WNOHANG);
 		});
@@ -190,6 +215,10 @@ namespace howdy::pam::runtime {
 	// application, nothing confirms the PID still names the child, so no signal is sent: compare
 	// and the helper end on their own timeouts, while a signal could reach an unrelated process.
 	auto TrackedChild::SignalByPid(int signal) noexcept -> int {
+		// Without a PID there is nothing to fall back to; kill(-1) would reach every process.
+		if (pid_ <= 0) {
+			return ReapedElsewhere();
+		}
 		switch (PeekTracked(pidfd_wait_usable_, pidfd_, pid_)) {
 			case ChildPeek::kNotOurs:
 				return ReapedElsewhere();
@@ -229,6 +258,11 @@ namespace howdy::pam::runtime {
 				// caller that loops on this never spins.
 				poll_pidfd = false;
 				continue;
+			}
+			// Without a pidfd wait or a PID there is nothing left to peek with, as in Wait.
+			if (!pidfd_wait_usable_ && pid_ <= 0) {
+				(void)ReapedElsewhere();
+				return false;
 			}
 			switch (PeekTracked(pidfd_wait_usable_, pidfd_, pid_)) {
 				case ChildPeek::kExited:
@@ -275,6 +309,70 @@ namespace howdy::pam::runtime {
 		}
 		TrackedChild child(child_pid, -1);
 		(void)KillAndReap(child);
+	}
+
+	// HOWDY_HAVE_PIDFD_SPAWN comes from the build (CMakeLists.txt) when the C library has
+	// pidfd_spawn and pidfd_getpid (glibc 2.39); without it only the posix_spawn path is built.
+	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+	auto SpawnChild(pid_t *pid, int *pidfd, const SpawnArguments &arguments) noexcept -> int {
+		*pid   = -1;
+		*pidfd = -1;
+#ifdef HOWDY_HAVE_PIDFD_SPAWN
+		// Where pidfd_getpid cannot give the child's PID, spawn as before pidfd_spawn:
+		// posix_spawn, then pidfd_open by PID.
+		if (!PidfdGetpidMayWork()) {
+			return posix_spawn(pid, arguments.path, arguments.actions, nullptr, arguments.argv,
+			                   arguments.envp);
+		}
+		int       spawned_pidfd = -1;
+		const int result = pidfd_spawn(&spawned_pidfd, arguments.path, arguments.actions, nullptr,
+		                               arguments.argv, arguments.envp);
+		if (result != ENOSYS) {
+			if (result != 0) {
+				return result;
+			}
+			// -1 (ESRCH) when the child already exited and the PAM application reaped it; the
+			// pidfd still names it.
+			const pid_t child_pid = pidfd_getpid(spawned_pidfd);
+			if (child_pid < 0 && errno != ESRCH) {
+				// The probe above passed, so this is unexpected (the descriptor limit reached, or
+				// /proc changed, meanwhile).
+				// It says nothing about the child, which may still be running: stop it through
+				// the pidfd, which needs no PID, and fail the spawn rather than report it gone.
+				const int getpid_error = errno;
+				// Signal first: without a PID, KillAndReap cannot signal where waitid(P_PIDFD) is
+				// missing (Linux 5.3), since its first wait then reads the child as gone. There,
+				// with neither a pidfd wait nor a PID, the killed child is left for the PAM
+				// application to reap. If the pidfd signal itself fails (a filter on the
+				// application), nothing else can name the child safely: it runs until its own
+				// timeout, and the spawn still fails.
+				(void)pidfd_send_signal(spawned_pidfd, SIGKILL, nullptr, 0);
+				TrackedChild child(-1, spawned_pidfd);
+				(void)KillAndReap(child);
+				(void)close(spawned_pidfd);
+				return getpid_error;
+			}
+			if (spawned_pidfd <= STDERR_FILENO) {
+				// Keep the long-lived descriptor clear of stdio, as OpenChildPidfd does.
+				const int moved = fcntl(spawned_pidfd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+				if (moved < 0) {
+					const int move_error = errno;
+					// The child is ours and still named by this pidfd: stop it before letting go.
+					TrackedChild child(child_pid, spawned_pidfd);
+					(void)KillAndReap(child);
+					(void)close(spawned_pidfd);
+					return move_error;
+				}
+				(void)close(spawned_pidfd);
+				spawned_pidfd = moved;
+			}
+			*pid   = child_pid;
+			*pidfd = spawned_pidfd;
+			return 0;
+		}
+#endif
+		return posix_spawn(pid, arguments.path, arguments.actions, nullptr, arguments.argv,
+		                   arguments.envp);
 	}
 
 	auto TakeSpawnedChildPidfd(pid_t child_pid, int *error) noexcept -> int {

@@ -95,3 +95,43 @@ howdy_add_native_test(
  native-cpu-topology
  tests/support/cpu_topology_test.cpp
 )
+
+howdy_add_native_test(
+ howdy_runtime_descriptor_message_test
+ native-runtime-descriptor-message
+ tests/protocol/runtime_descriptor_message_test.cpp
+)
+target_link_libraries(
+ howdy_runtime_descriptor_message_test
+ PRIVATE howdy_runtime_descriptor_message
+)
+
+# The fuzz entry, run over fixed inputs so every build exercises it.
+howdy_add_native_test(
+ howdy_runtime_descriptor_message_fuzz_replay
+ native-runtime-descriptor-message-fuzz-replay
+ tests/protocol/runtime_descriptor_message_fuzz.cpp
+ tests/protocol/runtime_descriptor_message_fuzz_replay.cpp
+)
+target_link_libraries(
+ howdy_runtime_descriptor_message_fuzz_replay
+ PRIVATE howdy_runtime_descriptor_message
+)
+
+if(HOWDY_ENABLE_FUZZING)
+  # The decoder is compiled in, so libFuzzer's coverage instrumentation reaches it.
+  add_executable(
+  howdy_runtime_descriptor_message_fuzzer
+  tests/protocol/runtime_descriptor_message_fuzz.cpp
+  src/protocol/runtime_descriptor_message.cpp
+ )
+  howdy_configure_native_test_target(howdy_runtime_descriptor_message_fuzzer)
+  target_compile_options(
+  howdy_runtime_descriptor_message_fuzzer
+  PRIVATE -fsanitize=fuzzer,address,undefined
+ )
+  target_link_options(
+  howdy_runtime_descriptor_message_fuzzer
+  PRIVATE -fsanitize=fuzzer,address,undefined
+ )
+endif()

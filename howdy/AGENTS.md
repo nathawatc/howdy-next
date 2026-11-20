@@ -10,7 +10,7 @@ targets.
 ## Subsystem Guides
 
 - [`src/app/AGENTS.md`](src/app/AGENTS.md): dispatcher, command catalog, completion
-- [`src/auth_helper/AGENTS.md`](src/auth_helper/AGENTS.md): privileged staging helper runtime
+- [`src/auth_helper/AGENTS.md`](src/auth_helper/AGENTS.md): setuid helper that opens runtime descriptors
 - [`src/cli/AGENTS.md`](src/cli/AGENTS.md): user-facing commands
 - [`src/compare/AGENTS.md`](src/compare/AGENTS.md): compare process and privilege drop
 - [`src/config/AGENTS.md`](src/config/AGENTS.md): config schema, parsing, secure writes
@@ -30,8 +30,9 @@ targets.
   duplicating bounded I/O, staged-file, or secure-path logic.
 - Use shared model readiness/integrity checks before inference or authentication.
 - Keep OpenCV include directories marked as system includes through `howdy_opencv`.
-- Shared auth-helper output keys live in `protocol/auth_helper_protocol.hpp`; reject malformed,
-  duplicate, unknown, or incomplete output.
+- The auth helper's `open` result is one message defined in
+  `protocol/runtime_descriptor_message.hpp`, with a shared encoder and decoder; reject anything
+  else.
 
 ## CMake and Tests
 

@@ -7,8 +7,7 @@
 
 auto main(int argc, char **argv) -> int {
 	const int exit_code = howdy::native::auth_helper::command::Run(argc, argv);
-	// A successful prepare ends with the completion record PAM may rely on. Flush and skip static
-	// teardown, which could still end the helper abnormally after that record.
+	// The result is already sent; flush and skip static teardown, which has nothing left to do.
 	std::cout.flush();
 	(void)std::fflush(nullptr);
 	_exit(exit_code);

@@ -44,7 +44,7 @@ See the [wiki](https://github.com/nathawatc/howdy-next/wiki/NixOS) for installat
 Dependencies:
 
 ```text
-linux>=5.3 glibc>=2.36, cmake>=3.31, acl, pkgconf, gettext, libevdev, libinih>=59, opencv>=5.0.0, libcurl>=7.85.0, openssl, yyjson>=0.12.0, pam
+linux>=5.3 glibc>=2.36, cmake>=3.31, pkgconf, gettext, libevdev, libinih>=59, opencv>=5.0.0, libcurl>=7.85.0, openssl, yyjson>=0.12.0, pam
 ```
 
 The PAM compare requires `pidfd_open`, `eventfd`, and `ppoll`. Configure does not probe the kernel.
@@ -81,6 +81,11 @@ Install with the configured prefix:
 ```sh
 sudo cmake --install build/release
 ```
+
+After installing or updating, reboot. A running PAM application (display manager, lock screen,
+polkit agent) keeps the `pam_howdy.so` it loaded, and that module works only with the helpers
+installed alongside it. The reboot also clears the runtime copies under `/run/howdy` that older
+versions created.
 
 For packaging, use an absolute `DESTDIR`. Howdy validates staged install paths and rejects unsafe
 symlinks, hard links, special files, and non-copy `CMAKE_INSTALL_MODE` values. Existing `config.ini`

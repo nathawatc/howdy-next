@@ -4,6 +4,7 @@
 #include "storage/user_models.hpp"
 #include "support/atomic_files.hpp"
 #include "support/file_lock.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -30,15 +31,18 @@ namespace howdy::native {
 	private:
 		std::filesystem::path path_;
 		ScopedFileLock        namespace_lock_;
-		ScopedFileLock        lock_;
-		bool                  created_empty_file_ = false;
-		mutable bool          completed_          = false;
+		// The model file, held open to check that the path still names it. Not locked: the
+		// namespace lock serializes writers, and a user holding a descriptor to the file from
+		// the auth helper could otherwise stall them with flock.
+		ScopedFd     file_;
+		bool         created_empty_file_ = false;
+		mutable bool completed_          = false;
 
 		UserModelStoreTransaction(std::filesystem::path path, ScopedFileLock namespace_lock,
-		                          ScopedFileLock lock, bool created_empty_file);
+		                          ScopedFd file, bool created_empty_file);
 
 		[[nodiscard]] auto Path() const -> const std::filesystem::path &;
-		[[nodiscard]] auto PathMatchesLockedFile() const -> bool;
+		[[nodiscard]] auto PathMatchesOpenedFile() const -> bool;
 		[[nodiscard]] auto Snapshot() const -> std::optional<UserModelFileSnapshot>;
 		[[nodiscard]] auto SnapshotMatches(const UserModelFileSnapshot &expected) const
 		    -> std::optional<bool>;
@@ -81,6 +85,13 @@ namespace howdy::native {
 			bool        strict_shape;
 		};
 
+		// How a descriptor that is already open is validated before its document is read.
+		struct OpenedModelReadPolicy {
+			// Required file owner; nullopt skips the owner check.
+			std::optional<uid_t> owner_uid;
+			bool                 treat_empty_as_no_model = false;
+		};
+
 		struct UserModelPathResult {
 			UserModelStatus       status = UserModelStatus::kOk;
 			std::string           error_message;
@@ -105,7 +116,7 @@ namespace howdy::native {
 		    -> user_model_codec::Document;
 		[[nodiscard]] static auto LoadDocumentFromFd(int fd, const std::filesystem::path &path,
 		                                             const UserModelExpectations &expectations,
-		                                             bool treat_empty_as_no_model)
+		                                             const OpenedModelReadPolicy &policy)
 		    -> user_model_codec::Document;
 		[[nodiscard]] static auto InspectRegularFileStatus(const std::filesystem::path &path,
 		                                                   std::string *message) -> UserModelStatus;
@@ -122,6 +133,9 @@ namespace howdy::native {
 		friend auto LoadUserModels(const std::string &user, const std::string &expected_backend,
 		                           std::optional<uid_t>                          owner_uid,
 		                           const file_security_internal::ValidationRoot &validation_root)
+		    -> UserModelLoadResult;
+		friend auto LoadUserModelsFromFd(int model_fd, const std::filesystem::path &display_path,
+		                                 const std::string &expected_backend, uid_t owner_uid)
 		    -> UserModelLoadResult;
 	};
 

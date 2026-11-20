@@ -167,7 +167,11 @@ namespace howdy::pam::auth_flow {
 					           "Face verification skipped: no enrolled face model");
 					return;
 				case AuthenticationEligibility::kInvalidModelStorage:
-					if (!result.error_message.empty()) {
+					// The auth helper logs its own reason and sends none, so say why here too.
+					if (result.error_message.empty()) {
+						pam_syslog(pamh, LOG_ERR,
+						           "Face verification skipped: user model storage is invalid");
+					} else {
 						pam_syslog(pamh, LOG_ERR, "%s", result.error_message.c_str());
 					}
 					return;
@@ -196,12 +200,16 @@ namespace howdy::pam::auth_flow {
 			return pam_res;
 		}
 
-		howdy::pam::RuntimeSession runtime_session(kConfiguredConfigPath, kConfiguredUserModelsDir,
-		                                           dependencies.runtime_session);
+		howdy::pam::RuntimeSession runtime_session(
+		    {.config_path = kConfiguredConfigPath, .user_models_dir = kConfiguredUserModelsDir},
+		    dependencies.runtime_owner_uid, dependencies.runtime_session);
 
 		const auto runtime_result = runtime_session.LoadForUser(username);
-		if (runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed ||
+		if (runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kOpenFailed ||
 		    runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded) {
+			if (!runtime_result.error_message.empty()) {
+				pam_syslog(pamh, LOG_ERR, "%s", runtime_result.error_message.c_str());
+			}
 			return PAM_SYSTEM_ERR;
 		}
 
@@ -221,7 +229,13 @@ namespace howdy::pam::auth_flow {
 
 		const auto eligibility_result =
 		    howdy::pam::auth_eligibility::EvaluateAuthenticationEligibility(
-		        pamh, config, username, runtime_session.UserModelsDir(), dependencies.eligibility);
+		        pamh, config, username,
+		        {
+		            .condition = howdy::pam::auth_eligibility::ClassifyModelState(
+		                runtime_session.ModelState()),
+		            .message = runtime_session.ModelMessage(),
+		        },
+		        dependencies.eligibility);
 		LogEligibilityResult(pamh, eligibility_result);
 		pam_res = MapAuthenticationEligibility(eligibility_result);
 		if (pam_res != PAM_SUCCESS) {
@@ -252,10 +266,9 @@ namespace howdy::pam::auth_flow {
 		    dependencies.prompt_coordinator, *coordinator_timeout);
 
 		const howdy::pam::CompareLaunchRequest compare_request = {
-		    .config_path     = runtime_session.ConfigPath(),
-		    .username        = username,
-		    .user_models_dir = runtime_session.UserModelsDir(),
-		    .staged_runtime  = runtime_session.Staged(),
+		    .username  = username,
+		    .config_fd = runtime_session.ConfigFd(),
+		    .model_fd  = runtime_session.ModelFd(),
 		};
 
 		return MapPromptResult(pamh, coordinator.Run(compare_request), username, config,

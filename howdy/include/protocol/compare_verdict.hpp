@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string_view>
+#include "protocol/inherited_fd.hpp"
 
 namespace howdy::native::compare_verdict {
 
@@ -15,15 +15,7 @@ namespace howdy::native::compare_verdict {
 	inline constexpr auto kEnvironmentValue = "3";
 	inline constexpr auto kEnvironmentEntry = "HOWDY_COMPARE_VERDICT_FD=3";
 
-	// The strings spell kFd out by hand; keep them in step with it.
-	static_assert(kFd >= 0 && kFd <= 9 && std::string_view(kEnvironmentValue).size() == 1 &&
-	              std::string_view(kEnvironmentValue).front() == '0' + kFd);
-	static_assert(
-	    std::string_view(kEnvironmentEntry).starts_with(kEnvironmentName) &&
-	    std::string_view(kEnvironmentEntry).ends_with(kEnvironmentValue) &&
-	    std::string_view(kEnvironmentEntry).size() ==
-	        std::string_view(kEnvironmentName).size() + 1 +
-	            std::string_view(kEnvironmentValue).size() &&
-	    std::string_view(kEnvironmentEntry).at(std::string_view(kEnvironmentName).size()) == '=');
+	static_assert(InheritedFdEntryMatches(kFd, kEnvironmentName, kEnvironmentValue,
+	                                      kEnvironmentEntry));
 
 }  // namespace howdy::native::compare_verdict

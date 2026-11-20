@@ -20,7 +20,6 @@ add_library(
  src/runtime/auth_helper_process.cpp
  src/runtime/auth_helper_process/internal.hpp
  src/runtime/auth_helper_process/io.cpp
- src/runtime/auth_helper_process/lease.cpp
  src/runtime/auth_helper_process/spawn.cpp
  src/runtime/child_process.cpp
  src/runtime/compare_process.cpp
@@ -30,10 +29,14 @@ add_library(
  src/runtime/session_probe.cpp
 )
 howdy_configure_pam_target(pam_runtime)
+if(HOWDY_HAVE_PIDFD_SPAWN)
+  # Public, so tests that check the pidfd_spawn path see the same choice.
+  target_compile_definitions(pam_runtime PUBLIC HOWDY_HAVE_PIDFD_SPAWN=1)
+endif()
 target_link_libraries(
  pam_runtime
- PUBLIC PAM::PAM
- PRIVATE howdy_runtime_config_loader pam_explicit_config_path
+ PUBLIC PAM::PAM howdy_runtime_descriptor_message
+ PRIVATE howdy_runtime_config_loader howdy_runtime_descriptors pam_explicit_config_path
 )
 
 add_library(
@@ -95,8 +98,7 @@ target_compile_definitions(
 target_link_libraries(
  pam_module
  PUBLIC PAM::PAM
- PRIVATE pam_options pam_prompt pam_runtime howdy_user_model_readiness
-         pam_explicit_config_path
+ PRIVATE pam_options pam_prompt pam_runtime pam_explicit_config_path
 )
 
 add_library(pam_entrypoint STATIC src/module/entrypoint.cpp)

@@ -5,8 +5,8 @@
 #include "runtime/compare_process.hpp"
 
 #include "paths.hpp"
+#include "protocol/compare_descriptors.hpp"
 #include "protocol/compare_exit.hpp"
-#include "protocol/compare_invocation.hpp"
 #include "protocol/compare_verdict.hpp"
 #include "runtime/child_process.hpp"
 #include "runtime/compare_launch.hpp"
@@ -26,6 +26,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <fcntl.h>
@@ -393,8 +394,13 @@ namespace {
 
 	auto CallPosixSpawn(const CompareSpawnRequest &request) -> int {
 		(void)request.context;
-		return posix_spawn(request.child_pid, request.path, request.actions, nullptr,
-		                   request.argv.data(), request.envp.data());
+		return howdy::pam::runtime::SpawnChild(request.child_pid, request.child_pidfd,
+		                                       {
+		                                           .path    = request.path,
+		                                           .actions = request.actions,
+		                                           .argv    = request.argv.data(),
+		                                           .envp    = request.envp.data(),
+		                                       });
 	}
 
 	constexpr CompareOperations kPosixSpawnOperations = {
@@ -407,10 +413,9 @@ namespace {
 	    .spawn                     = CallPosixSpawn,
 	};
 
-	// Moves `fd` to at least `floor`, unless it is there already. Both verdict socket ends stay
-	// above the verdict descriptor: PAM's end is long-lived and Howdy-owned, and compare's end is
-	// placed at the verdict descriptor in the child, where a dup2 onto itself would leave it
-	// close-on-exec.
+	// Moves `fd` to at least `floor`, unless it is there already. Every descriptor compare gets
+	// sits above the numbers it is placed at in the child, so no dup2 there lands on another
+	// source, and none is a dup2 onto itself, which would leave it close-on-exec.
 	auto RaiseFd(howdy::native::ScopedFd *fd, int floor) -> bool {
 		if (fd->Get() >= floor) {
 			return true;
@@ -426,7 +431,7 @@ namespace {
 	// The private socket pair compare reports its verdict on (protocol/compare_verdict.hpp).
 	auto OpenVerdictSocket(const CompareOperations &operations, howdy::native::ScopedFd *pam_end,
 	                       howdy::native::ScopedFd *compare_end) -> int {
-		using howdy::native::compare_verdict::kFd;
+		using howdy::native::compare_descriptors::kFirstUnusedFd;
 		std::array<int, 2> socket_fds = {-1, -1};
 		if (operations.socketpair(
 		        operations.context, AF_UNIX,
@@ -436,7 +441,7 @@ namespace {
 		}
 		pam_end->Reset(socket_fds.at(0));
 		compare_end->Reset(socket_fds.at(1));
-		if (!RaiseFd(pam_end, kFd + 1) || !RaiseFd(compare_end, kFd + 1)) {
+		if (!RaiseFd(pam_end, kFirstUnusedFd) || !RaiseFd(compare_end, kFirstUnusedFd)) {
 			const int error_number = errno;
 			pam_end->Reset();
 			compare_end->Reset();
@@ -445,23 +450,27 @@ namespace {
 		return 0;
 	}
 
-	// `verdict_socket_fd` is compare's end of the verdict socket, or -1; `*verdict_used` says
-	// whether compare got it, which a failure to add its file action can prevent.
+	// A copy of the borrowed `fd` above every descriptor compare is given, owned by the spawn.
+	auto CopyAboveCompareDescriptors(int fd, howdy::native::ScopedFd *copy) -> int {
+		copy->Reset(fcntl(fd, F_DUPFD_CLOEXEC, howdy::native::compare_descriptors::kFirstUnusedFd));
+		return copy->Valid() ? 0 : errno;
+	}
+
+	struct CompareChildDescriptors {
+		int verdict = -1;
+		int config  = -1;
+		int model   = -1;
+	};
+
+	// Places the verdict socket, config and model at their fixed numbers in compare and closes
+	// everything above them; all three are required.
 	auto SpawnCompareProcess(const howdy::pam::CompareLaunchRequest &request, pid_t *child_pid,
-	                         int verdict_socket_fd, bool *verdict_used,
+	                         int *child_pidfd, const CompareChildDescriptors &descriptors,
 	                         const CompareOperations &operations) -> int {
-		*verdict_used = false;
-		std::string compare_path(kCompareProcessPath);
-		std::string config_option(howdy::native::kCompareConfigOption);
-		std::string config_path(request.config_path);
-		std::string username(request.username);
-
-		std::array<char *, 5> args = {
-		    compare_path.data(), config_option.data(), config_path.data(), username.data(), nullptr,
-		};
-
-		std::string user_models_env =
-		    "HOWDY_USER_MODELS_DIR=" + std::string(request.user_models_dir);
+		namespace protocol = howdy::native::compare_descriptors;
+		std::string           compare_path(kCompareProcessPath);
+		std::string           username(request.username);
+		std::array<char *, 3> args = {compare_path.data(), username.data(), nullptr};
 
 		// Compare never calls BLAS, but a threaded BLAS linked into OpenCV starts its thread pool
 		// when the library loads and reserves address space per thread (about 128 MiB per OpenMP
@@ -470,62 +479,55 @@ namespace {
 		// values, never copied from the caller. If compare starts using BLAS-heavy OpenCV calls,
 		// revisit this.
 		auto                pins = std::ranges::to<std::vector<std::string>>(kCompareThreadPins);
+		std::string         verdict_env(howdy::native::compare_verdict::kEnvironmentEntry);
+		std::string         config_env(protocol::kConfigEnvironmentEntry);
+		std::string         model_env(protocol::kModelEnvironmentEntry);
 		std::vector<char *> environment;
-		environment.reserve(pins.size() + 3);
-		if (request.staged_runtime) {
-			environment.push_back(user_models_env.data());
-		}
+		environment.reserve(pins.size() + 4);
 		for (auto &pin : pins) {
 			environment.push_back(pin.data());
 		}
+		environment.push_back(verdict_env.data());
+		environment.push_back(config_env.data());
+		environment.push_back(model_env.data());
+		environment.push_back(nullptr);
+		const std::span<char *const> compare_env(environment);
 
 		posix_spawn_file_actions_t file_actions;
 		const int init_result = operations.file_actions_init(operations.context, &file_actions);
 		if (init_result != 0) {
 			return init_result;
 		}
-
-		// Compare's end of the verdict socket becomes its verdict descriptor, and everything above
-		// that is closed, including the end's original descriptor. Without the socket (none, or
-		// its action could not be added), compare runs as before: everything above stdio is
-		// closed and nothing is announced.
-		bool verdict_socket = false;
-		if (verdict_socket_fd >= 0) {
-			const int dup2_result = operations.file_actions_adddup2(
-			    operations.context, &file_actions, verdict_socket_fd,
-			    howdy::native::compare_verdict::kFd);
-			verdict_socket = dup2_result == 0;
-			if (!verdict_socket) {
-				syslog(LOG_AUTHPRIV | LOG_WARNING,
-				       "pam_howdy: Could not pass the compare verdict socket: %s (%d)",
-				       howdy::native::SystemErrorMessage(dup2_result).c_str(), dup2_result);
+		const auto add_actions = [&] -> int {
+			for (const auto &[source, target] : {
+			         std::pair{descriptors.verdict, howdy::native::compare_verdict::kFd},
+			         std::pair{descriptors.config, protocol::kConfigFd},
+			         std::pair{descriptors.model, protocol::kModelFd},
+			     }) {
+				if (const int result = operations.file_actions_adddup2(
+				        operations.context, &file_actions, source, target);
+				    result != 0) {
+					return result;
+				}
 			}
-		}
-		std::string verdict_env(howdy::native::compare_verdict::kEnvironmentEntry);
-		if (verdict_socket) {
-			environment.push_back(verdict_env.data());
-		}
-		environment.push_back(nullptr);
-		const std::span<char *const> compare_env(environment);
-
-		const int closefrom_result = operations.file_actions_addclosefrom(
-		    operations.context, &file_actions,
-		    verdict_socket ? howdy::native::compare_verdict::kFd + 1 : STDERR_FILENO + 1);
-		if (closefrom_result != 0) {
+			return operations.file_actions_addclosefrom(operations.context, &file_actions,
+			                                            protocol::kFirstUnusedFd);
+		};
+		if (const int actions_result = add_actions(); actions_result != 0) {
 			(void)operations.file_actions_destroy(operations.context, &file_actions);
-			return closefrom_result;
+			return actions_result;
 		}
 
 		const int spawn_result = operations.spawn({
-		    .context   = operations.context,
-		    .child_pid = child_pid,
-		    .path      = kCompareProcessPath,
-		    .actions   = &file_actions,
-		    .argv      = args,
-		    .envp      = compare_env,
+		    .context     = operations.context,
+		    .child_pid   = child_pid,
+		    .child_pidfd = child_pidfd,
+		    .path        = kCompareProcessPath,
+		    .actions     = &file_actions,
+		    .argv        = args,
+		    .envp        = compare_env,
 		});
 		(void)operations.file_actions_destroy(operations.context, &file_actions);
-		*verdict_used = verdict_socket && spawn_result == 0;
 		return spawn_result;
 	}
 
@@ -539,31 +541,63 @@ namespace howdy::pam::compare_process {
 
 	auto Spawn(const CompareLaunchRequest &request, pid_t *child_pid, int *child_pidfd,
 	           int *verdict_fd, const CompareOperations &operations) -> int {
-		if (child_pid == nullptr || child_pidfd == nullptr || verdict_fd == nullptr) {
+		if (child_pid == nullptr || child_pidfd == nullptr || verdict_fd == nullptr ||
+		    request.username.empty() || request.config_fd < 0 || request.model_fd < 0) {
 			return EINVAL;  // the pidfd is required, so there is nowhere to put a child without it
 		}
 		*child_pidfd = -1;
 		*verdict_fd  = -1;
 		howdy::native::ScopedFd verdict_pam_end;
 		howdy::native::ScopedFd verdict_compare_end;
-		// The socket only matters when the application reaps compare first; without it compare
-		// still runs, and such a wait fails closed as before.
 		if (const int error_number =
 		        OpenVerdictSocket(operations, &verdict_pam_end, &verdict_compare_end);
 		    error_number != 0) {
-			syslog(LOG_AUTHPRIV | LOG_WARNING,
+			syslog(LOG_AUTHPRIV | LOG_ERR,
 			       "pam_howdy: Could not open the compare verdict socket: %s (%d)",
 			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+			return error_number;
 		}
-		bool      verdict_used = false;
-		const int result       = SpawnCompareProcess(request, child_pid, verdict_compare_end.Get(),
-		                                             &verdict_used, operations);
-		// Only compare holds its end from here, so its exit ends the socket.
+		howdy::native::ScopedFd config;
+		howdy::native::ScopedFd model;
+		int copy_error = CopyAboveCompareDescriptors(request.config_fd, &config);
+		if (copy_error == 0) {
+			copy_error = CopyAboveCompareDescriptors(request.model_fd, &model);
+		}
+		if (copy_error != 0) {
+			syslog(LOG_AUTHPRIV | LOG_ERR,
+			       "pam_howdy: Could not prepare the compare descriptors: %s (%d)",
+			       howdy::native::SystemErrorMessage(copy_error).c_str(), copy_error);
+			return copy_error;
+		}
+		int       spawn_pidfd = -1;
+		const int result      = SpawnCompareProcess(request, child_pid, &spawn_pidfd,
+		                                            {
+		                                                .verdict = verdict_compare_end.Get(),
+		                                                .config  = config.Get(),
+		                                                .model   = model.Get(),
+		                                            },
+		                                            operations);
+		// Owned at once, so it is closed on every path below that does not hand it out.
+		howdy::native::ScopedFd taken_pidfd(spawn_pidfd);
+		// Only compare holds these from here, so its exit ends the verdict socket.
 		verdict_compare_end.Reset();
-		if (!verdict_used) {
-			verdict_pam_end.Reset();
+		config.Reset();
+		model.Reset();
+		if (result == 0 && taken_pidfd.Valid()) {
+			// Taken with the child. Compare has no gone path: one the application already reaped
+			// before its PID was read fails the spawn, as a pidfd_open that finds it gone does.
+			if (*child_pid <= 0) {
+				syslog(LOG_AUTHPRIV | LOG_ERR,
+				       "pam_howdy: Compare process was reaped elsewhere before its PID was read");
+				*child_pid = -1;
+				return ECHILD;
+			}
+			*child_pidfd = taken_pidfd.Release();
+			*verdict_fd  = verdict_pam_end.Release();
+			return 0;
 		}
-		// Taken before the PAM application can reap compare and let the PID be reused.
+		// Without one, taken right after spawn, before the PAM application can reap compare and
+		// let the PID be reused.
 		if (result == 0 && *child_pid > 0) {
 			// A pidfd opened later could name another process, so a failure fails the spawn.
 			int error_number = 0;

@@ -1,7 +1,6 @@
 #include "compare/args.hpp"
 
 #include "protocol/compare_exit.hpp"
-#include "protocol/compare_invocation.hpp"
 #include "support/user_names.hpp"
 
 #include <cstddef>
@@ -11,12 +10,10 @@
 
 namespace howdy::native {
 
-	auto ParseCompareArgs(int argc, char **argv, const std::string &default_config_path)
-	    -> CompareArgsParseResult {
+	auto ParseCompareArgs(int argc, char **argv) -> CompareArgsParseResult {
 		CompareArgsParseResult result;
-		result.args.config_path = default_config_path;
-		bool       user_seen    = false;
-		const auto arguments =
+		bool                   user_seen = false;
+		const auto             arguments =
 		    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
 
 		if (arguments.size() == 2) {
@@ -24,18 +21,13 @@ namespace howdy::native {
 			if (option == "--help" || option == "-h") {
 				result.status    = CompareArgsStatus::kHelp;
 				result.exit_code = CompareExit::kSuccess;
-				result.message =
-				    "Usage: " + std::string(arguments.front()) + " [--config PATH] <user>\n";
+				result.message   = "Usage: " + std::string(arguments.front()) + " <user>\n";
 				return result;
 			}
 		}
 
 		for (std::size_t index = 1; index < arguments.size(); ++index) {
 			const std::string_view arg(arguments.subspan(index, 1).front());
-			if (arg == kCompareConfigOption && index + 1 < arguments.size()) {
-				result.args.config_path = arguments.subspan(++index, 1).front();
-				continue;
-			}
 			if (!arg.empty() && arg.front() == '-') {
 				result.status    = CompareArgsStatus::kError;
 				result.exit_code = CompareExit::kAbort;

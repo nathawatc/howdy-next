@@ -1,16 +1,13 @@
 #include "auth_helper/command.hpp"
 
-#include "auth_helper/runtime.hpp"
-#include "protocol/auth_helper_protocol.hpp"
-#include "support/eintr.hpp"
+#include "auth_helper/runtime_descriptors.hpp"
+#include "config/runtime_paths.hpp"
+#include "protocol/runtime_descriptor_message.hpp"
 #include "support/passwd_lookup.hpp"
 #include "support/scoped_stream_capture.hpp"
 #include "support/user_names.hpp"
 
-#include <array>
-#include <cstdlib>
-#include <cstring>
-#include <filesystem>
+#include <cstddef>
 #include <functional>
 #include <iostream>
 #include <ranges>
@@ -23,13 +20,11 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syslog.h>
-#include <sys/types.h>
-#include <sys/uio.h>  // IWYU pragma: keep
 
 namespace howdy::native::auth_helper::command {
 	namespace {
 		auto Usage(const char *argv0) -> void {
-			std::cout << "Usage: " << argv0 << " prepare <user>\n";
+			std::cout << "Usage: " << argv0 << " open <user>\n";
 		}
 
 		auto Fail(const std::string &message) -> int {
@@ -37,7 +32,14 @@ namespace howdy::native::auth_helper::command {
 			return 1;
 		}
 
-		auto ValidLeaseSocket(int fd) -> bool {
+		// PAM points `open`'s stdio at /dev/null, so its failures also go to syslog.
+		auto FailAndLog(const std::string &message) -> int {
+			SyslogDiagnosticLines(message);
+			return Fail(message);
+		}
+
+		// An AF_UNIX SOCK_SEQPACKET socket, as PAM hands the helper on descriptor 3.
+		auto ValidSeqpacketSocket(int fd) -> bool {
 			struct stat stat{};
 			if (fstat(fd, &stat) != 0 || !S_ISSOCK(stat.st_mode)) {
 				return false;
@@ -52,68 +54,7 @@ namespace howdy::native::auth_helper::command {
 			return getsockname(fd, &address, &size) == 0 && address.sa_family == AF_UNIX;
 		}
 
-		// Whether the PAM module asked for the completion record; one loaded before an upgrade does
-		// not, and gets the lease socket it expects.
-		auto CompletionRequested() -> bool {
-			const char *const request = std::getenv(auth_helper_protocol::kCompletionRequestName);
-			return request != nullptr &&
-			       std::string_view(request) == auth_helper_protocol::kCompletionRequestValue;
-		}
-
-		struct LeaseTransfer {
-			int socket_fd;
-			int lease_fd;
-		};
-
-		auto SendLease(LeaseTransfer transfer) -> bool {
-			char  marker = 'L';
-			iovec payload{.iov_base = &marker, .iov_len = 1};
-			alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(int))> control{};
-			msghdr                                                     message{};
-			message.msg_iov        = &payload;
-			message.msg_iovlen     = 1;
-			message.msg_control    = control.data();
-			message.msg_controllen = control.size();
-			cmsghdr *header        = CMSG_FIRSTHDR(&message);
-			header->cmsg_level     = SOL_SOCKET;
-			header->cmsg_type      = SCM_RIGHTS;
-			header->cmsg_len       = CMSG_LEN(sizeof(int));
-			std::memcpy(CMSG_DATA(header), &transfer.lease_fd, sizeof(transfer.lease_fd));
-			return RetryOnEintr([&] -> ssize_t {
-				       return sendmsg(transfer.socket_fd, &message, MSG_NOSIGNAL);
-			       }) == 1;
-		}
-
-		auto SendCompletionRecord(int lease_socket_fd) -> bool {
-			const char marker = auth_helper_protocol::kCompletionMarker;
-			return RetryOnEintr([&] -> ssize_t {
-				       return send(lease_socket_fd, &marker, sizeof(marker), MSG_NOSIGNAL);
-			       }) == static_cast<ssize_t>(sizeof(marker));
-		}
-
 	}  // namespace
-
-	auto PrintPreparedPaths(const std::filesystem::path &config_path,
-	                        const std::filesystem::path &user_models_dir) -> void {
-		using howdy::native::auth_helper_protocol::kConfigPathKey;
-		using howdy::native::auth_helper_protocol::kUserModelsDirKey;
-		std::cout << kConfigPathKey << "=" << config_path.string() << "\n";
-		std::cout << kUserModelsDirKey << "=" << user_models_dir.string() << "\n";
-	}
-
-	auto FinishPrepare(bool succeeded, int lease_socket_fd) -> int {
-		if (!succeeded) {
-			return 1;
-		}
-		// Sent only now, after everything that could still fail, so the record means the
-		// prepare finished. Only returning (destroying locals whose destructors cannot fail),
-		// the flush and _exit in main follow it.
-		if (CompletionRequested() && !SendCompletionRecord(lease_socket_fd)) {
-			std::cerr << "Failed to send the completion record\n";
-			return 1;
-		}
-		return 0;
-	}
 
 	void SyslogDiagnosticLines(std::string_view text) {
 		if (text.empty()) {
@@ -145,48 +86,54 @@ namespace howdy::native::auth_helper::command {
 		return succeeded;
 	}
 
-	auto PrepareForUser(const std::string &user) -> int {
+	auto OpenForUser(const std::string &user) -> int {
+		namespace message = howdy::native::runtime_descriptor_message;
 		if (geteuid() != 0) {
-			return Fail("howdy-auth-helper must be installed setuid root");
+			return FailAndLog("howdy-auth-helper must be installed setuid root");
 		}
 		if (!howdy::native::IsValidModelUserName(user)) {
-			return Fail(howdy::native::kInvalidUserNameMessage);
+			return FailAndLog(std::string(howdy::native::kInvalidUserNameMessage));
 		}
-		const uid_t uid   = getuid();
-		const auto  entry = howdy::native::LookupPasswdByUid(uid);
+		const auto entry = howdy::native::LookupPasswdByUid(getuid());
 		if (!entry.has_value()) {
-			return Fail("Failed to resolve calling user");
+			return FailAndLog("Failed to resolve calling user");
 		}
 		if (entry->name.empty() || user != entry->name) {
-			return Fail("howdy-auth-helper can only prepare auth files for the calling user");
+			return FailAndLog("howdy-auth-helper can only open runtime files for the calling user");
 		}
-		if (!ValidLeaseSocket(auth_helper_protocol::kLeaseSocketFd)) {
-			return Fail("howdy-auth-helper requires an inherited lease socket on descriptor 3");
+		if (!ValidSeqpacketSocket(message::kHelperSocketFd)) {
+			return FailAndLog(
+			    "howdy-auth-helper requires an inherited descriptor socket on descriptor 3");
 		}
 
-		const bool succeeded = RunWithQuietDiagnostics([&] -> bool {
-			auto prepared = howdy::native::auth_helper::PrepareRuntimeAuthFiles(user, {.uid = uid});
-			if (!prepared.has_value() || !prepared->lease_fd.Valid()) {
+		const bool sent = RunWithQuietDiagnostics([&] -> bool {
+			// The setuid helper ignores HOWDY_CONFIG and HOWDY_USER_MODELS_DIR for an
+			// unprivileged caller (runtime_paths.cpp), so these are the installed locations.
+			const auto opened =
+			    OpenRuntimeDescriptors(user, {
+			                                     .config          = ResolveConfigPath(),
+			                                     .user_models_dir = ResolveUserModelsDir(),
+			                                     .owner_uid       = 0,
+			                                 });
+			if (!opened.ok) {
+				std::cerr << opened.error_message << "\n";
 				return false;
 			}
-			const bool sent = SendLease({
-			    .socket_fd = auth_helper_protocol::kLeaseSocketFd,
-			    .lease_fd  = prepared->lease_fd.Get(),
-			});
-			prepared->lease_fd.Reset();
-			if (!sent) {
-				std::cerr << "Failed to transfer runtime lease\n";
-				return false;
+			if (!opened.model_message.empty()) {
+				std::cerr << opened.model_message << "\n";
 			}
-			PrintPreparedPaths(prepared->config_path, prepared->user_models_dir);
-			std::cout.flush();
-			if (!std::cout.good()) {
-				std::cerr << "Failed to write prepared runtime paths\n";
+			if (!message::SendMessage(message::kHelperSocketFd,
+			                          {
+			                              .model_state = opened.model_state,
+			                              .config_fd   = opened.config.Get(),
+			                              .model_fd    = opened.model.Get(),
+			                          })) {
+				std::cerr << "Failed to send the runtime descriptors\n";
 				return false;
 			}
 			return true;
 		});
-		return FinishPrepare(succeeded, auth_helper_protocol::kLeaseSocketFd);
+		return sent ? 0 : 1;
 	}
 
 	auto Run(int argc, char **argv) -> int {
@@ -200,9 +147,8 @@ namespace howdy::native::auth_helper::command {
 				return 0;
 			}
 		}
-		if (arguments.size() == 3 &&
-		    std::string_view(arguments.subspan(1, 1).front()) == "prepare") {
-			return PrepareForUser(arguments.subspan(2, 1).front());
+		if (arguments.size() == 3 && std::string_view(arguments.subspan(1, 1).front()) == "open") {
+			return OpenForUser(arguments.subspan(2, 1).front());
 		}
 		Usage(program);
 		return 1;

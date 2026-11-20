@@ -27,6 +27,21 @@ howdy_add_pam_test(
 target_link_libraries(pam_lid_probe_test PRIVATE pam_runtime)
 
 howdy_add_pam_test(
+ pam_child_spawn_test
+ pam-child-spawn
+ tests/runtime/child_spawn_test.cpp
+)
+target_link_libraries(pam_child_spawn_test PRIVATE pam_runtime)
+# Lets the test stand in for a kernel without clone3 or a pidfd_getpid that fails; harmless
+# where glibc has no pidfd_spawn.
+target_link_options(
+ pam_child_spawn_test
+ PRIVATE
+ "LINKER:--wrap=pidfd_spawn"
+ "LINKER:--wrap=pidfd_getpid"
+)
+
+howdy_add_pam_test(
  pam_runtime_session_test
  pam-runtime-session
  tests/runtime/runtime_session_test.cpp
@@ -37,5 +52,3 @@ target_link_libraries(
  pam_runtime_session_test
  PRIVATE pam_runtime pam_explicit_config_path
 )
-target_link_options(pam_runtime_session_test PRIVATE "LINKER:--wrap=read"
-                      "LINKER:--wrap=__read_chk")
