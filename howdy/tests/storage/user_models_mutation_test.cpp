@@ -6,8 +6,10 @@
 #include "storage/user_models.hpp"
 #include "storage/user_models_test_support.hpp"
 #include "support/face_metric.hpp"
+#include "test_support.hpp"
 
 #include <cstddef>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -16,8 +18,13 @@
 #include <system_error>
 
 #include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
 
+#include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 namespace howdy::test::user_models {
 
@@ -406,6 +413,31 @@ namespace howdy::test::user_models {
 			                                 std::istreambuf_iterator<char>());
 			ok &= Expect(persisted_text.contains("future_field"),
 			             "append preserves unknown fields in existing entries");
+		}
+		{
+			// The auth helper hands a user a read-only descriptor to their model, which the user
+			// may flock and keep. Writers must not wait for that: they lock only the directory.
+			// The write runs in a child under an alarm, so a wait fails instead of hanging.
+			const auto                  before = howdy::test::ReadFile(model_path);
+			const howdy::test::ScopedFd held(open(model_path.c_str(), O_RDONLY | O_CLOEXEC));
+			ok &= Expect(held.Valid() && flock(held.Get(), LOCK_SH | LOCK_NB) == 0,
+			             "hold a shared lock on the model file, as a user could");
+			constexpr unsigned int write_alarm_seconds = 10;
+			const pid_t            writer              = fork();
+			if (writer == 0) {
+				alarm(write_alarm_seconds);
+				const auto appended =
+				    howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
+				_exit(appended.status == howdy::native::UserModelStatus::kOk ? EXIT_SUCCESS
+				                                                             : EXIT_FAILURE);
+			}
+			int status = 0;
+			ok &= Expect(writer > 0 && waitpid(writer, &status, 0) == writer && WIFEXITED(status) &&
+			                 WEXITSTATUS(status) == EXIT_SUCCESS,
+			             "a user's lock on the model file does not stall a writer");
+			// Later tests expect the two entries above.
+			ok &= Expect(WriteFile(model_path, before) && chmod(model_path.c_str(), 0600) == 0,
+			             "restore the model after the locked write");
 		}
 		return ok;
 	}

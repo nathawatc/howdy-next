@@ -24,9 +24,13 @@ Preserve codec grammar, strict/non-strict behavior, numeric and nesting limits, 
 rejection, finite encodings, model-count/encoding-count bounds, IDs, compatibility checks, and
 serialization behavior.
 
-`user_model_store.cpp` owns secure open → lock → snapshot/identity check → mutate/remove → staged
-commit/exchange → rollback/cleanup → durability. Keep this transaction cohesive; do not split it for
-LOC.
+`user_model_store.cpp` owns namespace lock → secure open → snapshot/identity check → mutate/remove
+→ staged commit/exchange → rollback/cleanup → durability. Keep this transaction cohesive; do not
+split it for LOC.
+
+Writers lock only the user-models directory (`LockModelNamespace`), never the model file: the auth
+helper hands each user a read-only descriptor to their own model, and a `flock` a user holds on it
+must not stall root's writers.
 
 `LoadUserModelsFromFd` loads from a descriptor another process opened, with the same rules as
 `LoadRuntimeConfigFromFd`: no path walk, an explicit owner, open read-only and not `O_PATH`, one

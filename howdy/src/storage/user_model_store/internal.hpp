@@ -4,6 +4,7 @@
 #include "storage/user_models.hpp"
 #include "support/atomic_files.hpp"
 #include "support/file_lock.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -30,15 +31,18 @@ namespace howdy::native {
 	private:
 		std::filesystem::path path_;
 		ScopedFileLock        namespace_lock_;
-		ScopedFileLock        lock_;
-		bool                  created_empty_file_ = false;
-		mutable bool          completed_          = false;
+		// The model file, held open to check that the path still names it. Not locked: the
+		// namespace lock serializes writers, and a user holding a descriptor to the file from
+		// the auth helper could otherwise stall them with flock.
+		ScopedFd     file_;
+		bool         created_empty_file_ = false;
+		mutable bool completed_          = false;
 
 		UserModelStoreTransaction(std::filesystem::path path, ScopedFileLock namespace_lock,
-		                          ScopedFileLock lock, bool created_empty_file);
+		                          ScopedFd file, bool created_empty_file);
 
 		[[nodiscard]] auto Path() const -> const std::filesystem::path &;
-		[[nodiscard]] auto PathMatchesLockedFile() const -> bool;
+		[[nodiscard]] auto PathMatchesOpenedFile() const -> bool;
 		[[nodiscard]] auto Snapshot() const -> std::optional<UserModelFileSnapshot>;
 		[[nodiscard]] auto SnapshotMatches(const UserModelFileSnapshot &expected) const
 		    -> std::optional<bool>;

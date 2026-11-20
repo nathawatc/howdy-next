@@ -47,7 +47,7 @@ namespace howdy::native {
 		constexpr auto             kUserModelFileTooLargeMessage =
 		    "User model file is too large or unreadable: ";
 		constexpr auto kUserModelFileReadFailedMessage = "Failed to read user model file: ";
-		constexpr auto kModelFileLockFailedMessage     = "Failed to lock model file";
+		constexpr auto kModelFileLockFailedMessage     = "Failed to lock or open model file";
 
 		auto StoreListFailure(UserModelStatus status, std::string message) -> UserModelListResult {
 			return UserModelListResult{
@@ -165,7 +165,7 @@ namespace howdy::native {
 		}
 
 		auto WriteModelsAtomically(const std::filesystem::path      &path,
-		                           const user_model_codec::Document &document, int locked_fd)
+		                           const user_model_codec::Document &document, int opened_fd)
 		    -> AtomicFileCommitResult {
 			const auto serialized = user_model_codec::SerializeDocument(document);
 			if (!serialized.has_value() ||
@@ -191,7 +191,7 @@ namespace howdy::native {
 			if (hooks.before_write_commit) {
 				hooks.before_write_commit(path);
 			}
-			if (!PathIdentifiesFd(path, locked_fd)) {
+			if (!PathIdentifiesFd(path, opened_fd)) {
 				CleanupStagedFile(*staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}
@@ -209,7 +209,7 @@ namespace howdy::native {
 				           ? AtomicFileCommitResult::kAtomicExchangeUnsupported
 						   : AtomicFileCommitResult::kNotCommitted;
 			}
-			if (!PathIdentifiesFd(staged->path, locked_fd)) {
+			if (!PathIdentifiesFd(staged->path, opened_fd)) {
 				if (ExchangePaths(staged->path, path, true) == ExchangeResult::kSuccess) {
 					CleanupStagedFile(*staged);
 					return AtomicFileCommitResult::kNotCommitted;
@@ -229,7 +229,7 @@ namespace howdy::native {
 			                     : AtomicFileCommitResult::kCommittedSyncFailed;
 		}
 
-		auto RemoveLockedFile(const std::filesystem::path &path, int fd) -> AtomicFileCommitResult {
+		auto RemoveOpenedFile(const std::filesystem::path &path, int fd) -> AtomicFileCommitResult {
 			if (!PathIdentifiesFd(path, fd)) {
 				return AtomicFileCommitResult::kNotCommitted;
 			}
@@ -252,16 +252,19 @@ namespace howdy::native {
 					   : AtomicFileCommitResult::kCommittedSyncFailed;
 		}
 
-		struct LockedUserModelFile {
+		struct OpenedUserModelFile {
 			ScopedFileLock namespace_lock;
-			ScopedFileLock lock;
+			ScopedFd       file;
 			bool           created_empty_file = false;
 		};
 
 		auto LockModelNamespace(const std::filesystem::path &path)
 		    -> std::optional<ScopedFileLock> {
 			// Serializes cooperating UserModelStore writers only. Parent-directory write
-			// permission still allows uncooperative actors to rename or unlink entries.
+			// permission still allows uncooperative actors to rename or unlink entries. This is
+			// the writers' only lock: the model file itself is never locked, because the auth
+			// helper hands each user a read-only descriptor to their model, and a flock a user
+			// holds on it would otherwise stall root's writers, all of them behind this lock.
 			ScopedFd fd(
 			    open(path.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
 			if (!fd.Valid() || RetryOnEintr([&] -> int {
@@ -273,8 +276,9 @@ namespace howdy::native {
 			return ScopedFileLock(std::move(fd));
 		}
 
-		auto OpenAndLockModelFile(const std::filesystem::path &path, bool create_if_missing)
-		    -> std::optional<LockedUserModelFile> {
+		auto LockNamespaceAndOpenModelFile(const std::filesystem::path &path,
+		                                   bool                         create_if_missing)
+		    -> std::optional<OpenedUserModelFile> {
 			auto namespace_lock = LockModelNamespace(path);
 			if (!namespace_lock.has_value()) {
 				return std::nullopt;
@@ -291,16 +295,13 @@ namespace howdy::native {
 			}
 			struct stat opened_file{};
 			if (fstat(fd.Get(), &opened_file) != 0 ||
-			    !OpenedModelFileIsSecure(opened_file, DefaultSecureOwnerUid()) ||
-			    RetryOnEintr([&] -> int {
-				    return flock(fd.Get(), LOCK_EX);
-			    }) != 0) {
+			    !OpenedModelFileIsSecure(opened_file, DefaultSecureOwnerUid())) {
 				return std::nullopt;
 			}
 
-			return LockedUserModelFile{
+			return OpenedUserModelFile{
 			    .namespace_lock     = std::move(*namespace_lock),
-			    .lock               = ScopedFileLock(std::move(fd)),
+			    .file               = std::move(fd),
 			    .created_empty_file = created_empty_file,
 			};
 		}
@@ -327,22 +328,21 @@ namespace howdy::native {
 
 	UserModelStoreTransaction::UserModelStoreTransaction(std::filesystem::path path,
 	                                                     ScopedFileLock        namespace_lock,
-	                                                     ScopedFileLock        lock,
-	                                                     bool                  created_empty_file)
+	                                                     ScopedFd file, bool created_empty_file)
 	    : path_(std::move(path))
 	    , namespace_lock_(std::move(namespace_lock))
-	    , lock_(std::move(lock))
+	    , file_(std::move(file))
 	    , created_empty_file_(created_empty_file) {}
 
 	UserModelStoreTransaction::~UserModelStoreTransaction() {
-		if (!created_empty_file_ || completed_ || !PathMatchesLockedFile()) {
+		if (!created_empty_file_ || completed_ || !PathMatchesOpenedFile()) {
 			return;
 		}
 		struct stat opened_file{};
-		if (fstat(lock_.Get(), &opened_file) != 0 || opened_file.st_size != 0) {
+		if (fstat(file_.Get(), &opened_file) != 0 || opened_file.st_size != 0) {
 			return;
 		}
-		(void)RemoveLockedFile(path_, lock_.Get());
+		(void)RemoveOpenedFile(path_, file_.Get());
 	}
 
 	auto UserModelStoreTransaction::Path() const -> const std::filesystem::path & {
@@ -362,16 +362,16 @@ namespace howdy::native {
 		return SnapshotsMatch(*current, expected);
 	}
 
-	auto UserModelStoreTransaction::PathMatchesLockedFile() const -> bool {
-		return PathIdentifiesFd(path_, lock_.Get());
+	auto UserModelStoreTransaction::PathMatchesOpenedFile() const -> bool {
+		return PathIdentifiesFd(path_, file_.Get());
 	}
 
 	auto UserModelStoreTransaction::WriteDocument(const user_model_codec::Document &document) const
 	    -> AtomicFileCommitResult {
-		if (!PathMatchesLockedFile()) {
+		if (!PathMatchesOpenedFile()) {
 			return AtomicFileCommitResult::kNotCommitted;
 		}
-		const auto result = WriteModelsAtomically(path_, document, lock_.Get());
+		const auto result = WriteModelsAtomically(path_, document, file_.Get());
 		if (AtomicFileMayHaveCommitted(result)) {
 			completed_ = true;
 		}
@@ -379,7 +379,7 @@ namespace howdy::native {
 	}
 
 	auto UserModelStoreTransaction::RemoveFile() const -> AtomicFileCommitResult {
-		const auto result = RemoveLockedFile(path_, lock_.Get());
+		const auto result = RemoveOpenedFile(path_, file_.Get());
 		if (AtomicFileMayHaveCommitted(result)) {
 			completed_ = true;
 		}
@@ -609,8 +609,8 @@ namespace howdy::native {
 		if (user_model_store_test_hooks::Current().before_lock) {
 			user_model_store_test_hooks::Current().before_lock(path_result.path);
 		}
-		auto locked_file = OpenAndLockModelFile(path_result.path, true);
-		if (!locked_file.has_value()) {
+		auto opened_model = LockNamespaceAndOpenModelFile(path_result.path, true);
+		if (!opened_model.has_value()) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(
 			        StoreListFailure(UserModelStatus::kLockFailed, kModelFileLockFailedMessage)),
@@ -627,23 +627,23 @@ namespace howdy::native {
 			        StoreListFailure(secured_path.status, secured_path.error_message)),
 			};
 		}
-		if (!PathIdentifiesFd(path_result.path, locked_file->lock.Get())) {
+		if (!PathIdentifiesFd(path_result.path, opened_model->file.Get())) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(StoreListFailure(
 			        UserModelStatus::kModelChanged, std::string(kUserModelChangedMessage))),
 			};
 		}
 		auto document =
-		    LoadDocumentFromFd(locked_file->lock.Get(), path_result.path,
+		    LoadDocumentFromFd(opened_model->file.Get(), path_result.path,
 			                   {.backend = {}, .model = {}, .strict_shape = true},
 			                   {
 		                           .owner_uid               = DefaultSecureOwnerUid(),
-		                           .treat_empty_as_no_model = locked_file->created_empty_file,
+		                           .treat_empty_as_no_model = opened_model->created_empty_file,
 		                       });
 		return UserModelStoreMutationResult{
 		    .transaction = UserModelStoreTransaction(
-		        path_result.path, std::move(locked_file->namespace_lock),
-		        std::move(locked_file->lock), locked_file->created_empty_file),
+		        path_result.path, std::move(opened_model->namespace_lock),
+		        std::move(opened_model->file), opened_model->created_empty_file),
 		    .document = std::move(document),
 		};
 	}
@@ -669,8 +669,8 @@ namespace howdy::native {
 		if (user_model_store_test_hooks::Current().before_lock) {
 			user_model_store_test_hooks::Current().before_lock(path_result.path);
 		}
-		auto locked_file = OpenAndLockModelFile(path_result.path, false);
-		if (!locked_file.has_value()) {
+		auto opened_model = LockNamespaceAndOpenModelFile(path_result.path, false);
+		if (!opened_model.has_value()) {
 			return UserModelStoreTransactionResult{
 			    .status        = UserModelStatus::kLockFailed,
 			    .error_message = kModelFileLockFailedMessage,
@@ -696,7 +696,7 @@ namespace howdy::native {
 			    .error_message = regular_error,
 			};
 		}
-		if (!PathIdentifiesFd(path_result.path, locked_file->lock.Get())) {
+		if (!PathIdentifiesFd(path_result.path, opened_model->file.Get())) {
 			return UserModelStoreTransactionResult{
 			    .status        = UserModelStatus::kModelChanged,
 			    .error_message = std::string(kUserModelChangedMessage),
@@ -705,8 +705,8 @@ namespace howdy::native {
 		return UserModelStoreTransactionResult{
 		    .status      = UserModelStatus::kOk,
 		    .transaction = UserModelStoreTransaction(
-		        path_result.path, std::move(locked_file->namespace_lock),
-		        std::move(locked_file->lock), locked_file->created_empty_file),
+		        path_result.path, std::move(opened_model->namespace_lock),
+		        std::move(opened_model->file), opened_model->created_empty_file),
 		};
 	}
 
