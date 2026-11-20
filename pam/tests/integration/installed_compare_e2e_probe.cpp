@@ -1,3 +1,5 @@
+#include "protocol/compare_verdict.hpp"
+
 #include <cerrno>
 #include <cstddef>
 #include <cstdlib>
@@ -12,6 +14,7 @@
 #include <pwd.h>
 #include <unistd.h>
 
+#include <sys/socket.h>
 #include <sys/stat.h>
 
 namespace {
@@ -32,6 +35,24 @@ namespace {
 		return readable;
 	}
 
+	// PAM passes compare its end of the verdict socket (protocol/compare_verdict.hpp).
+	auto VerdictSocketInherited() -> bool {
+		using howdy::native::compare_verdict::kFd;
+		const char *const announced = getenv(howdy::native::compare_verdict::kEnvironmentName);
+		struct stat       metadata{};
+		int               domain = -1;
+		int               type   = -1;
+		socklen_t         length = sizeof(domain);
+		if (announced == nullptr ||
+		    std::string_view(announced) != howdy::native::compare_verdict::kEnvironmentValue ||
+		    fstat(kFd, &metadata) != 0 || !S_ISSOCK(metadata.st_mode) ||
+		    getsockopt(kFd, SOL_SOCKET, SO_DOMAIN, &domain, &length) != 0 || domain != AF_UNIX) {
+			return false;
+		}
+		length = sizeof(type);
+		return getsockopt(kFd, SOL_SOCKET, SO_TYPE, &type, &length) == 0 && type == SOCK_SEQPACKET;
+	}
+
 	auto Fail(const char *reason) -> int {
 		std::cerr << "Installed compare probe: " << reason << '\n';
 		return 1;
@@ -46,9 +67,12 @@ auto main(int argc, char **argv) -> int {
 	}
 	const char *config_arg = arguments.subspan(2).front();
 	const char *user       = arguments.back();
-	for (int fd = STDERR_FILENO + 1; fd < 128; ++fd) {
+	if (!VerdictSocketInherited()) {
+		return Fail("compare did not inherit the verdict socket");
+	}
+	for (int fd = howdy::native::compare_verdict::kFd + 1; fd < 128; ++fd) {
 		if (fcntl(fd, F_GETFD) != -1 || errno != EBADF) {
-			return Fail("inherited descriptor above stderr");
+			return Fail("inherited descriptor above the verdict socket");
 		}
 	}
 
@@ -70,6 +94,7 @@ auto main(int argc, char **argv) -> int {
 	    std::string("HOWDY_USER_MODELS_DIR=") + models_env,
 	    "OPENBLAS_NUM_THREADS=1",
 	    "OMP_NUM_THREADS=1",
+	    howdy::native::compare_verdict::kEnvironmentEntry,
 	};
 	// Walk to the terminating nullptr so a shorter or longer environment is a plain mismatch,
 	// never an out-of-bounds read.
@@ -94,6 +119,11 @@ auto main(int argc, char **argv) -> int {
 		return Fail("compare cannot read staged config and model");
 	}
 
-	std::cout << "HOWDY_E2E_COMPARE_PROBE_OK\n";
+	std::cout << "HOWDY_E2E_COMPARE_PROBE_OK\n" << std::flush;
+	// Report success on the verdict socket as compare does, as the last thing before exiting.
+	const unsigned char verdict = 0;
+	if (write(howdy::native::compare_verdict::kFd, &verdict, sizeof(verdict)) != 1) {
+		return Fail("compare could not report its verdict");
+	}
 	return 0;
 }
