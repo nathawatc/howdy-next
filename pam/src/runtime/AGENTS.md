@@ -10,8 +10,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `auth_helper_process/spawn.cpp`: descriptor and spawn setup
 - `auth_helper_process/io.cpp`: timeout, wait, terminate, reap
 - `compare_process.cpp`: compare argv/environment, descriptor closure, timeout/reap
-- `child_process.cpp`: `TrackedChild`, the one pidfd wait/signal implementation with PID fallback,
-  used by both child lifecycles
+- `child_process.cpp`: `SpawnChild` and `TrackedChild`, the one spawn and the one pidfd
+  wait/signal implementation with PID fallback, used by both child lifecycles
 
 `auth_helper_process/internal.hpp` is private cross-TU plumbing.
 
@@ -29,16 +29,21 @@ write, and a model descriptor exactly when the model state is ready. It owns the
 authentication returns. Compare always runs in descriptor mode (`protocol/compare_descriptors.hpp`).
 
 Signal and reap child processes through a pidfd, never a bare PID: a PAM application that reaps
-children itself can free the PID for reuse. Take the pidfd right after spawn and carry it to every
-wait and signal; never open one later from the PID, which may by then name another process. A pidfd
-is required: when it cannot be taken, stop the child at once and fail the spawn (compare has always
-needed `pidfd_open` to poll, so this costs no configuration that worked before). The one exception
-is an auth helper already reaped elsewhere when the pidfd is taken (`ESRCH`; `ECHILD` from the
-ownership check; or `EINVAL`, which older kernels' `pidfd_open` returns while a reaped process is
-being released; see `PidfdErrorMeansChildGone`): nothing is left to name or stop, and its message
-decides, as below. Compare has no such path; it fails the spawn. The auth helper keeps it in
-`HelperSpawn`; compare hands it back through the spawn callback, and the prompt coordinator owns it
-for the run.
+children itself can free the PID for reuse. Both children start through `SpawnChild`, which uses
+`pidfd_spawn` (glibc 2.39, built only where available) so the pidfd comes with the child and no reap
+can come in between; `pidfd_getpid` supplies the PID the fallbacks below need, and a PID already
+gone reads as -1. Where the build has no `pidfd_spawn`, or it fails with `ENOSYS` (a kernel or
+filter without clone3), the child comes from `posix_spawn` and the pidfd is taken right after it.
+Carry it to every wait and signal; never open one later from the PID, which may by then name another
+process. A pidfd is required: when it cannot be taken, stop the child at once and fail the spawn
+(compare has always needed `pidfd_open` to poll, so this costs no configuration that worked before).
+The one exception is an auth helper already reaped elsewhere by the time its pidfd or PID is read
+(`ESRCH`; `ECHILD` from the ownership check; or `EINVAL`, which older kernels' `pidfd_open` returns
+while a reaped process is being released; see `PidfdErrorMeansChildGone`): nothing is left to name
+or stop, and its message decides, as below. Compare has no such path; it fails the spawn.
+`TrackedChild` never uses a PID at or below 0, so a missing PID can never reach `kill(-1)` or
+`waitpid(-1)`. The auth helper keeps the pidfd in `HelperSpawn`; compare hands it back through the
+spawn callback, and the prompt coordinator owns it for the run.
 
 `ECHILD` from a pidfd wait, or `ESRCH` from a signal (an exited, unreaped child still accepts
 signals), means the child was reaped elsewhere; it is then never signalled or waited on again. Where

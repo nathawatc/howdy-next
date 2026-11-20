@@ -763,6 +763,53 @@ namespace {
 		       Expect(child_pid == -1, "close-from setup failure leaves child PID unchanged");
 	}
 
+#ifdef HOWDY_HAVE_PIDFD_SPAWN
+	// The production spawn path on a shell that exits at once.
+	auto SpawnShellWithPidfd(const howdy::pam::compare_process::SpawnRequest &request) -> int {
+		std::string           shell("/bin/sh");
+		std::string           flag("-c");
+		std::string           script("exit 0");
+		std::array<char *, 4> argv{shell.data(), flag.data(), script.data(), nullptr};
+		std::array<char *, 1> envp{nullptr};
+		return howdy::pam::runtime::SpawnChild(request.child_pid, request.child_pidfd,
+		                                       {
+		                                           .path    = shell.c_str(),
+		                                           .actions = request.actions,
+		                                           .argv    = argv.data(),
+		                                           .envp    = envp.data(),
+		                                       });
+	}
+#endif
+
+	// Where pidfd_spawn exists, the pidfd comes with compare, so Spawn never opens one: with
+	// pidfd_open failing, the spawn still succeeds and hands back that pidfd.
+	auto TestProductionSpawnTakesPidfdWithChild() -> bool {
+#ifdef HOWDY_HAVE_PIDFD_SPAWN
+		const CompareRequestFiles files;
+		auto                      operations = howdy::pam::compare_process::ProductionOperations();
+		operations.spawn                     = SpawnShellWithPidfd;
+		pid_t child_pid                      = -1;
+		int   raw_pidfd                      = -1;
+		int   raw_verdict_fd                 = -1;
+		WaitState().fail_pidfd               = true;
+		const int result                     = howdy::pam::compare_process::Spawn(
+		    files.Request(), &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
+		WaitState().fail_pidfd = false;
+		const howdy::native::ScopedFd     pidfd(raw_pidfd);
+		const howdy::native::ScopedFd     verdict_fd(raw_verdict_fd);
+		howdy::pam::runtime::TrackedChild child(child_pid, pidfd.Get());
+		int                               status = 0;
+		return Expect(result == 0 && child_pid > 0 && pidfd.Get() > STDERR_FILENO &&
+		                  verdict_fd.Valid(),
+		              "compare's pidfd comes from pidfd_spawn without a pidfd_open") &&
+		       Expect(child.Wait(true, &status) == howdy::pam::runtime::ChildState::kReaped &&
+		                  WIFEXITED(status) && WEXITSTATUS(status) == 0,
+		              "the compare child is reaped through the spawn-time pidfd");
+#else
+		return true;
+#endif
+	}
+
 	auto SpawnBlockedForTest(const howdy::pam::compare_process::SpawnRequest &request) -> int {
 		const pid_t child_pid = SpawnBlockedChild();
 		if (child_pid <= 0) {
@@ -1128,6 +1175,7 @@ auto main() -> int {
 	ok &= TestProductionSpawnFailure();
 	ok &= TestProductionSpawnWithoutVerdictSocket();
 	ok &= TestProductionSpawnReturnsPidfd();
+	ok &= TestProductionSpawnTakesPidfdWithChild();
 	ok &= TestCoordinatorCarriesSpawnPidfd();
 	ok &= TestChildPidfdAvoidsClosedStdio();
 	ok &= TestReapedElsewhereStopsPidFallback();

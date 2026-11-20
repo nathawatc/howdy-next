@@ -394,8 +394,13 @@ namespace {
 
 	auto CallPosixSpawn(const CompareSpawnRequest &request) -> int {
 		(void)request.context;
-		return posix_spawn(request.child_pid, request.path, request.actions, nullptr,
-		                   request.argv.data(), request.envp.data());
+		return howdy::pam::runtime::SpawnChild(request.child_pid, request.child_pidfd,
+		                                       {
+		                                           .path    = request.path,
+		                                           .actions = request.actions,
+		                                           .argv    = request.argv.data(),
+		                                           .envp    = request.envp.data(),
+		                                       });
 	}
 
 	constexpr CompareOperations kPosixSpawnOperations = {
@@ -460,8 +465,8 @@ namespace {
 	// Places the verdict socket, config and model at their fixed numbers in compare and closes
 	// everything above them; all three are required.
 	auto SpawnCompareProcess(const howdy::pam::CompareLaunchRequest &request, pid_t *child_pid,
-	                         const CompareChildDescriptors &descriptors,
-	                         const CompareOperations       &operations) -> int {
+	                         int *child_pidfd, const CompareChildDescriptors &descriptors,
+	                         const CompareOperations &operations) -> int {
 		namespace protocol = howdy::native::compare_descriptors;
 		std::string           compare_path(kCompareProcessPath);
 		std::string           username(request.username);
@@ -514,12 +519,13 @@ namespace {
 		}
 
 		const int spawn_result = operations.spawn({
-		    .context   = operations.context,
-		    .child_pid = child_pid,
-		    .path      = kCompareProcessPath,
-		    .actions   = &file_actions,
-		    .argv      = args,
-		    .envp      = compare_env,
+		    .context     = operations.context,
+		    .child_pid   = child_pid,
+		    .child_pidfd = child_pidfd,
+		    .path        = kCompareProcessPath,
+		    .actions     = &file_actions,
+		    .argv        = args,
+		    .envp        = compare_env,
 		});
 		(void)operations.file_actions_destroy(operations.context, &file_actions);
 		return spawn_result;
@@ -563,18 +569,35 @@ namespace howdy::pam::compare_process {
 			       howdy::native::SystemErrorMessage(copy_error).c_str(), copy_error);
 			return copy_error;
 		}
-		const int result = SpawnCompareProcess(request, child_pid,
-		                                       {
-		                                           .verdict = verdict_compare_end.Get(),
-		                                           .config  = config.Get(),
-		                                           .model   = model.Get(),
-		                                       },
-		                                       operations);
+		int       spawn_pidfd = -1;
+		const int result      = SpawnCompareProcess(request, child_pid, &spawn_pidfd,
+		                                            {
+		                                                .verdict = verdict_compare_end.Get(),
+		                                                .config  = config.Get(),
+		                                                .model   = model.Get(),
+		                                            },
+		                                            operations);
+		// Owned at once, so it is closed on every path below that does not hand it out.
+		howdy::native::ScopedFd taken_pidfd(spawn_pidfd);
 		// Only compare holds these from here, so its exit ends the verdict socket.
 		verdict_compare_end.Reset();
 		config.Reset();
 		model.Reset();
-		// Taken before the PAM application can reap compare and let the PID be reused.
+		if (result == 0 && taken_pidfd.Valid()) {
+			// Taken with the child. Compare has no gone path: one the application already reaped
+			// before its PID was read fails the spawn, as a pidfd_open that finds it gone does.
+			if (*child_pid <= 0) {
+				syslog(LOG_AUTHPRIV | LOG_ERR,
+				       "pam_howdy: Compare process was reaped elsewhere before its PID was read");
+				*child_pid = -1;
+				return ECHILD;
+			}
+			*child_pidfd = taken_pidfd.Release();
+			*verdict_fd  = verdict_pam_end.Release();
+			return 0;
+		}
+		// Without one, taken right after spawn, before the PAM application can reap compare and
+		// let the PID be reused.
 		if (result == 0 && *child_pid > 0) {
 			// A pidfd opened later could name another process, so a failure fails the spawn.
 			int error_number = 0;

@@ -65,6 +65,22 @@ check_cxx_source_compiles(
 if(NOT HOWDY_HAVE_GLIBC_2_36)
   message(FATAL_ERROR "GNU libc 2.36 or newer is required.")
 endif()
+# pidfd_spawn and pidfd_getpid (glibc 2.39) let PAM take a child's pidfd as it spawns the child.
+check_cxx_source_compiles(
+ [=[
+  #include <spawn.h>
+  extern "C" {
+  #include <sys/pidfd.h>
+  }
+  int main() {
+   int   pidfd   = -1;
+   char *argv[1] = {nullptr};
+   (void)pidfd_spawn(&pidfd, "/", nullptr, nullptr, argv, argv);
+   return pidfd_getpid(pidfd);
+  }
+ ]=]
+ HOWDY_HAVE_PIDFD_SPAWN
+)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

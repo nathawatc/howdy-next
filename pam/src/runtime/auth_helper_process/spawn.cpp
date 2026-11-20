@@ -8,6 +8,7 @@
 #include "runtime/child_process.hpp"
 #include "support/bit_flags.hpp"
 #include "support/error_message.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <array>
 #include <cerrno>
@@ -77,8 +78,13 @@ namespace {
 
 	auto ProductionSpawn(const AuthHelperSpawnRequest &request) -> int {
 		(void)request.context;
-		return posix_spawn(request.child_pid, request.path, request.actions, nullptr,
-		                   request.argv.data(), request.envp.data());
+		return howdy::pam::runtime::SpawnChild(request.child_pid, request.child_pidfd,
+		                                       {
+		                                           .path    = request.path,
+		                                           .actions = request.actions,
+		                                           .argv    = request.argv.data(),
+		                                           .envp    = request.envp.data(),
+		                                       });
 	}
 
 	auto ProductionClose(void *context, int fd) -> int {
@@ -280,19 +286,39 @@ namespace howdy::pam::auth_helper_process::internal {
 		    username_string.data(),
 		    nullptr,
 		};
-		std::array<char *, 1> env     = {nullptr};
-		const int             result  = operations.spawn({
-		    .context   = operations.context,
-		    .child_pid = &spawn->child_pid,
-		    .path      = kAuthHelperPath,
-		    .actions   = &spawn->actions,
-		    .argv      = args,
-		    .envp      = env,
+		std::array<char *, 1> env         = {nullptr};
+		int                   spawn_pidfd = -1;
+		const int             result      = operations.spawn({
+		    .context     = operations.context,
+		    .child_pid   = &spawn->child_pid,
+		    .child_pidfd = &spawn_pidfd,
+		    .path        = kAuthHelperPath,
+		    .actions     = &spawn->actions,
+		    .argv        = args,
+		    .envp        = env,
 		});
-		bool                  spawned = result == 0 && spawn->child_pid > 0;
+		// Owned at once, so it is closed on every path below that does not keep it.
+		howdy::native::ScopedFd taken_pidfd(spawn_pidfd);
+		bool                    spawned = result == 0;
 		if (!spawned) {
 			spawn->child_pid = -1;
-			LogAuthHelperFailure(operations, "posix_spawn", result != 0 ? result : ECHILD);
+			LogAuthHelperFailure(operations, "posix_spawn", result);
+		} else if (taken_pidfd.Valid()) {
+			// Taken with the child, so it names the helper whatever the application reaps.
+			if (spawn->child_pid > 0) {
+				spawn->child_pidfd = std::move(taken_pidfd);
+			} else {
+				// Already exited and reaped by the application: nothing is left to wait for or
+				// stop, and its message, already in the socket, decides.
+				spawn->child_pid = -1;
+				LogAuthHelperMessage(
+				    operations, LOG_DEBUG,
+				    "Howdy auth helper was reaped elsewhere before its PID was read");
+			}
+		} else if (spawn->child_pid <= 0) {
+			spawned          = false;
+			spawn->child_pid = -1;
+			LogAuthHelperFailure(operations, "posix_spawn", ECHILD);
 		} else {
 			// A pidfd opened later could name another process, so a failure fails the open,
 			// unless the helper is already gone: then nothing is left to name or stop, and its

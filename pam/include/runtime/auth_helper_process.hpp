@@ -13,10 +13,13 @@
 namespace howdy::pam::auth_helper_process {
 
 	struct SpawnRequest {
-		void                             *context   = nullptr;
-		pid_t                            *child_pid = nullptr;
-		const char                       *path      = nullptr;
-		const posix_spawn_file_actions_t *actions   = nullptr;
+		void  *context   = nullptr;
+		pid_t *child_pid = nullptr;
+		// Set to the child's pidfd when the spawn took one with the child (pidfd_spawn); left at
+		// -1 otherwise, and the caller takes it after the spawn.
+		int                              *child_pidfd = nullptr;
+		const char                       *path        = nullptr;
+		const posix_spawn_file_actions_t *actions     = nullptr;
 		std::span<char *const>            argv;
 		std::span<char *const>            envp;
 	};

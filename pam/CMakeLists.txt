@@ -29,6 +29,10 @@ add_library(
  src/runtime/session_probe.cpp
 )
 howdy_configure_pam_target(pam_runtime)
+if(HOWDY_HAVE_PIDFD_SPAWN)
+  # Public, so tests that check the pidfd_spawn path see the same choice.
+  target_compile_definitions(pam_runtime PUBLIC HOWDY_HAVE_PIDFD_SPAWN=1)
+endif()
 target_link_libraries(
  pam_runtime
  PUBLIC PAM::PAM howdy_runtime_descriptor_message

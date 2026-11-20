@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/auth_helper_process.hpp"
+#include "runtime/child_process.hpp"
 
 #include <array>
 #include <cerrno>
@@ -60,8 +61,14 @@ namespace howdy::test::runtime_session {
 		}
 		argv.push_back(nullptr);
 		std::array<char *, 1> env{nullptr};
-		const int result = posix_spawn(request.child_pid, "/proc/self/exe", request.actions,
-		                               nullptr, argv.data(), env.data());
+		// The production spawn path, so the exchanges also cover pidfd_spawn.
+		const int result = howdy::pam::runtime::SpawnChild(request.child_pid, request.child_pidfd,
+		                                                   {
+		                                                       .path    = "/proc/self/exe",
+		                                                       .actions = request.actions,
+		                                                       .argv    = argv.data(),
+		                                                       .envp    = env.data(),
+		                                                   });
 		if (result == 0) {
 			self.spawned_pid = *request.child_pid;
 		}

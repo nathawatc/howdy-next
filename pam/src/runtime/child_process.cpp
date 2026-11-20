@@ -15,6 +15,7 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include <spawn.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
@@ -152,6 +153,12 @@ namespace howdy::pam::runtime {
 			}
 			pidfd_wait_usable_ = false;
 		}
+		// Without a PID (the child was already gone when it was read), waitpid would take any
+		// child of the application.
+		if (pid_ <= 0) {
+			(void)ReapedElsewhere();
+			return ChildState::kError;
+		}
 		const pid_t result = howdy::native::RetryOnEintr([&] -> pid_t {
 			return waitpid(pid_, status, block ? 0 : WNOHANG);
 		});
@@ -190,6 +197,10 @@ namespace howdy::pam::runtime {
 	// application, nothing confirms the PID still names the child, so no signal is sent: compare
 	// and the helper end on their own timeouts, while a signal could reach an unrelated process.
 	auto TrackedChild::SignalByPid(int signal) noexcept -> int {
+		// Without a PID there is nothing to fall back to; kill(-1) would reach every process.
+		if (pid_ <= 0) {
+			return ReapedElsewhere();
+		}
 		switch (PeekTracked(pidfd_wait_usable_, pidfd_, pid_)) {
 			case ChildPeek::kNotOurs:
 				return ReapedElsewhere();
@@ -275,6 +286,46 @@ namespace howdy::pam::runtime {
 		}
 		TrackedChild child(child_pid, -1);
 		(void)KillAndReap(child);
+	}
+
+	// HOWDY_HAVE_PIDFD_SPAWN comes from the build (CMakeLists.txt) when the C library has
+	// pidfd_spawn and pidfd_getpid (glibc 2.39); without it only the posix_spawn path is built.
+	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+	auto SpawnChild(pid_t *pid, int *pidfd, const SpawnArguments &arguments) noexcept -> int {
+		*pid   = -1;
+		*pidfd = -1;
+#ifdef HOWDY_HAVE_PIDFD_SPAWN
+		int       spawned_pidfd = -1;
+		const int result = pidfd_spawn(&spawned_pidfd, arguments.path, arguments.actions, nullptr,
+		                               arguments.argv, arguments.envp);
+		if (result != ENOSYS) {
+			if (result != 0) {
+				return result;
+			}
+			// -1 (ESRCH) when the child already exited and the PAM application reaped it; the
+			// pidfd still names it.
+			const pid_t child_pid = pidfd_getpid(spawned_pidfd);
+			if (spawned_pidfd <= STDERR_FILENO) {
+				// Keep the long-lived descriptor clear of stdio, as OpenChildPidfd does.
+				const int moved = fcntl(spawned_pidfd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+				if (moved < 0) {
+					const int move_error = errno;
+					// The child is ours and still named by this pidfd: stop it before letting go.
+					TrackedChild child(child_pid, spawned_pidfd);
+					(void)KillAndReap(child);
+					(void)close(spawned_pidfd);
+					return move_error;
+				}
+				(void)close(spawned_pidfd);
+				spawned_pidfd = moved;
+			}
+			*pid   = child_pid;
+			*pidfd = spawned_pidfd;
+			return 0;
+		}
+#endif
+		return posix_spawn(pid, arguments.path, arguments.actions, nullptr, arguments.argv,
+		                   arguments.envp);
 	}
 
 	auto TakeSpawnedChildPidfd(pid_t child_pid, int *error) noexcept -> int {
