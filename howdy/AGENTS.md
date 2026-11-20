@@ -30,8 +30,10 @@ targets.
   duplicating bounded I/O, staged-file, or secure-path logic.
 - Use shared model readiness/integrity checks before inference or authentication.
 - Keep OpenCV include directories marked as system includes through `howdy_opencv`.
-- Shared auth-helper output keys live in `protocol/auth_helper_protocol.hpp`; reject malformed,
-  duplicate, unknown, or incomplete output.
+- The auth helper's `open` result is one message defined in
+  `protocol/runtime_descriptor_message.hpp`, with a shared encoder and decoder; reject anything
+  else. The staging keys in `protocol/auth_helper_protocol.hpp` remain only for `prepare`, which a
+  PAM module loaded before the upgrade still uses.
 
 ## CMake and Tests
 

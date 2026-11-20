@@ -13,5 +13,6 @@ struct AuthHelperStagingContext {
 };
 
 auto RunAuthHelperPathTests(const std::filesystem::path &temp_root) -> bool;
+auto RunAuthHelperDescriptorTests(const std::filesystem::path &temp_root) -> bool;
 auto RunAuthHelperStagingTests(const std::filesystem::path    &temp_root,
                                const AuthHelperStagingContext &context) -> bool;

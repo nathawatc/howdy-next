@@ -17,6 +17,14 @@ staging runtime and this entry point without the setuid helper's `command.cpp`.
 `include/auth_helper/runtime/internal.hpp` is a separate shared/test-facing contract. Do not merge
 it with the private header.
 
+`runtime_descriptors.cpp` (library `howdy_runtime_descriptors`) is the opener shared by `open` and
+a root PAM module: the config by path with `O_NOFOLLOW` and then its ancestors, the model after the
+readiness walk and then on its descriptor, both read-only and close-on-exec. `open` sends its
+result as the one message of `protocol/runtime_descriptor_message.hpp` on descriptor 3 and nothing
+else: no message when the config cannot be opened, and guard failures and diagnostics go to syslog
+(PAM points its stdio at `/dev/null`). `prepare` and the staging below remain only for a PAM module
+loaded before the upgrade.
+
 The prepare protocol is the lease over `SCM_RIGHTS` on the lease socket, then `CONFIG_PATH=` and
 `USER_MODELS_DIR=` on stdout, then, when the environment carries `HOWDY_AUTH_HELPER_COMPLETION=1`, a
 one-byte completion record as the lease socket's last message. `FinishPrepare` sends the record only

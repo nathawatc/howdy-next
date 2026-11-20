@@ -44,6 +44,7 @@ auto main() -> int {
 	const auto     operations = use_fake_acl ? fake_acl.Operations() : production_operations;
 
 	ok &= RunAuthHelperPathTests(temp_root);
+	ok &= RunAuthHelperDescriptorTests(temp_root);
 	ok &= RunAuthHelperStagingTests(temp_root, {
 	                                               .acl_functional        = acl_functional,
 	                                               .acl_supported         = acl_supported,

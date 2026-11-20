@@ -92,6 +92,14 @@ option(
  "Enable installed PAM/setuid end-to-end tests"
  OFF
 )
+option(
+ HOWDY_ENABLE_FUZZING
+ "Build libFuzzer targets (requires Clang)"
+ OFF
+)
+if(HOWDY_ENABLE_FUZZING AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  message(FATAL_ERROR "HOWDY_ENABLE_FUZZING requires Clang (libFuzzer)")
+endif()
 
 if(HOWDY_USE_CCACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
   find_program(HOWDY_CCACHE_PROGRAM ccache)
