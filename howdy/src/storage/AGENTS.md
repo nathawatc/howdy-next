@@ -28,9 +28,11 @@ serialization behavior.
 → staged commit/exchange → rollback/cleanup → durability. Keep this transaction cohesive; do not
 split it for LOC.
 
-Writers lock only the user-models directory (`LockModelNamespace`), never the model file: the auth
-helper hands each user a read-only descriptor to their own model, and a `flock` a user holds on it
-must not stall root's writers.
+Writers lock only `<models_dir>.lock` (`LockModelNamespace`), a root-only `0600` file beside the
+models directory, and check it is a regular, root-owned, single-link file that no group or other
+user can open. Never lock the models directory or a model file: `flock` needs only a readable
+descriptor, a `0755` models directory is readable by every user, and the auth helper hands each
+user a read-only descriptor to their own model. A lock a user can hold would stall root's writers.
 
 `LoadUserModelsFromFd` loads from a descriptor another process opened, with the same rules as
 `LoadRuntimeConfigFromFd`: no path walk, an explicit owner, open read-only and not `O_PATH`, one

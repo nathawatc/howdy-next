@@ -5,6 +5,7 @@
 #include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
 #include "storage/user_models_test_support.hpp"
+#include "support/bit_flags.hpp"
 #include "support/face_metric.hpp"
 #include "test_support.hpp"
 
@@ -15,6 +16,7 @@
 #include <iterator>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 #include <fcntl.h>
@@ -27,6 +29,87 @@
 #include <sys/wait.h>
 
 namespace howdy::test::user_models {
+
+	namespace {
+
+		// Runs an append in a child under an alarm, so a writer that waits on a lock fails
+		// instead of hanging the suite.
+		auto AppendsWithoutWaiting(const std::filesystem::path            &temp_root,
+		                           const howdy::native::NewUserModelEntry &entry) -> bool {
+			constexpr unsigned int write_alarm_seconds = 10;
+			const pid_t            writer              = fork();
+			if (writer == 0) {
+				alarm(write_alarm_seconds);
+				const auto appended =
+				    howdy::native::AppendUserModelEntry("alice", entry, {temp_root});
+				_exit(appended.status == howdy::native::UserModelStatus::kOk ? EXIT_SUCCESS
+				                                                             : EXIT_FAILURE);
+			}
+			int status = 0;
+			return writer > 0 && waitpid(writer, &status, 0) == writer && WIFEXITED(status) &&
+			       WEXITSTATUS(status) == EXIT_SUCCESS;
+		}
+
+		auto ExpectRootOnlyNamespaceLock(const std::filesystem::path            &model_path,
+		                                 const howdy::native::NewUserModelEntry &entry) -> bool {
+			namespace fs       = std::filesystem;
+			bool            ok = true;
+			std::error_code ec;
+			const auto      models_dir = model_path.parent_path();
+			const auto      temp_root  = models_dir.parent_path();
+			const auto      lock_path  = fs::path(models_dir.string() + ".lock");
+			const auto      before     = ReadFile(model_path);
+			{
+				// The test models directory is 0755, so any user could open and flock it.
+				const howdy::test::ScopedFd held(
+				    open(models_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+				ok &= Expect(held.Valid() && flock(held.Get(), LOCK_SH | LOCK_NB) == 0,
+				             "hold a shared lock on the models directory, as a user could");
+				ok &= Expect(AppendsWithoutWaiting(temp_root, entry),
+				             "a user's lock on the models directory does not stall a writer");
+			}
+			struct stat lock_stat{};
+			ok &= Expect(lstat(lock_path.c_str(), &lock_stat) == 0 && S_ISREG(lock_stat.st_mode) &&
+			                 howdy::native::MaskedBits(lock_stat.st_mode, 07777) == 0600,
+			             "writers lock a 0600 file beside the models directory");
+
+			const auto expect_rejected = [&](std::string_view description) -> void {
+				const auto current = ReadFile(model_path);
+				const auto result =
+				    howdy::native::AppendUserModelEntry("alice", entry, {temp_root});
+				ok &= Expect(result.status == howdy::native::UserModelStatus::kLockFailed,
+				             std::string(description) + ": status");
+				ok &= Expect(ReadFile(model_path) == current,
+				             std::string(description) + ": model bytes unchanged");
+			};
+			ok &= Expect(chmod(lock_path.c_str(), 0640) == 0, "make the lock file group-readable");
+			expect_rejected("a lock file other users can open is rejected");
+			ok &= Expect(chmod(lock_path.c_str(), 0600) == 0, "restore the lock file mode");
+
+			const auto lock_link = fs::path(lock_path.string() + "-link");
+			ok &=
+			    Expect(link(lock_path.c_str(), lock_link.c_str()) == 0, "hard-link the lock file");
+			expect_rejected("a hard-linked lock file is rejected");
+			ok &= Expect(unlink(lock_link.c_str()) == 0, "remove the lock file hard link");
+
+			const auto victim_path    = temp_root / "lock-symlink-victim.txt";
+			const auto victim_content = std::string("lock victim sentinel\n");
+			ok &= Expect(WriteFile(victim_path, victim_content) && unlink(lock_path.c_str()) == 0 &&
+			                 symlink(victim_path.c_str(), lock_path.c_str()) == 0,
+			             "replace the lock file with a symlink");
+			expect_rejected("a symlinked lock file is rejected");
+			ok &= Expect(ReadFile(victim_path) == victim_content,
+			             "a symlinked lock file leaves its target unchanged");
+			ok &= Expect(unlink(lock_path.c_str()) == 0, "remove the lock file symlink");
+			fs::remove(victim_path, ec);
+
+			// Later tests expect the model as it was before these appends.
+			ok &= Expect(WriteFile(model_path, before) && chmod(model_path.c_str(), 0600) == 0,
+			             "restore the model after the lock file checks");
+			return ok;
+		}
+
+	}  // namespace
 
 	auto TestUserModelMutationStart() -> bool {
 		namespace fs                 = std::filesystem;
@@ -416,29 +499,18 @@ namespace howdy::test::user_models {
 		}
 		{
 			// The auth helper hands a user a read-only descriptor to their model, which the user
-			// may flock and keep. Writers must not wait for that: they lock only the directory.
-			// The write runs in a child under an alarm, so a wait fails instead of hanging.
+			// may flock and keep. Writers must not wait for that: they lock only a root-only file.
 			const auto                  before = howdy::test::ReadFile(model_path);
 			const howdy::test::ScopedFd held(open(model_path.c_str(), O_RDONLY | O_CLOEXEC));
 			ok &= Expect(held.Valid() && flock(held.Get(), LOCK_SH | LOCK_NB) == 0,
 			             "hold a shared lock on the model file, as a user could");
-			constexpr unsigned int write_alarm_seconds = 10;
-			const pid_t            writer              = fork();
-			if (writer == 0) {
-				alarm(write_alarm_seconds);
-				const auto appended =
-				    howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
-				_exit(appended.status == howdy::native::UserModelStatus::kOk ? EXIT_SUCCESS
-				                                                             : EXIT_FAILURE);
-			}
-			int status = 0;
-			ok &= Expect(writer > 0 && waitpid(writer, &status, 0) == writer && WIFEXITED(status) &&
-			                 WEXITSTATUS(status) == EXIT_SUCCESS,
+			ok &= Expect(AppendsWithoutWaiting(temp_root, second_entry),
 			             "a user's lock on the model file does not stall a writer");
 			// Later tests expect the two entries above.
 			ok &= Expect(WriteFile(model_path, before) && chmod(model_path.c_str(), 0600) == 0,
 			             "restore the model after the locked write");
 		}
+		ok &= ExpectRootOnlyNamespaceLock(model_path, second_entry);
 		return ok;
 	}
 }  // namespace howdy::test::user_models

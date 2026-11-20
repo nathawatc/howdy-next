@@ -32,8 +32,8 @@ namespace howdy::native {
 		std::filesystem::path path_;
 		ScopedFileLock        namespace_lock_;
 		// The model file, held open to check that the path still names it. Not locked: the
-		// namespace lock serializes writers, and a user holding a descriptor to the file from
-		// the auth helper could otherwise stall them with flock.
+		// root-only namespace lock serializes writers, and a user holding a descriptor to the
+		// file from the auth helper could otherwise stall them with flock.
 		ScopedFd     file_;
 		bool         created_empty_file_ = false;
 		mutable bool completed_          = false;

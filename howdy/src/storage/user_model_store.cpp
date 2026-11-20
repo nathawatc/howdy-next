@@ -43,7 +43,9 @@ namespace howdy::native {
 
 		constexpr mode_t kUserModelsDirMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
 		constexpr mode_t kUserModelFileMode = S_IRUSR | S_IWUSR;
-		constexpr std::string_view kUserModelTempPrefix = ".howdy-user-model-";
+		// Root-only: a user who can open the lock file can hold it and stall every writer.
+		constexpr mode_t           kUserModelLockFileMode = S_IRUSR | S_IWUSR;
+		constexpr std::string_view kUserModelTempPrefix   = ".howdy-user-model-";
 		constexpr auto             kUserModelFileTooLargeMessage =
 		    "User model file is too large or unreadable: ";
 		constexpr auto kUserModelFileReadFailedMessage = "Failed to read user model file: ";
@@ -258,18 +260,45 @@ namespace howdy::native {
 			bool           created_empty_file = false;
 		};
 
-		auto LockModelNamespace(const std::filesystem::path &path)
+		// `<models_dir>.lock`, beside the models directory rather than inside it, so nothing
+		// that lists the directory meets it. The trailing separator of a directory named
+		// `.../models/` is dropped first; it would otherwise put the lock inside.
+		auto ModelNamespaceLockPath(const std::filesystem::path &model_path)
+		    -> std::filesystem::path {
+			auto models_dir = model_path.parent_path().lexically_normal();
+			if (!models_dir.has_filename()) {
+				models_dir = models_dir.parent_path();
+			}
+			return LockFilePath(models_dir);
+		}
+
+		auto LockModelNamespace(const std::filesystem::path &model_path)
 		    -> std::optional<ScopedFileLock> {
 			// Serializes cooperating UserModelStore writers only. Parent-directory write
-			// permission still allows uncooperative actors to rename or unlink entries. This is
-			// the writers' only lock: the model file itself is never locked, because the auth
-			// helper hands each user a read-only descriptor to their model, and a flock a user
-			// holds on it would otherwise stall root's writers, all of them behind this lock.
-			ScopedFd fd(
-			    open(path.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-			if (!fd.Valid() || RetryOnEintr([&] -> int {
-				                   return flock(fd.Get(), LOCK_EX);
-			                   }) != 0) {
+			// permission still allows uncooperative actors to rename or unlink entries.
+			// Writers lock a root-only file, never the models directory or a model file: flock
+			// needs only a readable descriptor, and users can open a 0755 models directory and
+			// get a read-only descriptor to their own model from the auth helper, so a lock on
+			// either would let a user stall every writer. The lock file's parent is the models
+			// directory's parent, which Resolve checked with the rest of the models directory
+			// tree before either caller gets here.
+			const auto lock_path = ModelNamespaceLockPath(model_path);
+			ScopedFd   fd(open(lock_path.c_str(), O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC,
+			                   kUserModelLockFileMode));
+			if (!fd.Valid()) {
+				return std::nullopt;
+			}
+			struct stat lock_stat{};
+			if (fstat(fd.Get(), &lock_stat) != 0 ||
+			    !CheckSecurePathStat(lock_stat, SecurePathKind::kRegularFile, lock_path,
+			                         kUserModelLockFileLabel, DefaultSecureOwnerUid())
+			         .ok ||
+			    HasAnyBits(lock_stat.st_mode, S_IRWXG, S_IRWXO)) {
+				return std::nullopt;
+			}
+			if (RetryOnEintr([&] -> int {
+				    return flock(fd.Get(), LOCK_EX);
+			    }) != 0) {
 				return std::nullopt;
 			}
 

@@ -6,6 +6,7 @@
 namespace howdy::native {
 	inline constexpr std::string_view kUserModelsDirectoryLabel = "User models directory";
 	inline constexpr std::string_view kUserModelFileLabel       = "User model file";
+	inline constexpr std::string_view kUserModelLockFileLabel   = "User model lock file";
 	inline constexpr std::string_view kUserModelFileInspectionFailedMessage =
 	    "Failed to inspect user model file";
 	inline constexpr std::string_view kUserModelChangedMessage =
