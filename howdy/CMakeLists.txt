@@ -205,7 +205,11 @@ add_library(
 )
 howdy_configure_native_target(howdy_compare_privileges)
 
-add_library(howdy_compare_sandbox STATIC src/compare/sandbox.cpp)
+add_library(
+ howdy_compare_sandbox STATIC
+ src/compare/sandbox.cpp
+ src/compare/sandbox/seccomp.cpp
+)
 howdy_configure_native_target(howdy_compare_sandbox)
 
 add_library(howdy_compare_processing STATIC src/compare/processing.cpp)
@@ -216,7 +220,9 @@ target_link_libraries(howdy_compare_processing PUBLIC howdy_opencv PRIVATE
 add_library(
  howdy_compare_entrypoint STATIC
  src/compare/entrypoint.cpp
- src/compare/entrypoint/internal.cpp
+ src/compare/entrypoint/descriptors.cpp
+ src/compare/entrypoint/internal.hpp
+ src/compare/entrypoint/reporting.cpp
 )
 howdy_configure_native_target(howdy_compare_entrypoint)
 target_link_libraries(
