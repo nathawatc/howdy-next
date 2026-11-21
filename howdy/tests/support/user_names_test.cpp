@@ -33,10 +33,11 @@ auto main() -> int {
 	             "long option-shaped username is rejected");
 	ok &= Expect(!howdy::native::IsValidModelUserName("alice bob"),
 	             "username containing whitespace is rejected");
-	ok &= Expect(howdy::native::IsValidModelUserName(std::string(255, 'a')),
-	             "255-byte username is accepted");
-	ok &= Expect(!howdy::native::IsValidModelUserName(std::string(256, 'a')),
-	             "256-byte username is rejected");
+	// "<user>.dat" must fit in NAME_MAX (255 bytes).
+	ok &= Expect(howdy::native::IsValidModelUserName(std::string(251, 'a')),
+	             "251-byte username, whose model file name is 255 bytes, is accepted");
+	ok &= Expect(!howdy::native::IsValidModelUserName(std::string(252, 'a')),
+	             "252-byte username, whose model file name would exceed NAME_MAX, is rejected");
 	ok &= Expect(!howdy::native::IsValidModelUserName("a\x01"
 	                                                  "b"),
 	             "username containing a control character is rejected");

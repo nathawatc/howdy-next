@@ -40,9 +40,9 @@ namespace {
 			const auto result      = howdy::native::InstallStagedFile(
 			    *staged, destination, howdy::native::SyncParentDirectory,
 			    howdy::native::AtomicFileInstallPolicy::kNoReplaceExisting);
-			ok &=
-			    howdy::test::Expect(result == howdy::native::AtomicFileCommitResult::kNotCommitted,
-				                    "no-replace fallback reports not committed");
+			ok &= howdy::test::Expect(
+			    result == howdy::native::AtomicFileCommitResult::kAtomicRenameUnsupported,
+			    "no-replace fallback reports the rename unsupported");
 			ok &= howdy::test::Expect(!fs::exists(destination),
 			                          "no-replace fallback does not create destination");
 			ok &= howdy::test::Expect(!fs::exists(staged_path),

@@ -11,6 +11,7 @@
 #include "user_model_store/internal.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdint>
 #include <ctime>
 #include <filesystem>
@@ -65,18 +66,24 @@ namespace howdy::native {
 		                   std::string failure_message, std::string committed_message,
 		                   UserModelEntry entry = {}, bool removed_last = false)
 		    -> UserModelMutationResult {
-			if (result == AtomicFileCommitResult::kAtomicExchangeUnsupported) {
+			if (result == AtomicFileCommitResult::kAtomicRenameUnsupported) {
 				return MutationFailure(
 				    UserModelStatus::kAtomicExchangeUnsupported,
-				    "Cannot update user model file: filesystem or kernel does not support required "
-				    "atomic model-file exchange; no changes were made");
+				    "Cannot change user model file: the filesystem or kernel does not support the "
+				    "atomic rename (renameat2) it needs; no changes were made");
 			}
+			// A first model's path taken, or an existing model replaced, since the open.
+			if (result == AtomicFileCommitResult::kDestinationExists ||
+			    result == AtomicFileCommitResult::kDestinationChanged) {
+				return ModelChangedFailure();
+			}
+			// Either a rollback after a concurrent change failed, or a removal could not
+			// durably restore the model it moved aside.
 			if (result == AtomicFileCommitResult::kStateUncertain) {
 				return UserModelMutationResult{
 				    .status        = UserModelStatus::kCommitStateUncertain,
-				    .error_message = "User model namespace changed during commit and recovery "
-				                     "failed; inspect state "
-				                     "before retrying",
+				    .error_message = "User model commit could not be cleanly rolled back; inspect "
+				                     "state before retrying",
 				};
 			}
 			if (result == AtomicFileCommitResult::kCommittedSyncFailed) {
@@ -319,9 +326,14 @@ namespace howdy::native {
 		}
 		const auto unchanged = transaction.transaction->SnapshotMatches(expected_snapshot);
 		if (!unchanged.has_value()) {
-			return MutationFailure(UserModelStatus::kParseError,
-			                       std::string(kUserModelFileInspectionFailedMessage) + ": " +
-			                           transaction.transaction->Path().string());
+			const int error_number = errno;
+			// As in LockExisting, a model gone from the path is a changed model.
+			if (error_number == ENOENT) {
+				return ModelChangedFailure();
+			}
+			return MutationFailure(
+			    UserModelStatus::kParseError,
+			    UserModelInspectionFailedMessage(transaction.transaction->Path(), error_number));
 		}
 		if (!*unchanged) {
 			return ModelChangedFailure();
@@ -368,11 +380,7 @@ namespace howdy::native {
 		}
 		auto document = UserModelStore::LoadDocumentFromFd(
 		    model_fd, display_path,
-		    {.backend = expected_backend, .model = {}, .strict_shape = false},
-		    {
-		        .owner_uid               = owner_uid,
-		        .treat_empty_as_no_model = false,
-		    });
+		    {.backend = expected_backend, .model = {}, .strict_shape = false}, owner_uid);
 		return FlattenLoadedModels(document);
 	}
 

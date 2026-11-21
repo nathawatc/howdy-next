@@ -16,7 +16,7 @@ namespace howdy::native {
 			return std::nullopt;
 		}
 
-		return base_dir / (std::string(user) + ".dat");
+		return base_dir / (std::string(user) + std::string(kUserModelFileSuffix));
 	}
 
 }  // namespace howdy::native

@@ -23,7 +23,8 @@ It ignores `HOWDY_CONFIG` and `HOWDY_USER_MODELS_DIR` for an unprivileged caller
 
 The opener opens the config by path with `O_NOFOLLOW` and then checks its ancestors, and opens the
 model only after the model-store readiness walk and then checks the descriptor itself. Both
-descriptors are read-only and close-on-exec. A missing model is a model state, not a failure, and so
-is an empty model file: a writer creates a first model empty and exchanges the model in at commit,
-so empty means not enrolled yet. An insecure model is reported as invalid storage with the config
-still sent, so PAM can decide eligibility. Do not weaken these checks to simplify the helper.
+descriptors are read-only and close-on-exec. A missing model is a model state, not a failure. An
+insecure model is reported as invalid storage with the config still sent, so PAM can decide
+eligibility, and so is an empty model file: writers link a first model in whole at commit and never
+truncate one, so an empty file is damaged storage, not an enrollment in progress. Do not weaken
+these checks to simplify the helper.

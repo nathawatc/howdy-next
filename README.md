@@ -82,10 +82,12 @@ Install with the configured prefix:
 sudo cmake --install build/release
 ```
 
-After installing or updating, reboot. A running PAM application (display manager, lock screen,
-polkit agent) keeps the `pam_howdy.so` it loaded, and that module works only with the helpers
-installed alongside it. The reboot also clears the runtime copies under `/run/howdy` that older
-versions created.
+After updating, most PAM clients (`sudo`, `su`, the polkit agent helper, the GDM session worker)
+start a new process per authentication and load the new `pam_howdy.so` right away. An application
+that was already running and keeps its PAM handle, such as a lock screen, keeps the old module,
+which works only with the helpers installed alongside it; face authentication in it falls back to
+the password until you restart it or reboot. A reboot also clears the runtime copies under
+`/run/howdy` that older versions created.
 
 For packaging, use an absolute `DESTDIR`. Howdy validates staged install paths and rejects unsafe
 symlinks, hard links, special files, and non-copy `CMAKE_INSTALL_MODE` values. Existing `config.ini`
