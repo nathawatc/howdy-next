@@ -11,13 +11,16 @@
 #include "support/scoped_fd.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include <fcntl.h>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace howdy::native {
 	namespace config_test_hooks {
@@ -38,16 +41,22 @@ namespace howdy::native {
 
 	}  // namespace config_test_hooks
 
-	namespace {
+	using config_utils_internal::FailWith;
 
-		auto FailWith(std::string *error_message, const std::string &message) -> bool {
-			if (error_message != nullptr) {
-				*error_message = message;
-			}
-			return false;
+	auto OpenSecureConfigForRead(const std::filesystem::path                  &config_path,
+	                             const std::optional<uid_t>                    owner_uid,
+	                             const file_security_internal::ValidationRoot &validation_root)
+	    -> SecureConfigOpenResult {
+		ScopedFd fd(open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+		if (!fd.Valid()) {
+			return {.fd = {}, .open_error = errno, .security = {}};
 		}
-
-	}  // namespace
+		if (config_test_hooks::Current()) {
+			config_test_hooks::Current()();
+		}
+		auto security = CheckSecureConfigFd(fd.Get(), config_path, owner_uid, validation_root);
+		return {.fd = std::move(fd), .open_error = 0, .security = std::move(security)};
+	}
 
 	auto ReplaceConfigContentAtomically(
 	    const std::filesystem::path &config_path, const std::string &content,
@@ -128,22 +137,17 @@ namespace howdy::native {
 			return FailWith(error_message, config_utils_internal::kConfigFileLockFailureMessage);
 		}
 
-		ScopedFd fd(open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
-		if (fd.Get() < 0) {
+		auto opened =
+		    OpenSecureConfigForRead(config_path, DefaultSecureOwnerUid(), validation_root);
+		if (!opened.fd.Valid()) {
 			return FailWith(error_message, config_utils_internal::kConfigFileOpenFailureMessage);
 		}
-		if (config_test_hooks::Current()) {
-			config_test_hooks::Current()();
+		if (!opened.security.ok) {
+			return FailWith(error_message, opened.security.error_message);
 		}
 
-		const auto security =
-		    CheckSecureConfigFd(fd.Get(), config_path, DefaultSecureOwnerUid(), validation_root);
-		if (!security.ok) {
-			return FailWith(error_message, security.error_message);
-		}
-
-		const auto current_content = ReadConfigFromFd(fd.Get());
-		fd.Reset();
+		const auto current_content = ReadConfigFromFd(opened.fd.Get());
+		opened.fd.Reset();
 		if (!current_content.has_value()) {
 			return FailWith(error_message, config_utils_internal::kConfigFileReadFailureMessage);
 		}

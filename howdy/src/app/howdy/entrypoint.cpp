@@ -1,6 +1,6 @@
 #include "app/howdy_entrypoint.hpp"
+#include "config/runtime_paths.hpp"
 
-#include <array>
 #include <exception>
 #include <iostream>
 
@@ -14,13 +14,7 @@ namespace howdy::native {
 			return 1;
 		}
 		try {
-			constexpr std::array path_overrides{
-			    "HOWDY_CONFIG",
-			    "HOWDY_MODELS_DIR",
-			    "HOWDY_USER_MODELS_DIR",
-			    "HOWDY_LOG_PATH",
-			};
-			for (const char *name : path_overrides) {
+			for (const char *name : kRuntimePathOverrideEnvVars) {
 				if (unsetenv(name) != 0) {
 					std::cerr << "Error: failed to clear Howdy path overrides\n";
 					return 1;

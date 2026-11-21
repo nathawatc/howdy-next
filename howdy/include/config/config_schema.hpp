@@ -105,6 +105,11 @@ namespace howdy::native::config_schema {
 	inline constexpr FaceMetric kSfaceDefaultMetric = FaceMetric::kCosine;
 
 	auto IsAcceptedBooleanText(std::string_view value) -> bool;
+
+	[[nodiscard]] inline auto OptionName(const Option &option) -> std::string {
+		return std::string(option.section) + "." + std::string(option.key);
+	}
+
 	auto FormatIntegerValue(int value) -> std::optional<std::string>;
 	auto FormatFloatingPointValue(float value) -> std::optional<std::string>;
 	// Accepted sface_threshold values for one metric, for example "0..4" or "above 0 up to 1".

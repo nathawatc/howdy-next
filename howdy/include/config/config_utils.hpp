@@ -4,14 +4,20 @@
 #include "support/atomic_files.hpp"
 #include "support/fd_io.hpp"
 #include "support/file_security.hpp"
+#include "support/file_security/validation_root.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <cerrno>
+#include <cstddef>
 #include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include <unistd.h>
+
+#include <sys/types.h>
 
 namespace howdy::native {
 	inline constexpr auto kConfigFileLabel                  = "Config file";
@@ -20,10 +26,12 @@ namespace howdy::native {
 	inline constexpr auto kStaleEditedConfigMessage =
 	    "Config changed while editing; not installing stale edited config";
 
-	struct ConfigPathCheckResult {
-		bool        ok = false;
-		std::string error_message;
-		int         error_code = 0;
+	using ConfigPathCheckResult = SecurePathCheckResult;
+
+	struct SecureConfigOpenResult {
+		ScopedFd              fd;
+		int                   open_error = 0;
+		ConfigPathCheckResult security;
 	};
 
 	inline auto ConfigAccessErrorHint(int error_code) -> std::string {
@@ -37,34 +45,21 @@ namespace howdy::native {
 		       "helper; do not make /etc/howdy or config.ini world-readable";
 	}
 
+	inline auto ApplyConfigAccessErrorHint(ConfigPathCheckResult result) -> ConfigPathCheckResult {
+		if (!result.ok) {
+			result.error_message += ConfigAccessErrorHint(result.error_code);
+		}
+		return result;
+	}
+
 	inline auto
 	CheckSecureConfigFd(int fd, const std::filesystem::path &config_path,
 	                    const std::optional<uid_t>                    owner_uid,
 	                    const file_security_internal::ValidationRoot &validation_root = {})
 	    -> ConfigPathCheckResult {
-		const auto parent = config_path.parent_path();
-		if (parent.empty()) {
-			return ConfigPathCheckResult{
-			    .ok = false,
-			    .error_message =
-			        "Config file must have a parent directory: " + config_path.string(),
-			    .error_code = 0,
-			};
-		}
-
-		const auto file_security = CheckSecureRootOwnedFdWithDirectory(
+		return ApplyConfigAccessErrorHint(CheckSecureRootOwnedFdWithDirectory(
 		    fd, config_path, {.directory = "Config directory", .file = kConfigFileLabel}, owner_uid,
-		    validation_root);
-		if (!file_security.ok) {
-			return ConfigPathCheckResult{
-			    .ok = false,
-			    .error_message =
-			        file_security.error_message + ConfigAccessErrorHint(file_security.error_code),
-			    .error_code = file_security.error_code,
-			};
-		}
-
-		return ConfigPathCheckResult{.ok = true, .error_message = {}, .error_code = 0};
+		    validation_root));
 	}
 
 	inline auto CheckSecureConfigFd(int fd, const std::filesystem::path &config_path)
@@ -77,35 +72,20 @@ namespace howdy::native {
 	                      const std::optional<uid_t>                    owner_uid,
 	                      const file_security_internal::ValidationRoot &validation_root = {})
 	    -> ConfigPathCheckResult {
-		const auto parent = config_path.parent_path();
-		if (parent.empty()) {
-			return ConfigPathCheckResult{
-			    .ok = false,
-			    .error_message =
-			        "Config file must have a parent directory: " + config_path.string(),
-			    .error_code = 0,
-			};
-		}
-
-		const auto file_security = CheckSecureRootOwnedFileWithDirectory(
+		return ApplyConfigAccessErrorHint(CheckSecureRootOwnedFileWithDirectory(
 		    config_path, {.directory = "Config directory", .file = kConfigFileLabel}, owner_uid,
-		    validation_root);
-		if (!file_security.ok) {
-			return ConfigPathCheckResult{
-			    .ok = false,
-			    .error_message =
-			        file_security.error_message + ConfigAccessErrorHint(file_security.error_code),
-			    .error_code = file_security.error_code,
-			};
-		}
-
-		return ConfigPathCheckResult{.ok = true, .error_message = {}, .error_code = 0};
+		    validation_root));
 	}
 
 	inline auto CheckSecureConfigPath(const std::filesystem::path &config_path)
 	    -> ConfigPathCheckResult {
 		return CheckSecureConfigPath(config_path, DefaultSecureOwnerUid());
 	}
+
+	auto OpenSecureConfigForRead(const std::filesystem::path                  &config_path,
+	                             std::optional<uid_t>                          owner_uid,
+	                             const file_security_internal::ValidationRoot &validation_root = {})
+	    -> SecureConfigOpenResult;
 
 	inline auto ReadConfigFromFd(int                              fd,
 	                             const std::optional<std::size_t> max_bytes = kMaxConfigFileSize)

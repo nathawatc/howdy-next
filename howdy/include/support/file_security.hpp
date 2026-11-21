@@ -181,6 +181,28 @@ namespace howdy::native {
 		return CheckSecurePath(path, SecurePathKind::kDirectory, label, owner_uid);
 	}
 
+	namespace file_security_internal {
+
+		inline auto NormalizeValidationRootPath(std::filesystem::path root)
+		    -> std::filesystem::path {
+			// Strip trailing separators/dots so lstat still rejects a symlink root.
+			while (root != root.root_path() &&
+			       (root.filename().empty() || root.filename() == ".")) {
+				root = root.parent_path();
+			}
+			return root;
+		}
+
+		inline auto DefaultRootPath(const std::filesystem::path &path) -> std::filesystem::path {
+			auto root = path.root_path();
+			if (root.empty()) {
+				root = "/";
+			}
+			return root;
+		}
+
+	}  // namespace file_security_internal
+
 	inline auto CheckSecureRootOwnedDirectoryTree(
 	    const std::filesystem::path &path, const std::string_view label,
 	    const std::optional<uid_t>                    owner_uid       = DefaultSecureOwnerUid(),
@@ -193,12 +215,8 @@ namespace howdy::native {
 				    .error_message = std::string(label) + ": target outside validation boundary",
 				};
 			}
-			auto current = validation_root.path;
-			// Strip trailing separators/dots so lstat still rejects a symlink root.
-			while (current != current.root_path() &&
-			       (current.filename().empty() || current.filename() == ".")) {
-				current = current.parent_path();
-			}
+			auto current =
+			    file_security_internal::NormalizeValidationRootPath(validation_root.path);
 			auto security = CheckSecureRootOwnedDirectory(current, label, owner_uid);
 			if (!security.ok) {
 				return security;
@@ -219,11 +237,7 @@ namespace howdy::native {
 			return CheckSecureRootOwnedDirectory(path, label, owner_uid);
 		}
 
-		auto current = path.root_path();
-		if (current.empty()) {
-			current = "/";
-		}
-
+		auto current       = file_security_internal::DefaultRootPath(path);
 		auto root_security = CheckSecureRootOwnedDirectory(current, label, owner_uid);
 		if (!root_security.ok) {
 			return root_security;
@@ -279,25 +293,17 @@ namespace howdy::native {
 					        },
 					};
 				}
-				auto root = validation_root.path;
-				while (root != root.root_path() &&
-				       (root.filename().empty() || root.filename() == ".")) {
-					root = root.parent_path();
-				}
 				return {
 				    .check =
 				        {
 				            .ok = true,
 				        },
-				    .root     = std::move(root),
+				    .root     = NormalizeValidationRootPath(validation_root.path),
 				    .relative = *rel,
 				};
 			}
 
-			auto root = normalized.root_path();
-			if (root.empty()) {
-				root = "/";
-			}
+			auto root     = DefaultRootPath(normalized);
 			auto relative = normalized.lexically_relative(root);
 			return {
 			    .check =
@@ -451,24 +457,37 @@ namespace howdy::native {
 		std::string_view file;
 	};
 
+	namespace file_security_internal {
+
+		inline auto CheckSecureParentDirectory(const std::filesystem::path &path,
+		                                       const SecurePathLabels       labels,
+		                                       const std::optional<uid_t>   owner_uid,
+		                                       const ValidationRoot        &validation_root)
+		    -> SecurePathCheckResult {
+			const auto parent = path.parent_path();
+			if (parent.empty()) {
+				return SecurePathCheckResult{
+				    .ok            = false,
+				    .error_message = std::string(labels.file) +
+					                 " must have a parent directory: " + path.string(),
+				    .error_code    = 0,
+				};
+			}
+
+			return CheckSecureRootOwnedDirectoryTree(parent, labels.directory, owner_uid,
+			                                         validation_root);
+		}
+
+	}  // namespace file_security_internal
+
 	inline auto CheckSecureRootOwnedFileWithDirectory(
 	    const std::filesystem::path &path, const SecurePathLabels labels,
 	    const std::optional<uid_t>                    owner_uid       = DefaultSecureOwnerUid(),
 	    const file_security_internal::ValidationRoot &validation_root = {})
 	    -> SecurePathCheckResult {
-		const auto parent = path.parent_path();
-		if (parent.empty()) {
-			return SecurePathCheckResult{
-			    .ok = false,
-			    .error_message =
-			        std::string(labels.file) + " must have a parent directory: " + path.string(),
-			    .error_code = 0,
-			};
-		}
-
-		auto directory_security =
-		    CheckSecureRootOwnedDirectoryTree(parent, labels.directory, owner_uid, validation_root);
-		if (!directory_security.ok) {
+		if (auto directory_security = file_security_internal::CheckSecureParentDirectory(
+		        path, labels, owner_uid, validation_root);
+		    !directory_security.ok) {
 			return directory_security;
 		}
 
@@ -480,19 +499,9 @@ namespace howdy::native {
 	    const std::optional<uid_t>                    owner_uid       = DefaultSecureOwnerUid(),
 	    const file_security_internal::ValidationRoot &validation_root = {})
 	    -> SecurePathCheckResult {
-		const auto parent = path.parent_path();
-		if (parent.empty()) {
-			return SecurePathCheckResult{
-			    .ok = false,
-			    .error_message =
-			        std::string(labels.file) + " must have a parent directory: " + path.string(),
-			    .error_code = 0,
-			};
-		}
-
-		auto directory_security =
-		    CheckSecureRootOwnedDirectoryTree(parent, labels.directory, owner_uid, validation_root);
-		if (!directory_security.ok) {
+		if (auto directory_security = file_security_internal::CheckSecureParentDirectory(
+		        path, labels, owner_uid, validation_root);
+		    !directory_security.ok) {
 			return directory_security;
 		}
 

@@ -2,9 +2,9 @@
 
 #include "../config_reader/internal.hpp"
 #include "config/config_schema.hpp"
+#include "support/ascii.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <cstdlib>
 #include <optional>
 #include <string>
@@ -76,12 +76,11 @@ namespace howdy::native {
 			return value;
 		}
 
-		std::ranges::transform(value, value.begin(), [](unsigned char ch) -> char {
-			return static_cast<char>(std::tolower(ch));
-		});
-		return std::ranges::find(option.choices, value) != option.choices.end()
-		           ? value
-				   : std::string(*fallback);
+		const auto matched =
+		    std::ranges::find_if(option.choices, [&value](std::string_view choice) -> bool {
+			    return AsciiEqualIgnoreCase(value, choice);
+		    });
+		return matched != option.choices.end() ? std::string(*matched) : std::string(*fallback);
 	}
 
 	inline auto ReadSfaceMetric(const ConfigReader &reader) -> std::optional<FaceMetric> {

@@ -1,13 +1,13 @@
 #include "config/config_schema.hpp"
 
 #include "config_schema/internal.hpp"
+#include "support/ascii.hpp"
 #include "support/capture_device_path.hpp"
 #include "support/face_metric.hpp"
 #include "support/frame_limits.hpp"
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
@@ -337,14 +337,10 @@ namespace howdy::native::config_schema {
 	}
 
 	auto IsAcceptedBooleanText(std::string_view value) -> bool {
-		std::string lowered;
-		lowered.reserve(value.size());
-		for (const char character : value) {
-			lowered.push_back(
-			    static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
-		}
-		return std::ranges::find(kAcceptedBooleanSpellings, lowered) !=
-		       kAcceptedBooleanSpellings.end();
+		return std::ranges::any_of(kAcceptedBooleanSpellings,
+		                           [value](std::string_view spelling) -> bool {
+			                           return AsciiEqualIgnoreCase(value, spelling);
+		                           });
 	}
 
 	auto FormatIntegerValue(int value) -> std::optional<std::string> {
@@ -411,40 +407,33 @@ namespace howdy::native::config_schema {
 		return FormatRuntimeDefault(option.fallback);
 	}
 
-	auto RuntimeDefaultBool(OptionId id) -> bool {
-		const auto &fallback = RuntimeConfigOption(id).fallback;
-		const auto *val      = std::get_if<bool>(&fallback);
-		if (val == nullptr) {
-			std::abort();
+	namespace {
+
+		template <typename Value> auto RuntimeDefaultValue(OptionId id) -> Value {
+			const auto &fallback = RuntimeConfigOption(id).fallback;
+			const auto *val      = std::get_if<Value>(&fallback);
+			if (val == nullptr) {
+				std::abort();
+			}
+			return *val;
 		}
-		return *val;
+
+	}  // namespace
+
+	auto RuntimeDefaultBool(OptionId id) -> bool {
+		return RuntimeDefaultValue<bool>(id);
 	}
 
 	auto RuntimeDefaultInt(OptionId id) -> int {
-		const auto &fallback = RuntimeConfigOption(id).fallback;
-		const auto *val      = std::get_if<int>(&fallback);
-		if (val == nullptr) {
-			std::abort();
-		}
-		return *val;
+		return RuntimeDefaultValue<int>(id);
 	}
 
 	auto RuntimeDefaultFloat(OptionId id) -> float {
-		const auto &fallback = RuntimeConfigOption(id).fallback;
-		const auto *val      = std::get_if<float>(&fallback);
-		if (val == nullptr) {
-			std::abort();
-		}
-		return *val;
+		return RuntimeDefaultValue<float>(id);
 	}
 
 	auto RuntimeDefaultString(OptionId id) -> std::string_view {
-		const auto &fallback = RuntimeConfigOption(id).fallback;
-		const auto *val      = std::get_if<std::string_view>(&fallback);
-		if (val == nullptr) {
-			std::abort();
-		}
-		return *val;
+		return RuntimeDefaultValue<std::string_view>(id);
 	}
 
 }  // namespace howdy::native::config_schema

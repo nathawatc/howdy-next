@@ -38,19 +38,19 @@ namespace howdy::native {
 	}  // namespace
 
 	auto ResolveConfigPath() -> std::filesystem::path {
-		return SelectRuntimePath("HOWDY_CONFIG", kConfiguredConfigPath);
+		return SelectRuntimePath(kConfigPathEnvVar, kConfiguredConfigPath);
 	}
 
 	auto ResolveModelsDir() -> std::filesystem::path {
-		return SelectRuntimePath("HOWDY_MODELS_DIR", kConfiguredModelsDir);
+		return SelectRuntimePath(kModelsDirEnvVar, kConfiguredModelsDir);
 	}
 
 	auto ResolveUserModelsDir() -> std::filesystem::path {
-		return SelectRuntimePath("HOWDY_USER_MODELS_DIR", kConfiguredUserModelsDir);
+		return SelectRuntimePath(kUserModelsDirEnvVar, kConfiguredUserModelsDir);
 	}
 
 	auto ResolveLogPath() -> std::filesystem::path {
-		return SelectRuntimePath("HOWDY_LOG_PATH", kConfiguredLogPath);
+		return SelectRuntimePath(kLogPathEnvVar, kConfiguredLogPath);
 	}
 
 }  // namespace howdy::native
