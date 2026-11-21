@@ -1,5 +1,6 @@
 #include "app/command_invocation.hpp"
 #include "cli/test/internal.hpp"
+#include "cli/test/preview_session.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "test_support.hpp"

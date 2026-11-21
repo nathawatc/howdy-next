@@ -297,7 +297,7 @@ add_library(
  src/app/howdy/cli/internal.hpp
  src/app/howdy/completion.cpp
  src/app/howdy/completion/internal.hpp
- src/app/howdy/entrypoint.cpp
+ src/app/howdy_entrypoint.cpp
 )
 howdy_configure_native_target(howdy_cli_core)
 target_link_libraries(

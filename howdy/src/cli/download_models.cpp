@@ -361,7 +361,7 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 	}
 	for (const auto &model : dependencies.models) {
 		const auto destination = models_dir / model.filename;
-		const auto readiness   = howdy::native::CheckOpencvModelReadinessWithLabel(
+		const auto readiness   = howdy::native::CheckOpencvModelReadiness(
 		    destination, "Model file", owner_uid, dependencies.validation_root);
 		if (readiness.status == howdy::native::OpenCvModelStatus::kInsecure) {
 			curl_global_cleanup();
