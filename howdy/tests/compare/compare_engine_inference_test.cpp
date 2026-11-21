@@ -263,11 +263,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 	}
 
 	{
-		FakeInferenceContext const   context;
-		howdy::native::CompareEngine engine(MakeVideoConfig());
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		FakeInferenceContext const context;
+		auto engine = howdy::test::compare_engine::MakeFrameOnlyCompareEngine(MakeVideoConfig());
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidDependencies,
-		             "one-argument engine has no inference dependencies");
+		             "frame-only engine has no inference dependencies");
 		ok &= Expect(context.prepare_calls == 0 && context.detect_calls == 0 &&
 		                 context.encode_calls == 0 && context.match_calls == 0,
 		             "missing inference dependencies invoke no callbacks");

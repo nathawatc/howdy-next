@@ -119,7 +119,6 @@ namespace howdy::native::config_schema {
 	auto ValidateOptions(std::span<const Option> options) -> std::optional<std::string>;
 	auto RuntimeConfigOptions() -> std::span<const Option>;
 	auto RuntimeConfigOption(OptionId id) -> const Option &;
-	auto RuntimeConfigOption(std::string_view section, std::string_view key) -> const Option *;
 	auto RuntimeDefaultBool(OptionId id) -> bool;
 	auto RuntimeDefaultInt(OptionId id) -> int;
 	auto RuntimeDefaultFloat(OptionId id) -> float;

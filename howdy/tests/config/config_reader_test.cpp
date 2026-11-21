@@ -7,11 +7,9 @@
 #include "test_support.hpp"
 
 #include <clocale>
-#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
-#include <system_error>
 #include <vector>
 
 namespace {
@@ -19,30 +17,18 @@ namespace {
 	using howdy::test::Expect;
 	using howdy::test::ExpectNear;
 	using howdy::test::ScopedEnvironmentVariable;
-	using howdy::test::WriteFile;
 
 }  // namespace
 
 auto main() -> int {
-	namespace fs = std::filesystem;
-	bool ok      = true;
+	bool ok = true;
 	using howdy::native::config_schema::OptionId;
 
-	const auto      temp_root = fs::temp_directory_path() / "howdy-config-reader-test";
-	std::error_code ec;
-	fs::remove_all(temp_root, ec);
-	fs::create_directories(temp_root, ec);
-	ok &= Expect(!ec, "create temp root");
-
-	const auto valid_path = temp_root / "valid.ini";
-	ok &= Expect(WriteFile(valid_path, "[core]\n"
-	                                   "disabled = true\n"
-	                                   "[video]\n"
-	                                   "timeout = 7\n"
-	                                   "dark_threshold = 55.5\n"),
-	             "write valid ini");
-
-	howdy::native::ConfigReader const valid(valid_path.string());
+	howdy::native::ConfigReader const valid("[core]\n"
+	                                        "disabled = true\n"
+	                                        "[video]\n"
+	                                        "timeout = 7\n"
+	                                        "dark_threshold = 55.5\n");
 	ok &= Expect(valid.Ok(), "valid config should parse");
 	ok &= Expect(!howdy::native::ValidateRuntimeConfig(valid).has_value(),
 	             "valid config passes semantic validation");
@@ -65,9 +51,7 @@ auto main() -> int {
 	                 howdy::native::ReadRuntimeFloat(valid, OptionId::kVideoDarkThreshold) < 55.6F,
 	             "validated dark threshold keeps configured value");
 
-	const auto empty_path = temp_root / "empty.ini";
-	ok &= Expect(WriteFile(empty_path, ""), "write empty ini");
-	howdy::native::ConfigReader const empty(empty_path.string());
+	howdy::native::ConfigReader const empty("");
 	ok &= Expect(empty.Ok(), "empty config should parse");
 	ok &= Expect(howdy::native::ReadRuntimeInt(empty, OptionId::kVideoTimeout) == 4,
 	             "timeout default is used");
@@ -107,13 +91,10 @@ auto main() -> int {
 	ok &= ExpectNear(howdy::native::ReadSfaceThreshold(empty, howdy::native::FaceMetric::kL2),
 	                 0.6942F, 0.0001F, "l2 sface threshold default is used");
 
-	const auto bool_path = temp_root / "typed-bools.ini";
-	ok &= Expect(WriteFile(bool_path, "[core]\n"
-	                                  "detection_notice = true\n"
-	                                  "no_confirmation = false\n"
-	                                  "abort_if_ssh = invalid\n"),
-	             "write typed boolean config");
-	howdy::native::ConfigReader const typed_bools(bool_path.string());
+	howdy::native::ConfigReader const typed_bools("[core]\n"
+	                                              "detection_notice = true\n"
+	                                              "no_confirmation = false\n"
+	                                              "abort_if_ssh = invalid\n");
 	ok &= Expect(howdy::native::ReadRuntimeBool(typed_bools, OptionId::kCoreDetectionNotice),
 	             "generic bool reader accepts true");
 	ok &= Expect(!howdy::native::ReadRuntimeBool(typed_bools, OptionId::kCoreNoConfirmation),
@@ -121,15 +102,12 @@ auto main() -> int {
 	ok &= Expect(howdy::native::ReadRuntimeBool(typed_bools, OptionId::kCoreAbortIfSsh),
 	             "generic bool reader uses schema fallback for invalid value");
 
-	const auto integer_boundary_path = temp_root / "integer-boundaries.ini";
-	ok &= Expect(WriteFile(integer_boundary_path, "[video]\n"
-	                                              "timeout = 1\n"
-	                                              "frame_width = -1\n"
-	                                              "frame_height = 8192\n"
-	                                              "exposure = -1\n"
-	                                              "device_fps = 480\n"),
-	             "write integer boundary config");
-	howdy::native::ConfigReader const integer_boundaries(integer_boundary_path.string());
+	howdy::native::ConfigReader const integer_boundaries("[video]\n"
+	                                                     "timeout = 1\n"
+	                                                     "frame_width = -1\n"
+	                                                     "frame_height = 8192\n"
+	                                                     "exposure = -1\n"
+	                                                     "device_fps = 480\n");
 	ok &= Expect(howdy::native::ReadRuntimeInt(integer_boundaries, OptionId::kVideoTimeout) == 1,
 	             "generic int reader accepts minimum");
 	ok &= Expect(howdy::native::ReadRuntimeInt(integer_boundaries, OptionId::kVideoFrameHeight) ==
@@ -144,12 +122,9 @@ auto main() -> int {
 	    Expect(howdy::native::ReadRuntimeInt(integer_boundaries, OptionId::kVideoDeviceFps) == 480,
 		       "generic int reader accepts fps maximum");
 
-	const auto float_boundary_path = temp_root / "float-boundaries.ini";
-	ok &= Expect(WriteFile(float_boundary_path, "[video]\n"
-	                                            "dark_threshold = 0\n"
-	                                            "max_height = 4096\n"),
-	             "write float boundary config");
-	howdy::native::ConfigReader const float_boundaries(float_boundary_path.string());
+	howdy::native::ConfigReader const float_boundaries("[video]\n"
+	                                                   "dark_threshold = 0\n"
+	                                                   "max_height = 4096\n");
 	ok &=
 	    ExpectNear(howdy::native::ReadRuntimeFloat(float_boundaries, OptionId::kVideoDarkThreshold),
 		           0.0F, 0.0001F, "generic float reader accepts minimum");
@@ -160,10 +135,8 @@ auto main() -> int {
 	const auto &metric_option =
 	    howdy::native::config_schema::RuntimeConfigOption(OptionId::kFaceSfaceMetric);
 	for (const auto choice : metric_option.choices) {
-		const auto choice_path = temp_root / ("metric-" + std::string(choice) + ".ini");
-		ok &= Expect(WriteFile(choice_path, "[face]\nsface_metric = " + std::string(choice) + "\n"),
-		             "write schema metric choice");
-		howdy::native::ConfigReader const choice_reader(choice_path.string());
+		howdy::native::ConfigReader const choice_reader(
+		    "[face]\nsface_metric = " + std::string(choice) + "\n");
 		ok &= Expect(choice_reader.Ok(), "choice reader parses: " + std::string(choice));
 		ok &= Expect(howdy::native::ReadRuntimeString(choice_reader, OptionId::kFaceSfaceMetric) ==
 		                 choice,
@@ -173,26 +146,17 @@ auto main() -> int {
 		                 howdy::native::FaceMetricSpelling(*parsed_metric) == choice,
 		             "typed metric reader accepts schema choice");
 	}
-	const auto normalized_metric_path = temp_root / "normalized-metric.ini";
-	ok &= Expect(WriteFile(normalized_metric_path, "[face]\nsface_metric = L2NORM\n"),
-	             "write normalized metric");
-	howdy::native::ConfigReader const normalized_metric(normalized_metric_path.string());
+	howdy::native::ConfigReader const normalized_metric("[face]\nsface_metric = L2NORM\n");
 	ok &= Expect(howdy::native::ReadRuntimeString(normalized_metric, OptionId::kFaceSfaceMetric) ==
 	                 "l2norm",
 	             "generic string reader normalizes schema choice");
-	const auto invalid_metric_path = temp_root / "invalid-metric-reader.ini";
-	ok &= Expect(WriteFile(invalid_metric_path, "[face]\nsface_metric = invalid\n"),
-	             "write invalid metric");
-	howdy::native::ConfigReader const invalid_metric(invalid_metric_path.string());
+	howdy::native::ConfigReader const invalid_metric("[face]\nsface_metric = invalid\n");
 	ok &= Expect(howdy::native::ReadRuntimeString(invalid_metric, OptionId::kFaceSfaceMetric) ==
 	                 howdy::native::config_schema::RuntimeDefaultString(OptionId::kFaceSfaceMetric),
 	             "generic string reader falls back for invalid choice");
 	ok &= Expect(!howdy::native::ReadSfaceMetric(invalid_metric).has_value(),
 	             "typed metric reader rejects unknown choice");
-	const auto free_form_path = temp_root / "free-form-string.ini";
-	ok &= Expect(WriteFile(free_form_path, "[video]\ndevice_path = /dev/video0\n"),
-	             "write free-form string");
-	howdy::native::ConfigReader const free_form(free_form_path.string());
+	howdy::native::ConfigReader const free_form("[video]\ndevice_path = /dev/video0\n");
 	ok &= Expect(howdy::native::ReadRuntimeString(free_form, OptionId::kVideoDevicePath) ==
 	                 "/dev/video0",
 	             "generic string reader preserves special free-form path");
@@ -207,18 +171,16 @@ auto main() -> int {
 		             std::string("strict float parser rejects ") + value);
 	}
 
-	const auto default_floats_path = temp_root / "default-floats.ini";
-	ok &= Expect(WriteFile(default_floats_path, "[video]\n"
-	                                            "clahe_clip_limit = 1.25\n"
-	                                            "[face]\n"
-	                                            "yunet_score_threshold = 0.8845\n"
-	                                            "yunet_nms_threshold = 0.3\n"
-	                                            "sface_threshold = 0.6942\n"),
-	             "write default float config");
+	const std::string default_floats_ini = "[video]\n"
+	                                       "clahe_clip_limit = 1.25\n"
+	                                       "[face]\n"
+	                                       "yunet_score_threshold = 0.8845\n"
+	                                       "yunet_nms_threshold = 0.3\n"
+	                                       "sface_threshold = 0.6942\n";
 
 	auto const expect_default_float_config = [&](const std::string &label) -> bool {
 		bool                              defaults_ok = true;
-		howdy::native::ConfigReader const defaults(default_floats_path.string());
+		howdy::native::ConfigReader const defaults(default_floats_ini);
 		defaults_ok &= Expect(defaults.Ok(), label + ": default float config parses");
 		defaults_ok &=
 		    ExpectNear(howdy::native::ParseConfigFloatStrict("1.25").value_or(0.0F), 1.25F, 0.0001F,
@@ -266,12 +228,8 @@ auto main() -> int {
 	    "1,25", "1.25abc", "nan", "+inf", "-inf", "inf",
 	};
 	for (const auto &value : invalid_float_values) {
-		const auto invalid_float_path = temp_root / ("invalid-float-" + value + ".ini");
-		ok &= Expect(WriteFile(invalid_float_path, "[video]\n"
-		                                           "clahe_clip_limit = " +
-		                                               value + "\n"),
-		             "write invalid float config for " + value);
-		howdy::native::ConfigReader const invalid_float(invalid_float_path.string());
+		howdy::native::ConfigReader const invalid_float("[video]\nclahe_clip_limit = " + value +
+		                                                "\n");
 		ok &= Expect(invalid_float.Ok(), "invalid float config still parses for " + value);
 		const auto validation = howdy::native::ValidateRuntimeConfig(invalid_float);
 		ok &= Expect(validation.has_value(), "invalid float validation rejects " + value);
@@ -280,31 +238,27 @@ auto main() -> int {
 		    0.0001F, "invalid float getter falls back for " + value);
 	}
 
-	const auto                        missing_path = temp_root / "does-not-exist.ini";
-	howdy::native::ConfigReader const missing(missing_path.string());
-	ok &= Expect(!missing.Ok(), "missing config should fail parse");
-	ok &= Expect(missing.ParseError() != 0, "parse_error is non-zero for missing file");
+	howdy::native::ConfigReader const broken_syntax("[unterminated\n");
+	ok &= Expect(!broken_syntax.Ok(), "broken syntax config should fail parse");
+	ok &= Expect(broken_syntax.ParseError() != 0, "parse_error is non-zero for broken syntax");
 
-	const auto invalid_path = temp_root / "invalid.ini";
-	ok &= Expect(WriteFile(invalid_path, "[face]\n"
-	                                     "sface_metric = weird\n"
-	                                     "sface_threshold = 9\n"
-	                                     "yunet_score_threshold = 4\n"
-	                                     "yunet_nms_threshold = 4\n"
-	                                     "yunet_top_k = 0\n"
-	                                     "[video]\n"
-	                                     "timeout = 0\n"
-	                                     "dark_threshold = 1000\n"
-	                                     "max_height = 0\n"
-	                                     "rotate = 4\n"
-	                                     "exposure = -2\n"
-	                                     "clahe_clip_limit = 0\n"
-	                                     "clahe_tile_grid_size = 0\n"
-	                                     "frame_width = 4\n"
-	                                     "frame_height = 4\n"
-	                                     "device_fps = 9999\n"),
-	             "write invalid bounded config");
-	howdy::native::ConfigReader const invalid(invalid_path.string());
+	howdy::native::ConfigReader const invalid("[face]\n"
+	                                          "sface_metric = weird\n"
+	                                          "sface_threshold = 9\n"
+	                                          "yunet_score_threshold = 4\n"
+	                                          "yunet_nms_threshold = 4\n"
+	                                          "yunet_top_k = 0\n"
+	                                          "[video]\n"
+	                                          "timeout = 0\n"
+	                                          "dark_threshold = 1000\n"
+	                                          "max_height = 0\n"
+	                                          "rotate = 4\n"
+	                                          "exposure = -2\n"
+	                                          "clahe_clip_limit = 0\n"
+	                                          "clahe_tile_grid_size = 0\n"
+	                                          "frame_width = 4\n"
+	                                          "frame_height = 4\n"
+	                                          "device_fps = 9999\n");
 	ok &= Expect(invalid.Ok(), "invalid bounded config still parses");
 	ok &= Expect(howdy::native::ValidateRuntimeConfig(invalid).has_value(),
 	             "invalid bounded config fails semantic validation");
@@ -328,10 +282,7 @@ auto main() -> int {
 	             "invalid frame height falls back");
 	ok &= Expect(howdy::native::ReadRuntimeInt(invalid, OptionId::kVideoDeviceFps) == 0,
 	             "invalid device fps falls back");
-	const auto wide_threshold_path = temp_root / "wide-threshold.ini";
-	ok &= Expect(WriteFile(wide_threshold_path, "[face]\nsface_threshold = 3\n"),
-	             "write threshold above the unit-vector distance bound");
-	howdy::native::ConfigReader const wide_threshold(wide_threshold_path.string());
+	howdy::native::ConfigReader const wide_threshold("[face]\nsface_threshold = 3\n");
 	ok &= ExpectNear(
 	    howdy::native::ReadSfaceThreshold(wide_threshold, howdy::native::FaceMetric::kL2), 3.0F,
 	    0.0001F, "l2 keeps threshold of 3");
@@ -364,14 +315,11 @@ auto main() -> int {
 	ok &= Expect(!howdy::native::IsAllowedCaptureDevicePath("/dev/null"),
 	             "wrong character device path is rejected");
 
-	const auto malformed_path = temp_root / "malformed.ini";
-	ok &= Expect(WriteFile(malformed_path, "[video]\n"
-	                                       "timeout = abc\n"
-	                                       "dark_threshold = nope\n"
-	                                       "[face]\n"
-	                                       "sface_threshold = bad\n"),
-	             "write malformed ini");
-	howdy::native::ConfigReader const malformed(malformed_path.string());
+	howdy::native::ConfigReader const malformed("[video]\n"
+	                                            "timeout = abc\n"
+	                                            "dark_threshold = nope\n"
+	                                            "[face]\n"
+	                                            "sface_threshold = bad\n");
 	ok &= Expect(malformed.Ok(), "malformed config should still parse");
 	ok &= Expect(howdy::native::ValidateRuntimeConfig(malformed).has_value(),
 	             "malformed numeric config fails semantic validation");
@@ -383,14 +331,11 @@ auto main() -> int {
 	    ExpectNear(howdy::native::ReadSfaceThreshold(malformed, howdy::native::FaceMetric::kCosine),
 		           0.6942F, 0.0001F, "malformed sface threshold falls back");
 
-	const auto non_finite_path = temp_root / "non-finite.ini";
-	ok &= Expect(WriteFile(non_finite_path, "[video]\n"
-	                                        "dark_threshold = nan\n"
-	                                        "[face]\n"
-	                                        "yunet_score_threshold = +inf\n"
-	                                        "sface_threshold = -inf\n"),
-	             "write non-finite numeric config");
-	howdy::native::ConfigReader const non_finite(non_finite_path.string());
+	howdy::native::ConfigReader const non_finite("[video]\n"
+	                                             "dark_threshold = nan\n"
+	                                             "[face]\n"
+	                                             "yunet_score_threshold = +inf\n"
+	                                             "sface_threshold = -inf\n");
 	ok &= Expect(non_finite.Ok(), "non-finite config should still parse");
 	ok &= Expect(howdy::native::ValidateRuntimeConfig(non_finite).has_value(),
 	             "non-finite numeric values fail semantic validation");
@@ -403,11 +348,8 @@ auto main() -> int {
 	    howdy::native::ReadSfaceThreshold(non_finite, howdy::native::FaceMetric::kCosine), 0.6942F,
 	    0.0001F, "non-finite sface threshold falls back to schema default");
 
-	const auto negative_fps_path = temp_root / "negative-fps.ini";
-	ok &= Expect(WriteFile(negative_fps_path, "[video]\n"
-	                                          "device_fps = -1\n"),
-	             "write negative fps config");
-	howdy::native::ConfigReader const negative_fps(negative_fps_path.string());
+	howdy::native::ConfigReader const negative_fps("[video]\n"
+	                                               "device_fps = -1\n");
 	ok &= Expect(negative_fps.Ok(), "negative fps config should parse");
 	const auto negative_fps_validation = howdy::native::ValidateRuntimeConfig(negative_fps);
 	ok &= Expect(negative_fps_validation.has_value(), "negative fps fails semantic validation");
@@ -420,14 +362,12 @@ auto main() -> int {
 	ok &= Expect(howdy::native::ReadRuntimeInt(negative_fps, OptionId::kVideoDeviceFps) == 0,
 	             "negative fps still falls back to runtime default");
 
-	const howdy::native::ConfigReader memory_with_path(
-	    "/custom/config.ini", "[video]\ntimeout = 12\ndark_threshold = 42.0\n");
-	ok &= Expect(memory_with_path.Ok(), "ConfigReader(path, content) parses valid ini buffer");
-	ok &= Expect(memory_with_path.GetInt("video", "timeout", 3) == 12,
-	             "ConfigReader(path, content) parses timeout value");
-	ok &= ExpectNear(memory_with_path.GetFloat("video", "dark_threshold", 0.0F), 42.0F, 0.0001F,
-	                 "ConfigReader(path, content) parses dark_threshold value");
+	const howdy::native::ConfigReader in_memory("[video]\ntimeout = 12\ndark_threshold = 42.0\n");
+	ok &= Expect(in_memory.Ok(), "ConfigReader(content) parses valid ini buffer");
+	ok &= Expect(in_memory.GetInt("video", "timeout", 3) == 12,
+	             "ConfigReader(content) parses timeout value");
+	ok &= ExpectNear(in_memory.GetFloat("video", "dark_threshold", 0.0F), 42.0F, 0.0001F,
+	                 "ConfigReader(content) parses dark_threshold value");
 
-	fs::remove_all(temp_root, ec);
 	return ok ? 0 : 1;
 }

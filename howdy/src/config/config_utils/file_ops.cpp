@@ -91,7 +91,7 @@ namespace howdy::native {
 			    error_message, config_utils_internal::kUpdatedConfigTooLargeMessage);
 		}
 
-		ConfigReader const config("<memory>", content);
+		ConfigReader const config(content);
 		if (!config.Ok()) {
 			return config_utils_internal::FailWith(error_message, kUpdatedConfigInvalidMessage);
 		}

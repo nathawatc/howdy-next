@@ -48,10 +48,6 @@ namespace {
 
 namespace howdy::native {
 
-	CompareEngine::CompareEngine(VideoConfig config)
-	    : config_(std::move(config))
-	    , clahe_(MakeClahe(config_)) {}
-
 	CompareEngine::CompareEngine(VideoConfig config, FaceInferenceOperations inference,
 	                             PreparedFaceMatcher matcher, FaceMatchingOperations matching)
 	    : config_(std::move(config))

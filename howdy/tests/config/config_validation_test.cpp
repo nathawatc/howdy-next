@@ -4,12 +4,12 @@
 #include "config/config_schema.hpp"
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <filesystem>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 #include <variant>
 
@@ -21,7 +21,14 @@ namespace {
 
 	using howdy::native::config_schema::OptionName;
 	using howdy::test::Expect;
-	using howdy::test::WriteFile;
+	using howdy::test::ReadFile;
+
+	auto HasRuntimeConfigOption(std::string_view section, std::string_view key) -> bool {
+		return std::ranges::any_of(howdy::native::config_schema::RuntimeConfigOptions(),
+		                           [&](const howdy::native::config_schema::Option &option) -> bool {
+			                           return option.section == section && option.key == key;
+		                           });
+	}
 
 	auto SchemaOptionIdsAreUniqueAndResolvable() -> bool {
 		using howdy::native::config_schema::OptionId;
@@ -112,9 +119,7 @@ namespace {
 				message += section;
 				message += '.';
 				message += key;
-				ok &= Expect(howdy::native::config_schema::RuntimeConfigOption(section, key) !=
-				                 nullptr,
-				             message);
+				ok &= Expect(HasRuntimeConfigOption(section, key), message);
 			}
 		}
 		ok &= Expect(parsed_option_count ==
@@ -123,20 +128,13 @@ namespace {
 		return ok;
 	}
 
-	auto Validates(const std::filesystem::path &path, const std::string &content) -> bool {
-		if (!WriteFile(path, content)) {
-			return false;
-		}
-		const howdy::native::ConfigReader config(path.string());
+	auto Validates(const std::string &content) -> bool {
+		const howdy::native::ConfigReader config(content);
 		return config.Ok() && !howdy::native::ValidateRuntimeConfig(config).has_value();
 	}
 
-	auto Rejects(const std::filesystem::path &path, const std::string &content, const char *needle)
-	    -> bool {
-		if (!WriteFile(path, content)) {
-			return false;
-		}
-		const howdy::native::ConfigReader config(path.string());
+	auto Rejects(const std::string &content, const char *needle) -> bool {
+		const howdy::native::ConfigReader config(content);
 		if (!config.Ok()) {
 			return false;
 		}
@@ -144,12 +142,8 @@ namespace {
 		return validation.has_value() && validation->contains(needle);
 	}
 
-	auto RejectsExact(const std::filesystem::path &path, const std::string &content,
-	                  std::string_view expected) -> bool {
-		if (!WriteFile(path, content)) {
-			return false;
-		}
-		const howdy::native::ConfigReader config(path.string());
+	auto RejectsExact(const std::string &content, std::string_view expected) -> bool {
+		const howdy::native::ConfigReader config(content);
 		if (!config.Ok()) {
 			return false;
 		}
@@ -162,17 +156,14 @@ namespace {
 auto main() -> int {
 	namespace fs = std::filesystem;
 
-	bool            ok              = true;
-	const auto      packaged_config = fs::path(HOWDY_PACKAGED_CONFIG_PATH);
-	const auto      temp_root       = fs::current_path() / "howdy-config-validation-test";
-	std::error_code ec;
-	fs::remove_all(temp_root, ec);
-	fs::create_directories(temp_root, ec);
-	ok &= Expect(!ec, "create temp root");
+	bool       ok              = true;
+	const auto packaged_config = fs::path(HOWDY_PACKAGED_CONFIG_PATH);
 
 	ok &= Expect(SchemaOptionIdsAreUniqueAndResolvable(),
 	             "schema option ids are unique and resolvable");
-	const howdy::native::ConfigReader packaged_reader(packaged_config.string());
+	const auto packaged_content = ReadFile(packaged_config);
+	ok &= Expect(!packaged_content.empty(), "read packaged config");
+	const howdy::native::ConfigReader packaged_reader(packaged_content);
 	ok &= Expect(packaged_reader.Ok(), "packaged config parses");
 	if (packaged_reader.Ok()) {
 		ok &= Expect(!howdy::native::ValidateRuntimeConfig(packaged_reader).has_value(),
@@ -181,18 +172,14 @@ auto main() -> int {
 		             "packaged config matches schema fallbacks");
 	}
 
-	ok &= Expect(Validates(temp_root / "device-fps-zero.ini", "[video]\ndevice_fps = 0\n"),
-	             "device_fps zero is valid");
-	ok &= Expect(
-	    Rejects(temp_root / "device-fps-negative.ini", "[video]\ndevice_fps = -1\n", "device_fps"),
-	    "device_fps negative is invalid");
-	ok &= Expect(
-	    Rejects(temp_root / "device-fps-text.ini", "[video]\ndevice_fps = fast\n", "device_fps"),
-	    "invalid integer values are rejected");
-	ok &= Expect(Rejects(temp_root / "float-text.ini", "[video]\nclahe_clip_limit = fast\n",
-	                     "clahe_clip_limit"),
+	ok &= Expect(Validates("[video]\ndevice_fps = 0\n"), "device_fps zero is valid");
+	ok &= Expect(Rejects("[video]\ndevice_fps = -1\n", "device_fps"),
+	             "device_fps negative is invalid");
+	ok &= Expect(Rejects("[video]\ndevice_fps = fast\n", "device_fps"),
+	             "invalid integer values are rejected");
+	ok &= Expect(Rejects("[video]\nclahe_clip_limit = fast\n", "clahe_clip_limit"),
 	             "invalid float values are rejected");
-	ok &= Expect(Rejects(temp_root / "bool-text.ini", "[core]\ndisabled = maybe\n", "disabled"),
+	ok &= Expect(Rejects("[core]\ndisabled = maybe\n", "disabled"),
 	             "invalid boolean values are rejected");
 
 	struct BoundaryCase {
@@ -302,121 +289,90 @@ auto main() -> int {
 
 	for (const auto &test : boundary_cases) {
 		const auto prefix = std::string("[") + test.section + "]\n" + test.key + " = ";
-		ok &= Expect(Validates(temp_root / (std::string(test.name) + "-minimum.ini"),
-		                       prefix + test.minimum + "\n"),
+		ok &= Expect(Validates(prefix + test.minimum + "\n"),
 		             std::string(test.name) + " minimum boundary is valid");
-		ok &= Expect(Validates(temp_root / (std::string(test.name) + "-maximum.ini"),
-		                       prefix + test.maximum + "\n"),
+		ok &= Expect(Validates(prefix + test.maximum + "\n"),
 		             std::string(test.name) + " maximum boundary is valid");
-		ok &= Expect(Rejects(temp_root / (std::string(test.name) + "-below.ini"),
-		                     prefix + test.below + "\n", test.key),
+		ok &= Expect(Rejects(prefix + test.below + "\n", test.key),
 		             std::string(test.name) + " below minimum is invalid");
-		ok &= Expect(Rejects(temp_root / (std::string(test.name) + "-above.ini"),
-		                     prefix + test.above + "\n", test.key),
+		ok &= Expect(Rejects(prefix + test.above + "\n", test.key),
 		             std::string(test.name) + " above maximum is invalid");
 	}
 
 	for (const auto *const key : {"frame_width", "frame_height"}) {
 		const auto prefix = std::string("[video]\n") + key + " = ";
-		ok &= Expect(Validates(temp_root / (std::string(key) + "-sentinel.ini"), prefix + "-1\n"),
-		             std::string(key) + " -1 sentinel is valid");
-		ok &= Expect(Validates(temp_root / (std::string(key) + "-minimum.ini"), prefix + "16\n"),
-		             std::string(key) + " minimum boundary is valid");
-		ok &= Expect(Validates(temp_root / (std::string(key) + "-maximum.ini"), prefix + "8192\n"),
-		             std::string(key) + " maximum boundary is valid");
-		ok &= Expect(Rejects(temp_root / (std::string(key) + "-below.ini"), prefix + "15\n", key),
-		             std::string(key) + " below minimum is invalid");
-		ok &= Expect(Rejects(temp_root / (std::string(key) + "-above.ini"), prefix + "8193\n", key),
-		             std::string(key) + " above maximum is invalid");
+		ok &= Expect(Validates(prefix + "-1\n"), std::string(key) + " -1 sentinel is valid");
+		ok &= Expect(Validates(prefix + "16\n"), std::string(key) + " minimum boundary is valid");
+		ok &= Expect(Validates(prefix + "8192\n"), std::string(key) + " maximum boundary is valid");
+		ok &= Expect(Rejects(prefix + "15\n", key), std::string(key) + " below minimum is invalid");
+		ok &=
+		    Expect(Rejects(prefix + "8193\n", key), std::string(key) + " above maximum is invalid");
 	}
 
-	ok &= Expect(Validates(temp_root / "exposure-sentinel.ini", "[video]\nexposure = -1\n"),
-	             "exposure -1 sentinel is valid");
-	ok &= Expect(Validates(temp_root / "exposure-minimum.ini", "[video]\nexposure = 0\n"),
-	             "exposure minimum boundary is valid");
-	ok &= Expect(Validates(temp_root / "exposure-maximum.ini", "[video]\nexposure = 10000\n"),
-	             "exposure maximum boundary is valid");
-	ok &= Expect(Rejects(temp_root / "exposure-below.ini", "[video]\nexposure = -2\n", "exposure"),
+	ok &= Expect(Validates("[video]\nexposure = -1\n"), "exposure -1 sentinel is valid");
+	ok &= Expect(Validates("[video]\nexposure = 0\n"), "exposure minimum boundary is valid");
+	ok &= Expect(Validates("[video]\nexposure = 10000\n"), "exposure maximum boundary is valid");
+	ok &= Expect(Rejects("[video]\nexposure = -2\n", "exposure"),
 	             "exposure below sentinel is invalid");
-	ok &=
-	    Expect(Rejects(temp_root / "exposure-above.ini", "[video]\nexposure = 10001\n", "exposure"),
-		       "exposure above maximum is invalid");
+	ok &= Expect(Rejects("[video]\nexposure = 10001\n", "exposure"),
+	             "exposure above maximum is invalid");
 
 	for (const auto *const value : {"nan", "+inf", "-inf"}) {
-		ok &= Expect(Rejects(temp_root / (std::string("non-finite-") + value + ".ini"),
-		                     "[face]\nyunet_score_threshold = " + std::string(value) + "\n",
+		ok &= Expect(Rejects("[face]\nyunet_score_threshold = " + std::string(value) + "\n",
 		                     "yunet_score_threshold"),
 		             std::string("non-finite float is rejected: ") + value);
 		ok &= Expect(!howdy::native::ParseConfigFloatStrict(value).has_value(),
 		             std::string("strict parser rejects non-finite value: ") + value);
 	}
 
-	ok &=
-	    Expect(RejectsExact(temp_root / "cosine-threshold-zero.ini",
-		                    "[face]\nsface_metric = cosine\nsface_threshold = 0\n",
-		                    "Invalid config value for sface_threshold=\"0\": expected range above "
-		                    "0 up to 1"),
-		       "cosine threshold of zero would accept unrelated faces and is rejected");
-	ok &= Expect(Validates(temp_root / "cosine-threshold-min.ini",
-	                       "[face]\nsface_metric = cosine\nsface_threshold = 0.001\n"),
+	ok &= Expect(RejectsExact("[face]\nsface_metric = cosine\nsface_threshold = 0\n",
+	                          "Invalid config value for sface_threshold=\"0\": expected range "
+	                          "above 0 up to 1"),
+	             "cosine threshold of zero would accept unrelated faces and is rejected");
+	ok &= Expect(Validates("[face]\nsface_metric = cosine\nsface_threshold = 0.001\n"),
 	             "smallest positive cosine threshold is valid");
-	ok &= Expect(Validates(temp_root / "l2-threshold-zero.ini",
-	                       "[face]\nsface_metric = l2\nsface_threshold = 0\n"),
+	ok &= Expect(Validates("[face]\nsface_metric = l2\nsface_threshold = 0\n"),
 	             "distance threshold of zero only accepts exact matches and stays valid");
-	ok &= Expect(Validates(temp_root / "cosine-threshold-max.ini",
-	                       "[face]\nsface_metric = cosine\nsface_threshold = 1\n"),
+	ok &= Expect(Validates("[face]\nsface_metric = cosine\nsface_threshold = 1\n"),
 	             "cosine threshold maximum boundary is valid");
-	ok &= Expect(RejectsExact(temp_root / "cosine-threshold-over.ini",
-	                          "[face]\nsface_metric = cosine\nsface_threshold = 1.001\n",
+	ok &= Expect(RejectsExact("[face]\nsface_metric = cosine\nsface_threshold = 1.001\n",
 	                          "Invalid config value for sface_threshold=\"1.001\": expected range "
 	                          "above 0 up to 1"),
 	             "cosine threshold above maximum keeps validation message");
-	ok &= Expect(Validates(temp_root / "l2-threshold-max.ini",
-	                       "[face]\nsface_metric = l2\nsface_threshold = 4\n"),
+	ok &= Expect(Validates("[face]\nsface_metric = l2\nsface_threshold = 4\n"),
 	             "l2 threshold maximum boundary is valid");
-	ok &= Expect(
-	    RejectsExact(temp_root / "l2-threshold-over.ini",
-		             "[face]\nsface_metric = l2\nsface_threshold = 4.001\n",
-		             "Invalid config value for sface_threshold=\"4.001\": expected range 0..4"),
-	    "l2 threshold above maximum keeps validation message");
-	ok &= Expect(Validates(temp_root / "l2norm-threshold-max.ini",
-	                       "[face]\nsface_metric = L2NORM\nsface_threshold = 1.41\n"),
+	ok &= Expect(RejectsExact("[face]\nsface_metric = l2\nsface_threshold = 4.001\n",
+	                          "Invalid config value for sface_threshold=\"4.001\": expected range "
+	                          "0..4"),
+	             "l2 threshold above maximum keeps validation message");
+	ok &= Expect(Validates("[face]\nsface_metric = L2NORM\nsface_threshold = 1.41\n"),
 	             "normalized l2norm threshold maximum is valid");
 	ok &= Expect(
-	    RejectsExact(temp_root / "l2norm-threshold-over.ini",
-		             "[face]\nsface_metric = L2NORM\nsface_threshold = 1.42\n",
+	    RejectsExact("[face]\nsface_metric = L2NORM\nsface_threshold = 1.42\n",
 		             "Invalid config value for sface_threshold=\"1.42\": expected range 0..1.41"),
 	    "l2norm threshold that admits faces without positive similarity is rejected");
 	ok &= Expect(
-	    RejectsExact(temp_root / "l2norm-threshold-all.ini",
-		             "[face]\nsface_metric = L2NORM\nsface_threshold = 2\n",
+	    RejectsExact("[face]\nsface_metric = L2NORM\nsface_threshold = 2\n",
 		             "Invalid config value for sface_threshold=\"2\": expected range 0..1.41"),
 	    "l2norm threshold at the unit-vector distance bound would accept every face");
 
 	for (const auto *const metric : {"cosine", "COSINE", "l2", "L2", "l2norm", "L2NORM"}) {
-		ok &= Expect(Validates(temp_root / (std::string("metric-") + metric + ".ini"),
-		                       "[face]\nsface_metric = " + std::string(metric) + "\n"),
+		ok &= Expect(Validates("[face]\nsface_metric = " + std::string(metric) + "\n"),
 		             std::string("sface metric is accepted case-insensitively: ") + metric);
 	}
-	ok &=
-	    Expect(RejectsExact(temp_root / "invalid-metric.ini", "[face]\nsface_metric = euclidean\n",
-		                    "Invalid config value for sface_metric=\"euclidean\": expected one "
-		                    "of: cosine, l2, l2norm"),
-		       "unknown sface metric is rejected through existing validation contract");
+	ok &= Expect(RejectsExact("[face]\nsface_metric = euclidean\n",
+	                          "Invalid config value for sface_metric=\"euclidean\": expected one "
+	                          "of: cosine, l2, l2norm"),
+	             "unknown sface metric is rejected through existing validation contract");
 
 	for (const auto *const device_path :
 	     {"none", "/dev/video0", "/dev/v4l/by-path/platform-camera", "/dev/v4l/by-id/usb-camera"}) {
-		ok &=
-		    Expect(Validates(temp_root / (std::string("device-path-") +
-			                              std::to_string(std::string(device_path).size()) + ".ini"),
-			                 "[video]\ndevice_path = " + std::string(device_path) + "\n"),
-			       std::string("device path is accepted: ") + device_path);
+		ok &= Expect(Validates("[video]\ndevice_path = " + std::string(device_path) + "\n"),
+		             std::string("device path is accepted: ") + device_path);
 	}
-	ok &= Expect(Rejects(temp_root / "unrelated-device-path.ini",
-	                     "[video]\ndevice_path = /tmp/camera\n", "device_path"),
+	ok &= Expect(Rejects("[video]\ndevice_path = /tmp/camera\n", "device_path"),
 	             "unrelated device path is rejected");
-	ok &= Expect(Rejects(temp_root / "traversal-by-id-device-path.ini",
-	                     "[video]\ndevice_path = /dev/v4l/by-id/../../null\n", "device_path"),
+	ok &= Expect(Rejects("[video]\ndevice_path = /dev/v4l/by-id/../../null\n", "device_path"),
 	             "traversal by-id device path is rejected");
 
 	const std::array<std::pair<const char *, const char *>, 4> known_runtime_options = {
@@ -428,25 +384,21 @@ auto main() -> int {
 	    },
 	};
 	for (const auto &[section, key] : known_runtime_options) {
-		ok &= Expect(howdy::native::config_schema::RuntimeConfigOption(section, key) != nullptr,
+		ok &= Expect(HasRuntimeConfigOption(section, key),
 		             std::string("runtime config option present: ") + section + "." + key);
 	}
-	ok &= Expect(Validates(temp_root / "unknown-keys.ini", "[core]\nunknown_core_key = invalid\n"
-	                                                       "[video]\nunknown_video_key = invalid\n"
-	                                                       "[face]\nunknown_face_key = invalid\n"),
+	ok &= Expect(Validates("[core]\nunknown_core_key = invalid\n"
+	                       "[video]\nunknown_video_key = invalid\n"
+	                       "[face]\nunknown_face_key = invalid\n"),
 	             "unknown config keys remain ignored");
 
-	const auto invalid_runtime = temp_root / "invalid-runtime.ini";
-	ok &= Expect(WriteFile(invalid_runtime, "[video]\ntimeout = abc\n"), "write invalid runtime");
-	const howdy::native::ConfigReader invalid_config(invalid_runtime.string());
+	const howdy::native::ConfigReader invalid_config("[video]\ntimeout = abc\n");
 	ok &= Expect(invalid_config.Ok(), "invalid runtime config is syntactically parseable");
 	ok &= Expect(howdy::native::ValidateRuntimeConfig(invalid_config).has_value(),
 	             "invalid runtime config fails closed before runtime use");
 	ok &= Expect(howdy::native::ReadRuntimeInt(
 	                 invalid_config, howdy::native::config_schema::OptionId::kVideoTimeout) == 4,
 	             "unsafe invalid timeout falls back to current default value");
-
-	fs::remove_all(temp_root, ec);
 
 	return ok ? 0 : 1;
 }

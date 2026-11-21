@@ -6,14 +6,10 @@
 
 #include <array>
 #include <cstddef>
-#include <filesystem>
 #include <locale>
 #include <span>
 #include <string>
 #include <string_view>
-#include <system_error>
-
-#include <unistd.h>
 
 namespace {
 
@@ -22,7 +18,6 @@ namespace {
 	using howdy::native::config_schema::RuntimeDefault;
 	using howdy::native::config_schema::ValueType;
 	using howdy::test::Expect;
-	using howdy::test::WriteFile;
 
 	class CommaDecimalNumpunct final : public std::numpunct<char> {
 	protected:
@@ -168,19 +163,11 @@ auto main() -> int {
 		ok &= Expect(repeated.ok && repeated.content == production_result.content,
 		             "production rendering is deterministic");
 
-		const auto temp_config_path =
-		    std::filesystem::temp_directory_path() /
-		    ("howdy-rendered-config-test-" + std::to_string(getpid()) + ".ini");
-		std::error_code ec;
-		std::filesystem::remove(temp_config_path, ec);
-		ok &= Expect(WriteFile(temp_config_path, production_result.content),
-		             "write generated production config to temp file");
-		const howdy::native::ConfigReader reader(temp_config_path.string());
+		const howdy::native::ConfigReader reader(production_result.content);
 		ok &= Expect(reader.Ok(), "rendered production config parses without INI syntax errors");
 		const auto validation_error = howdy::native::ValidateRuntimeConfig(reader);
 		ok &= Expect(!validation_error.has_value(),
 		             "rendered production config passes full canonical runtime validation");
-		std::filesystem::remove(temp_config_path, ec);
 	}
 
 	const std::array empty_description = {

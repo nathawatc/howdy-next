@@ -239,7 +239,7 @@ namespace howdy::test {
 		                                       "disabled backup = false\n"
 		                                       "disabled = true\n",
 		             "unrelated and similarly named options remain unchanged");
-		howdy::native::ConfigReader const duplicate_name_reader(duplicate_name_path.string());
+		howdy::native::ConfigReader const duplicate_name_reader(ReadFile(duplicate_name_path));
 		ok &= Expect(duplicate_name_reader.Ok() &&
 		                 duplicate_name_reader.GetBool("core", "disabled", false),
 		             "updated file has effective core.disabled value");
@@ -250,7 +250,7 @@ namespace howdy::test {
 		                                             "disabled = false\n";
 		ok &= Expect(WriteConfigTestFile(duplicate_target_path, duplicate_target_content),
 		             "write duplicate target option");
-		howdy::native::ConfigReader const duplicate_target_reader(duplicate_target_path.string());
+		howdy::native::ConfigReader const duplicate_target_reader(ReadFile(duplicate_target_path));
 		ok &= Expect(duplicate_target_reader.Ok() &&
 		                 !duplicate_target_reader.GetBool("core", "disabled", true),
 		             "duplicate target fixture has effective false value before update");
@@ -299,7 +299,7 @@ namespace howdy::test {
 		const auto after_disable_recovery = ReadFile(context.config_path);
 		ok &= Expect(after_disable_recovery.contains("disabled = true\n"),
 		             "recovery write updates disabled key");
-		howdy::native::ConfigReader const still_invalid(context.config_path.string());
+		howdy::native::ConfigReader const still_invalid(after_disable_recovery);
 		ok &= Expect(still_invalid.Ok(), "recovery-write config still parses");
 		ok &= Expect(howdy::native::ValidateRuntimeConfig(still_invalid).has_value(),
 		             "recovery write does not mask unrelated invalid config values");

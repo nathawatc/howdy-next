@@ -212,7 +212,7 @@ namespace howdy::test {
 		                                               false, true, {context.temp_root}),
 		             "update_config_value rejects hard-linked config");
 
-		howdy::native::ConfigReader const validated(context.config_path.string());
+		howdy::native::ConfigReader const validated(ReadFile(context.config_path));
 		ok &= Expect(validated.Ok(), "validated config still parses");
 		ok &= Expect(!howdy::native::ValidateRuntimeConfig(validated).has_value(),
 		             "validated config passes semantic validation");

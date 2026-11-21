@@ -47,7 +47,6 @@ namespace howdy::native {
 
 	class CompareEngine {
 	public:
-		explicit CompareEngine(VideoConfig config);
 		CompareEngine(VideoConfig config, FaceInferenceOperations inference,
 		              PreparedFaceMatcher matcher, FaceMatchingOperations matching = {});
 

@@ -62,33 +62,29 @@ namespace howdy::native {
 
 	auto VideoCapture::Open(bool perform_warm_up) -> bool {
 		if (settings_.device_path == kNoCaptureDevice) {
-			SetError(CaptureError::kMissingDevice,
-			         "Camera is not configured; set video.device_path");
+			error_message_ = "Camera is not configured; set video.device_path";
 			return false;
 		}
 
 		Release();
-		error_ = CaptureError::kNone;
 		error_message_.clear();
 
 		if (!std::filesystem::exists(settings_.device_path) && settings_.warn_no_device) {
-			SetError(CaptureError::kMissingDevice,
-			         "Configured camera device does not exist: " + settings_.device_path);
+			error_message_ = "Configured camera device does not exist: " + settings_.device_path;
 			return false;
 		}
 
 		if (!IsAllowedCaptureDevicePath(settings_.device_path)) {
-			SetError(CaptureError::kOpenFailed, "Configured camera device must be a " +
-			                                        AcceptedCaptureDevicePatternsText() +
-			                                        " character device: " + settings_.device_path);
+			error_message_ = "Configured camera device must be a " +
+			                 AcceptedCaptureDevicePatternsText() +
+			                 " character device: " + settings_.device_path;
 			return false;
 		}
 
 		try {
 			capture_.open(settings_.device_path, cv::CAP_V4L);
 			if (!capture_.isOpened()) {
-				SetError(CaptureError::kOpenFailed,
-				         "Failed to open camera device: " + settings_.device_path);
+				error_message_ = "Failed to open camera device: " + settings_.device_path;
 				return false;
 			}
 
@@ -111,8 +107,8 @@ namespace howdy::native {
 			return true;
 		} catch (const cv::Exception &error) {
 			Release();
-			SetError(CaptureError::kOpenFailed, std::string(kOpenCvOpenCameraErrorPrefix) +
-			                                        settings_.device_path + ": " + error.what());
+			error_message_ = std::string(kOpenCvOpenCameraErrorPrefix) + settings_.device_path +
+			                 ": " + error.what();
 			return false;
 		}
 	}
@@ -126,35 +122,36 @@ namespace howdy::native {
 			return true;
 		} catch (const cv::Exception &error) {
 			Release();
-			SetError(CaptureError::kOpenFailed, std::string(kOpenCvOpenCameraErrorPrefix) +
-			                                        settings_.device_path + ": " + error.what());
+			error_message_ = std::string(kOpenCvOpenCameraErrorPrefix) + settings_.device_path +
+			                 ": " + error.what();
 			return false;
 		}
 	}
 
 	auto VideoCapture::Grab() -> bool {
 		if (!capture_.isOpened()) {
-			SetError(CaptureError::kOpenFailed, kCameraNotOpenMessage);
+			error_message_ = kCameraNotOpenMessage;
 			return false;
 		}
 
 		if (!capture_.grab()) {
-			SetError(CaptureError::kReadFailed, "Failed to grab a frame from camera");
+			error_message_ = "Failed to grab a frame from camera";
 			return false;
 		}
+		error_message_.clear();
 		return true;
 	}
 
 	auto VideoCapture::Read(cv::Mat &frame, cv::Mat *gray_frame) -> bool {
 		if (!frame_reader_ && !capture_.isOpened()) {
-			SetError(CaptureError::kOpenFailed, kCameraNotOpenMessage);
+			error_message_ = kCameraNotOpenMessage;
 			return false;
 		}
 
 		try {
 			const bool read_ok = frame_reader_ ? frame_reader_->Read(frame) : capture_.read(frame);
 			if (!read_ok) {
-				SetError(CaptureError::kReadFailed, kCameraReadFailureMessage);
+				error_message_ = kCameraReadFailureMessage;
 				return false;
 			}
 
@@ -162,29 +159,25 @@ namespace howdy::native {
 				case FrameValidationStatus::kValid:
 					break;
 				case FrameValidationStatus::kEmpty:
-					SetError(CaptureError::kReadFailed, "Camera returned an empty frame");
+					error_message_ = "Camera returned an empty frame";
 					return false;
 				case FrameValidationStatus::kUnsupportedDimensions:
-					SetError(CaptureError::kReadFailed,
-					         "Camera returned unsupported frame dimensions: " +
-					             std::to_string(frame.dims));
+					error_message_ = "Camera returned unsupported frame dimensions: " +
+					                 std::to_string(frame.dims);
 					return false;
 				case FrameValidationStatus::kOversizedDimensions:
-					SetError(CaptureError::kReadFailed,
-					         "Camera returned oversized frame dimensions: " +
-					             std::to_string(frame.cols) + "x" + std::to_string(frame.rows) +
-					             " (max supported dimension: " +
-					             std::to_string(kMaxFrameDimension) + ")");
+					error_message_ =
+					    "Camera returned oversized frame dimensions: " +
+					    std::to_string(frame.cols) + "x" + std::to_string(frame.rows) +
+					    " (max supported dimension: " + std::to_string(kMaxFrameDimension) + ")";
 					return false;
 				case FrameValidationStatus::kUnsupportedChannelCount:
-					SetError(CaptureError::kReadFailed,
-					         "Camera returned unsupported frame channel count: " +
-					             std::to_string(frame.channels()));
+					error_message_ = "Camera returned unsupported frame channel count: " +
+					                 std::to_string(frame.channels());
 					return false;
 				case FrameValidationStatus::kUnsupportedPixelType:
-					SetError(CaptureError::kReadFailed,
-					         "Camera returned unsupported frame pixel type: " +
-					             std::to_string(frame.type()));
+					error_message_ = "Camera returned unsupported frame pixel type: " +
+					                 std::to_string(frame.type());
 					return false;
 			}
 
@@ -198,10 +191,11 @@ namespace howdy::native {
 				}
 			}
 
+			error_message_.clear();
 			return true;
 		} catch (const cv::Exception &error) {
-			SetError(CaptureError::kReadFailed,
-			         "OpenCV failed while reading camera frame: " + std::string(error.what()));
+			error_message_ =
+			    "OpenCV failed while reading camera frame: " + std::string(error.what());
 			return false;
 		}
 	}
@@ -216,17 +210,8 @@ namespace howdy::native {
 		return capture_.isOpened() && capture_.set(property, value);
 	}
 
-	auto VideoCapture::Error() const -> CaptureError {
-		return error_;
-	}
-
 	auto VideoCapture::ErrorMessage() const -> const std::string & {
 		return error_message_;
-	}
-
-	void VideoCapture::SetError(CaptureError error, std::string message) {
-		error_         = error;
-		error_message_ = std::move(message);
 	}
 
 }  // namespace howdy::native

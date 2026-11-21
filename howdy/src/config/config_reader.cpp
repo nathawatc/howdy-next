@@ -2,18 +2,12 @@
 
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 namespace howdy::native {
 
-	ConfigReader::ConfigReader(std::string path)
-	    : path_(std::move(path))
-	    , reader_(path_) {}
-
-	ConfigReader::ConfigReader(std::string path, std::string_view content)
-	    : path_(std::move(path))
-	    , reader_(content.data(), content.size()) {}
+	ConfigReader::ConfigReader(std::string_view content)
+	    : reader_(content.data(), content.size()) {}
 
 	auto ConfigReader::Ok() const -> bool {
 		return reader_.ParseError() == 0;

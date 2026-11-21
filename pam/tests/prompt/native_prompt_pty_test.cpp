@@ -26,6 +26,12 @@
 using howdy::test::Expect;
 
 namespace {
+	template <howdy::native::BitValue Value, howdy::native::BitValue... Masks>
+	[[nodiscard]] constexpr auto HasAllBits(Value value, Masks... masks) -> bool {
+		const auto expected = howdy::native::CombineBits(masks...);
+		return howdy::native::MaskedBits(value, masks...) == expected;
+	}
+
 	struct PtyPromptCase {
 		std::string_view input;
 		bool             hide_input  = true;
@@ -299,7 +305,7 @@ auto ExpectOversizedPromptFailsClosed() -> bool {
 	struct termios restored_termios{};
 	ok &= Expect(tcgetattr(slave_raw_fd, &restored_termios) == 0,
 	             "oversized prompt test can inspect restored terminal");
-	ok &= Expect(howdy::native::HasAllBits(restored_termios.c_lflag, ICANON, ECHO, ISIG),
+	ok &= Expect(HasAllBits(restored_termios.c_lflag, ICANON, ECHO, ISIG),
 	             "oversized prompt test restores terminal flags");
 	if (response != nullptr) {
 		std::free(response);
@@ -403,7 +409,7 @@ auto ExpectPromptExceptionRestoresTerminalAndRecordsRestoreFailure() -> bool {
 			struct termios restored_termios{};
 			ok &= Expect(tcgetattr(slave_raw_fd, &restored_termios) == 0,
 			             "exception restore test reads restored terminal state");
-			ok &= Expect(howdy::native::HasAllBits(restored_termios.c_lflag, ICANON, ECHO, ISIG),
+			ok &= Expect(HasAllBits(restored_termios.c_lflag, ICANON, ECHO, ISIG),
 			             "exception during prompt restores terminal flags");
 		}
 	}

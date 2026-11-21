@@ -14,8 +14,7 @@ namespace howdy::native {
 
 	class ConfigReader {
 	public:
-		explicit ConfigReader(std::string path);
-		ConfigReader(std::string path, std::string_view content);
+		explicit ConfigReader(std::string_view content);
 
 		[[nodiscard]] auto Ok() const -> bool;
 		[[nodiscard]] auto ParseError() const -> int;
@@ -33,8 +32,7 @@ namespace howdy::native {
 		    -> bool;
 
 	private:
-		std::string path_;
-		INIReader   reader_;
+		INIReader reader_;
 	};
 
 	inline auto ParseConfigFloatStrict(std::string_view value) -> std::optional<float> {

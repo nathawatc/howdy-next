@@ -119,7 +119,7 @@ namespace howdy::native {
 				    config_path, "Failed to parse config: " + config_path.string() + " (error -1)");
 			}
 
-			const ConfigReader reader(config_path.string(), *content);
+			const ConfigReader reader(*content);
 			if (!reader.Ok()) {
 				return FailureResult<RuntimeConfigLoadStatus::kParseError>(
 				    config_path, "Failed to parse config: " + config_path.string() + " (error " +

@@ -327,15 +327,6 @@ namespace howdy::native::config_schema {
 		std::abort();
 	}
 
-	auto RuntimeConfigOption(std::string_view section, std::string_view key) -> const Option * {
-		for (const auto &option : kRuntimeConfigOptions) {
-			if (option.section == section && option.key == key) {
-				return &option;
-			}
-		}
-		return nullptr;
-	}
-
 	auto IsAcceptedBooleanText(std::string_view value) -> bool {
 		return std::ranges::any_of(kAcceptedBooleanSpellings,
 		                           [value](std::string_view spelling) -> bool {
