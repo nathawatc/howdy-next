@@ -68,23 +68,16 @@ namespace howdy::native::user_model_codec_internal {
 			return true;
 		}
 
-		auto Failure(UserModelStatus status, std::string message) -> UserModelListResult {
-			return UserModelListResult{
-			    .status        = status,
-			    .error_message = std::move(message),
-			};
-		}
-
 		auto ValidateCompatibility(const UserModelEntry &entry, const std::string &expected_backend,
 		                           const std::string &expected_model) -> UserModelListResult {
 			if (!expected_backend.empty() && !entry.backend.empty() &&
 			    entry.backend != expected_backend) {
-				return Failure(UserModelStatus::kIncompatibleBackend,
-				               kStoredModelsIncompatibleMessage);
+				return UserModelListFailure(UserModelStatus::kIncompatibleBackend,
+				                            kStoredModelsIncompatibleMessage);
 			}
 			if (!expected_model.empty() && !entry.model.empty() && entry.model != expected_model) {
-				return Failure(UserModelStatus::kIncompatibleModel,
-				               kStoredModelsIncompatibleMessage);
+				return UserModelListFailure(UserModelStatus::kIncompatibleModel,
+				                            kStoredModelsIncompatibleMessage);
 			}
 			return UserModelListResult{.status = UserModelStatus::kOk};
 		}
@@ -101,25 +94,25 @@ namespace howdy::native::user_model_codec_internal {
 		};
 
 		constexpr auto ClassifyModelKey(std::string_view name) noexcept -> ModelKeyBit {
-			if (name == "id") {
+			if (name == kModelIdField) {
 				return ModelKeyBit::kId;
 			}
-			if (name == "time") {
+			if (name == kModelTimeField) {
 				return ModelKeyBit::kTime;
 			}
-			if (name == "label") {
+			if (name == kModelLabelField) {
 				return ModelKeyBit::kLabel;
 			}
-			if (name == "data") {
+			if (name == kModelDataField) {
 				return ModelKeyBit::kData;
 			}
-			if (name == "backend") {
+			if (name == kModelBackendField) {
 				return ModelKeyBit::kBackend;
 			}
-			if (name == "metric") {
+			if (name == kModelMetricField) {
 				return ModelKeyBit::kMetric;
 			}
-			if (name == "model") {
+			if (name == kModelNameField) {
 				return ModelKeyBit::kModel;
 			}
 			return ModelKeyBit::kNone;
@@ -195,7 +188,7 @@ namespace howdy::native::user_model_codec_internal {
 		}
 
 		auto ReadTimeField(yyjson_val *model) -> std::optional<std::int64_t> {
-			ReadOnlyVal *value = FindLastField(model, "time");
+			ReadOnlyVal *value = FindLastField(model, kModelTimeField);
 			if (value == nullptr) {
 				return 0;
 			}
@@ -232,15 +225,15 @@ namespace howdy::native::user_model_codec_internal {
 		auto ParseEncoding(yyjson_val *encoding_json) -> EncodingParseResult {
 			if (!yyjson_is_arr(encoding_json)) {
 				return EncodingParseResult{
-				    .result = Failure(UserModelStatus::kInvalidShape,
-					                  "Stored face encoding is not an array"),
+				    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
+					                               "Stored face encoding is not an array"),
 				};
 			}
 			const auto encoding_size = yyjson_arr_size(encoding_json);
 			if (encoding_size == 0 || encoding_size > user_model_limits::kMaxEncodingLength) {
 				return EncodingParseResult{
-				    .result = Failure(UserModelStatus::kOversized,
-					                  std::string(kStoredEncodingLimitMessage)),
+				    .result = UserModelListFailure(UserModelStatus::kOversized,
+					                               std::string(kStoredEncodingLimitMessage)),
 				};
 			}
 
@@ -252,16 +245,16 @@ namespace howdy::native::user_model_codec_internal {
 			yyjson_arr_foreach(encoding_json, index, count, value) {
 				if (!yyjson_is_num(value)) {
 					return EncodingParseResult{
-					    .result = Failure(UserModelStatus::kInvalidShape,
-						                  std::string(kStoredEncodingInvalidMessage)),
+					    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
+						                               std::string(kStoredEncodingInvalidMessage)),
 					};
 				}
 				const auto number = yyjson_get_num(value);
 				if (!std::isfinite(number) || number < -std::numeric_limits<float>::max() ||
 				    number > std::numeric_limits<float>::max()) {
 					return EncodingParseResult{
-					    .result = Failure(UserModelStatus::kInvalidShape,
-						                  std::string(kStoredEncodingInvalidMessage)),
+					    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
+						                               std::string(kStoredEncodingInvalidMessage)),
 					};
 				}
 				encoding.push_back(static_cast<float>(number));
@@ -283,21 +276,22 @@ namespace howdy::native::user_model_codec_internal {
 		};
 
 		auto ParseMetadata(yyjson_val *model, bool strict_shape) -> MetadataParseResult {
-			const auto backend     = ReadStringField(model, "backend", strict_shape);
-			const auto metric_text = ReadStringField(model, "metric", strict_shape);
-			const auto model_name  = ReadStringField(model, "model", strict_shape);
+			const auto backend     = ReadStringField(model, kModelBackendField, strict_shape);
+			const auto metric_text = ReadStringField(model, kModelMetricField, strict_shape);
+			const auto model_name  = ReadStringField(model, kModelNameField, strict_shape);
 			if (!backend.has_value() || !metric_text.has_value() || !model_name.has_value()) {
 				return MetadataParseResult{
-				    .result = Failure(UserModelStatus::kInvalidShape,
-					                  "Stored face model metadata is invalid"),
+				    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
+					                               "Stored face model metadata is invalid"),
 				};
 			}
 			const std::optional<FaceMetric> metric =
 			    metric_text->empty() ? std::optional<FaceMetric>{} : ParseFaceMetric(*metric_text);
 			if (!metric_text->empty() && !metric.has_value()) {
 				return MetadataParseResult{
-				    .result = Failure(UserModelStatus::kParseError,
-					                  "Stored face model contains an unknown face metric"),
+				    .result =
+				        UserModelListFailure(UserModelStatus::kParseError,
+						                     "Stored face model contains an unknown face metric"),
 				};
 			}
 			return MetadataParseResult{.backend = *backend, .metric = metric, .model = *model_name};
@@ -308,44 +302,45 @@ namespace howdy::native::user_model_codec_internal {
 		    -> EntryParseResult {
 			if (!yyjson_is_obj(model)) {
 				return EntryParseResult{
-				    .result = Failure(UserModelStatus::kInvalidShape,
-					                  "Model file contains an invalid model entry"),
+				    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
+					                               "Model file contains an invalid model entry"),
 				};
 			}
 			if (strict_shape && HasDuplicateDirectKey(model)) {
 				return EntryParseResult{
-				    .result = Failure(UserModelStatus::kInvalidShape,
-					                  "Stored face model entry contains duplicate keys"),
+				    .result =
+				        UserModelListFailure(UserModelStatus::kInvalidShape,
+						                     "Stored face model entry contains duplicate keys"),
 				};
 			}
 
-			const auto id = ReadIntField(model, "id", strict_shape);
+			const auto id = ReadIntField(model, kModelIdField, strict_shape);
 			if (!id.has_value()) {
 				return EntryParseResult{
-				    .result = Failure(UserModelStatus::kInvalidShape,
-					                  "Stored face model ID is not an integer"),
+				    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
+					                               "Stored face model ID is not an integer"),
 				};
 			}
 			if (strict_shape && *id < 0) {
 				return EntryParseResult{
-				    .result = Failure(UserModelStatus::kInvalidShape,
-					                  "Stored face model ID must not be negative"),
+				    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
+					                               "Stored face model ID must not be negative"),
 				};
 			}
 
 			const auto time = ReadTimeField(model);
 			if (!time.has_value()) {
 				return EntryParseResult{
-				    .result = Failure(UserModelStatus::kInvalidShape,
-					                  "Stored face model timestamp is not an integer"),
+				    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
+					                               "Stored face model timestamp is not an integer"),
 				};
 			}
 
-			const auto label = ReadStringField(model, "label", strict_shape);
+			const auto label = ReadStringField(model, kModelLabelField, strict_shape);
 			if (!label.has_value()) {
 				return EntryParseResult{
-				    .result = Failure(UserModelStatus::kInvalidShape,
-					                  "Stored face model label is not a string"),
+				    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
+					                               "Stored face model label is not a string"),
 				};
 			}
 			auto metadata = ParseMetadata(model, strict_shape);
@@ -363,8 +358,8 @@ namespace howdy::native::user_model_codec_internal {
 			};
 			if (!IsValidModelLabel(entry.label)) {
 				return EntryParseResult{
-				    .result = Failure(UserModelStatus::kParseError,
-					                  "Model label contains unsafe path characters"),
+				    .result = UserModelListFailure(UserModelStatus::kParseError,
+					                               "Model label contains unsafe path characters"),
 				};
 			}
 			if (const auto compatibility =
@@ -373,20 +368,20 @@ namespace howdy::native::user_model_codec_internal {
 				return EntryParseResult{.result = compatibility};
 			}
 
-			ReadOnlyVal *data = FindLastField(model, "data");
+			ReadOnlyVal *data = FindLastField(model, kModelDataField);
 			if (!yyjson_is_arr(data)) {
 				if (strict_shape) {
 					return EntryParseResult{
-					    .result = Failure(UserModelStatus::kInvalidShape,
-						                  "Stored face model data is not an array"),
+					    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
+						                               "Stored face model data is not an array"),
 					};
 				}
 				return EntryParseResult{.entry = std::move(entry)};
 			}
 			if (yyjson_arr_size(data) > user_model_limits::kMaxEncodingsPerModel) {
 				return EntryParseResult{
-				    .result = Failure(UserModelStatus::kOversized,
-					                  std::string(kStoredEncodingsLimitMessage)),
+				    .result = UserModelListFailure(UserModelStatus::kOversized,
+					                               std::string(kStoredEncodingsLimitMessage)),
 				};
 			}
 
@@ -398,8 +393,8 @@ namespace howdy::native::user_model_codec_internal {
 				if (!yyjson_is_arr(encoding_json)) {
 					if (strict_shape) {
 						return EntryParseResult{
-						    .result = Failure(UserModelStatus::kInvalidShape,
-							                  "Stored face encoding is not an array"),
+						    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
+							                               "Stored face encoding is not an array"),
 						};
 					}
 					continue;
@@ -418,16 +413,16 @@ namespace howdy::native::user_model_codec_internal {
 		                  const std::string &expected_model, bool strict_shape)
 		    -> UserModelListResult {
 			if (!yyjson_is_arr(models)) {
-				return Failure(UserModelStatus::kInvalidShape,
-				               "Model file is not a valid model list");
+				return UserModelListFailure(UserModelStatus::kInvalidShape,
+				                            "Model file is not a valid model list");
 			}
 			const auto model_count = yyjson_arr_size(models);
 			if (model_count == 0) {
 				return UserModelListResult{.status = UserModelStatus::kNoModel};
 			}
 			if (model_count > user_model_limits::kMaxStoredModels) {
-				return Failure(UserModelStatus::kOversized,
-				               std::string(kStoredModelListLimitMessage));
+				return UserModelListFailure(UserModelStatus::kOversized,
+				                            std::string(kStoredModelListLimitMessage));
 			}
 
 			UserModelListResult result{.status = UserModelStatus::kOk};
@@ -443,13 +438,13 @@ namespace howdy::native::user_model_codec_internal {
 				}
 				auto const &entry = parsed.entry;
 				if (strict_shape && !seen_ids.insert(entry.id).second) {
-					return Failure(UserModelStatus::kInvalidShape,
-					               "Stored face model IDs must be unique");
+					return UserModelListFailure(UserModelStatus::kInvalidShape,
+					                            "Stored face model IDs must be unique");
 				}
 				if (entry.id == std::numeric_limits<int>::max()) {
 					if (strict_shape) {
-						return Failure(UserModelStatus::kInvalidShape,
-						               std::string(kStoredModelIdLimitMessage));
+						return UserModelListFailure(UserModelStatus::kInvalidShape,
+						                            std::string(kStoredModelIdLimitMessage));
 					}
 					result.next_id = std::numeric_limits<int>::max();
 				} else {
@@ -468,7 +463,8 @@ namespace howdy::native::user_model_codec_internal {
 		yyjson_doc *parsed = yyjson_read(input.data(), input.size(), YYJSON_READ_ALLOW_BOM);
 		if (parsed == nullptr) {
 			return DecodedDocumentJson{
-			    .result = Failure(UserModelStatus::kParseError, "Failed to parse user model JSON"),
+			    .result = UserModelListFailure(UserModelStatus::kParseError,
+				                               "Failed to parse user model JSON"),
 			    .doc    = nullptr,
 			};
 		}
@@ -478,8 +474,8 @@ namespace howdy::native::user_model_codec_internal {
 		try {
 			if (!JsonDepthWithinLimit(yyjson_doc_get_root(parsed))) {
 				return DecodedDocumentJson{
-				    .result = Failure(UserModelStatus::kOversized,
-					                  "User model JSON nesting exceeds safety limit"),
+				    .result = UserModelListFailure(UserModelStatus::kOversized,
+					                               "User model JSON nesting exceeds safety limit"),
 				    .doc    = nullptr,
 				};
 			}
@@ -491,9 +487,9 @@ namespace howdy::native::user_model_codec_internal {
 			};
 		} catch (const std::bad_alloc &) {
 			return DecodedDocumentJson{
-			    .result =
-			        Failure(UserModelStatus::kParseError, "Failed to process user model JSON"),
-			    .doc = nullptr,
+			    .result = UserModelListFailure(UserModelStatus::kParseError,
+				                               "Failed to process user model JSON"),
+			    .doc    = nullptr,
 			};
 		}
 	}

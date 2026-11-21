@@ -37,8 +37,6 @@ namespace howdy::native::config_internal {
 
 		namespace fs = std::filesystem;
 
-		constexpr std::array<const char *, 3> kFallbackEditors = {"micro", "nano", "vi"};
-
 		enum class EditorLaunchReport : unsigned char {
 			kUnavailable = 1,
 			kLaunchFailed,

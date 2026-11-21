@@ -574,7 +574,7 @@ namespace {
 			}
 
 			if (!howdy::native::ConfigureFaceModelEnvironment()) {
-				std::cerr << "OpenCV New DNN graph engine could not be configured\n";
+				std::cerr << howdy::native::kOpenCvDnnEngineConfigErrorMessage << "\n";
 				return static_cast<int>(CompareExit::kAbort);
 			}
 

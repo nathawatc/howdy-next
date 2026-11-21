@@ -227,7 +227,7 @@ namespace howdy::native {
 		}
 
 		if (!ConfigureFaceModelEnvironment()) {
-			SetError("OpenCV New DNN graph engine could not be configured");
+			SetError(kOpenCvDnnEngineConfigErrorMessage);
 			return;
 		}
 

@@ -32,7 +32,7 @@ namespace {
 			howdy::native::howdy_cli_internal::PrintHelp();
 			return 0;
 		}
-		if (*parsed.command != "__complete") {
+		if (*parsed.command != howdy::native::howdy_cli_internal::kCompleteCommandName) {
 			return std::nullopt;
 		}
 		std::vector<std::string> completion_arguments;

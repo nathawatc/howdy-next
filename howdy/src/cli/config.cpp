@@ -5,6 +5,7 @@
 #include "cli/config/internal.hpp"
 #include "config/config_utils.hpp"
 
+#include <cstddef>
 #include <iostream>
 #include <string>
 
@@ -64,8 +65,14 @@ auto howdy::native::config_internal::ConfigMainWithDependencies(
 			return kConfigExitOk;
 		case ConfigEditStatus::kEditorUnavailable:
 			std::cout << "Error: No suitable text editor found.\n";
-			std::cout << "Set EDITOR to an executable name or path, or install one of: micro, "
-			             "nano, vi.\n";
+			std::cout << "Set EDITOR to an executable name or path, or install one of: ";
+			for (std::size_t index = 0; index < kFallbackEditors.size(); ++index) {
+				if (index > 0) {
+					std::cout << ", ";
+				}
+				std::cout << kFallbackEditors.at(index);
+			}
+			std::cout << ".\n";
 			return kConfigExitAbort;
 		case ConfigEditStatus::kSecurityCheckFailed:
 			std::cout << result.error << "\n";

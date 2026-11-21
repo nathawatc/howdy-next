@@ -79,10 +79,6 @@ namespace howdy::native {
 			gray = RotateFrame(gray, video_config, frame_count + 1);
 
 			const auto brightness = MeasureBrightness(gray);
-			if (brightness.hist_total == 0.0 || brightness.darkness >= kBrightnessPercentScale) {
-				result.black_frames++;
-				continue;
-			}
 			switch (
 			    ClassifyBrightness(brightness.hist_total, brightness.darkness, dark_threshold)) {
 				case BrightnessDecision::kBlackFrame:

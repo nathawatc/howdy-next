@@ -13,7 +13,6 @@
 #include <sched.h>
 #include <unistd.h>
 
-#include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 
@@ -156,13 +155,6 @@ namespace {
 	auto SystemSetrlimit([[maybe_unused]] void *context, RlimitResource resource,
 	                     const rlimit *limit) -> int {
 		return setrlimit(resource, limit);
-	}
-
-	auto SystemPrctl([[maybe_unused]] void *context, int operation,
-	                 howdy::native::PrctlArgument argument2, howdy::native::PrctlArgument argument3,
-	                 howdy::native::PrctlArgument argument4, howdy::native::PrctlArgument argument5)
-	    -> int {
-		return prctl(operation, argument2, argument3, argument4, argument5);
 	}
 
 	auto SystemSeccomp([[maybe_unused]] void *context, unsigned int operation, unsigned int flags,
@@ -549,13 +541,13 @@ namespace howdy::native::compare_sandbox_internal {
 namespace howdy::native {
 
 	auto ApplyCompareSandbox(int timeout_seconds) -> CompareSandboxResult {
-		return compare_sandbox_internal::ApplyCompareSandbox(timeout_seconds,
-		                                                     {
-		                                                         .context   = nullptr,
-		                                                         .getrlimit = SystemGetrlimit,
-		                                                         .setrlimit = SystemSetrlimit,
-		                                                         .prctl     = SystemPrctl,
-		                                                     });
+		return compare_sandbox_internal::ApplyCompareSandbox(
+		    timeout_seconds, {
+		                         .context   = nullptr,
+		                         .getrlimit = SystemGetrlimit,
+		                         .setrlimit = SystemSetrlimit,
+		                         .prctl     = howdy::native::SystemPrctl,
+		                     });
 	}
 
 	auto ApplyCompareSeccompFilter() -> CompareSeccompResult {
