@@ -19,12 +19,9 @@
 
 namespace {
 
+	using howdy::native::config_schema::OptionName;
 	using howdy::test::Expect;
 	using howdy::test::WriteFile;
-
-	auto OptionName(const howdy::native::config_schema::Option &option) -> std::string {
-		return std::string(option.section) + "." + std::string(option.key);
-	}
 
 	auto SchemaOptionIdsAreUniqueAndResolvable() -> bool {
 		using howdy::native::config_schema::OptionId;

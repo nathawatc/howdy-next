@@ -19,6 +19,13 @@ namespace howdy::native::config_utils_internal {
 	constexpr auto kConfigFileLockFailureMessage    = "Failed to lock config file";
 	constexpr auto kUpdatedConfigTooLargeMessage    = "Updated config exceeds maximum size";
 
+	inline auto FailWith(std::string *error_message, std::string_view message) -> bool {
+		if (error_message != nullptr) {
+			*error_message = message;
+		}
+		return false;
+	}
+
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	AcquireConfigLock(ScopedFileLock &guard, const std::filesystem::path &config_path) -> bool;
 

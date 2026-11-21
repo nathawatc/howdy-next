@@ -1,11 +1,11 @@
 #include "config/config_schema.hpp"
 #include "config_reader/internal.hpp"
 #include "config_validation/internal.hpp"
+#include "support/ascii.hpp"
 #include "support/capture_device_path.hpp"
 #include "support/face_metric.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <charconv>
 #include <optional>
 #include <string>
@@ -15,13 +15,6 @@
 
 namespace howdy::native {
 	namespace {
-
-		auto NormalizedLower(std::string value) -> std::string {
-			for (char &ch : value) {
-				ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-			}
-			return value;
-		}
 
 		auto ParseIntStrict(std::string_view value) -> std::optional<int> {
 			if (!value.empty() && value.front() == '+') {
@@ -116,8 +109,9 @@ namespace howdy::native {
 				return std::nullopt;
 			}
 			if (!option.choices.empty() &&
-			    std::ranges::find(option.choices, NormalizedLower(std::string(value))) ==
-			        option.choices.end()) {
+			    std::ranges::none_of(option.choices, [value](std::string_view choice) -> bool {
+				    return AsciiEqualIgnoreCase(value, choice);
+			    })) {
 				return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
 			}
 			return std::nullopt;

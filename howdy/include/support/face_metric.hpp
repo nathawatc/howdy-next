@@ -1,8 +1,9 @@
 #pragma once
 
+#include "support/ascii.hpp"
+
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -95,20 +96,13 @@ namespace howdy::native {
 		return policy == nullptr ? std::string_view{} : policy->spelling;
 	}
 
-	[[nodiscard]] inline auto FaceMetricEqual(std::string_view value, std::string_view spelling)
+	[[nodiscard]] constexpr auto FaceMetricEqual(std::string_view value, std::string_view spelling)
 	    -> bool {
-		if (value.size() != spelling.size()) {
-			return false;
-		}
-		return std::ranges::equal(
-		    value, spelling, [](const char value_character, const char spelling_character) -> bool {
-			    const auto left  = static_cast<unsigned char>(value_character);
-			    const auto right = static_cast<unsigned char>(spelling_character);
-			    return std::tolower(left) == std::tolower(right);
-		    });
+		return AsciiEqualIgnoreCase(value, spelling);
 	}
 
-	[[nodiscard]] inline auto ParseFaceMetric(std::string_view value) -> std::optional<FaceMetric> {
+	[[nodiscard]] constexpr auto ParseFaceMetric(std::string_view value)
+	    -> std::optional<FaceMetric> {
 		for (const auto &policy : kFaceMetricPolicies) {
 			if (FaceMetricEqual(value, policy.spelling)) {
 				return policy.metric;

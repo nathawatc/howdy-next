@@ -14,9 +14,7 @@
 namespace howdy::native::config_template {
 	namespace {
 
-		auto OptionName(const config_schema::Option &option) -> std::string {
-			return std::string(option.section) + "." + std::string(option.key);
-		}
+		using config_schema::OptionName;
 
 		auto Failure(std::string message) -> ConfigTemplateRenderResult {
 			return {.ok = false, .error = std::move(message)};

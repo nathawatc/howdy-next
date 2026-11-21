@@ -2,7 +2,6 @@
 
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
-#include "config/test_hooks.hpp"
 #include "support/atomic_files.hpp"
 #include "support/eintr.hpp"
 #include "support/fd_io.hpp"
@@ -265,20 +264,12 @@ namespace howdy::native::config_internal {
 	                          const std::optional<howdy::native::InvokingUser> &invoking_user,
 	                          const file_security_internal::ValidationRoot     &validation_root)
 	    -> std::optional<TempConfigCopy> {
-		const ScopedFd input_fd(
-		    open(source_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
-		if (!input_fd.Valid()) {
+		const auto opened = howdy::native::OpenSecureConfigForRead(
+		    source_path, DefaultSecureOwnerUid(), validation_root);
+		if (!opened.fd.Valid() || !opened.security.ok) {
 			return std::nullopt;
 		}
-		if (config_test_hooks::Current()) {
-			config_test_hooks::Current()();
-		}
-		const auto security = howdy::native::CheckSecureConfigFd(
-		    input_fd.Get(), source_path, DefaultSecureOwnerUid(), validation_root);
-		if (!security.ok) {
-			return std::nullopt;
-		}
-		auto content = howdy::native::ReadConfigFromFd(input_fd.Get());
+		auto content = howdy::native::ReadConfigFromFd(opened.fd.Get());
 		if (!content.has_value()) {
 			return std::nullopt;
 		}
@@ -356,20 +347,13 @@ namespace howdy::native::config_internal {
 
 	auto FileContentMatches(const fs::path &path, const std::string &expected,
 	                        const file_security_internal::ValidationRoot &validation_root) -> bool {
-		const ScopedFd input_fd(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
-		if (!input_fd.Valid()) {
-			return false;
-		}
-		if (config_test_hooks::Current()) {
-			config_test_hooks::Current()();
-		}
-		const auto security = howdy::native::CheckSecureConfigFd(
-		    input_fd.Get(), path, DefaultSecureOwnerUid(), validation_root);
-		if (!security.ok) {
+		const auto opened =
+		    howdy::native::OpenSecureConfigForRead(path, DefaultSecureOwnerUid(), validation_root);
+		if (!opened.fd.Valid() || !opened.security.ok) {
 			return false;
 		}
 
-		const auto current = howdy::native::ReadConfigFromFd(input_fd.Get());
+		const auto current = howdy::native::ReadConfigFromFd(opened.fd.Get());
 		return current.has_value() && *current == expected;
 	}
 
