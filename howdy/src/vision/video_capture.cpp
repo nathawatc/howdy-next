@@ -5,6 +5,7 @@
 #include "support/frame_limits.hpp"
 #include "vision/frame_validation.hpp"
 
+#include <cstddef>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -19,7 +20,25 @@ namespace howdy::native {
 
 	namespace {
 
-		constexpr auto kCameraNotOpenMessage = "Camera is not open";
+		constexpr auto kCameraNotOpenMessage        = "Camera is not open";
+		constexpr auto kOpenCvOpenCameraErrorPrefix = "OpenCV failed while opening camera device ";
+
+		auto AcceptedCaptureDevicePatternsText() -> std::string {
+			std::string text;
+			bool        first = true;
+			for (std::size_t index = 0; index < kAcceptedCaptureDevicePatterns.size(); ++index) {
+				const auto pattern = kAcceptedCaptureDevicePatterns.at(index);
+				if (pattern == kNoCaptureDevice) {
+					continue;
+				}
+				if (!first) {
+					text += (index + 1 == kAcceptedCaptureDevicePatterns.size()) ? ", or " : ", ";
+				}
+				text += pattern;
+				first = false;
+			}
+			return text;
+		}
 
 	}  // namespace
 
@@ -59,10 +78,9 @@ namespace howdy::native {
 		}
 
 		if (!IsAllowedCaptureDevicePath(settings_.device_path)) {
-			SetError(CaptureError::kOpenFailed,
-			         "Configured camera device must be a /dev/video*, /dev/v4l/by-path/*, "
-			         "or /dev/v4l/by-id/* character device: " +
-			             settings_.device_path);
+			SetError(CaptureError::kOpenFailed, "Configured camera device must be a " +
+			                                        AcceptedCaptureDevicePatternsText() +
+			                                        " character device: " + settings_.device_path);
 			return false;
 		}
 
@@ -93,7 +111,7 @@ namespace howdy::native {
 			return true;
 		} catch (const cv::Exception &error) {
 			Release();
-			SetError(CaptureError::kOpenFailed, "OpenCV failed while opening camera device " +
+			SetError(CaptureError::kOpenFailed, std::string(kOpenCvOpenCameraErrorPrefix) +
 			                                        settings_.device_path + ": " + error.what());
 			return false;
 		}
@@ -108,7 +126,7 @@ namespace howdy::native {
 			return true;
 		} catch (const cv::Exception &error) {
 			Release();
-			SetError(CaptureError::kOpenFailed, "OpenCV failed while opening camera device " +
+			SetError(CaptureError::kOpenFailed, std::string(kOpenCvOpenCameraErrorPrefix) +
 			                                        settings_.device_path + ": " + error.what());
 			return false;
 		}

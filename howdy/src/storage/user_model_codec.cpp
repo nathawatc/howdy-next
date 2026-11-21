@@ -80,24 +80,24 @@ namespace howdy::native::user_model_codec {
 
 	namespace {
 
-		auto Failure(UserModelStatus status, std::string message) -> UserModelListResult {
-			return UserModelListResult{
-			    .status        = status,
-			    .error_message = std::move(message),
-			};
-		}
+		using user_model_codec_internal::UserModelListFailure;
 
 		auto AddEntryValue(yyjson_mut_doc *document, const UserModelEntry &entry)
 		    -> yyjson_mut_val * {
 			auto *model = yyjson_mut_obj(document);
-			if (model == nullptr || !yyjson_mut_obj_add_sint(document, model, "time", entry.time) ||
-			    !yyjson_mut_obj_add_strncpy(document, model, "label", entry.label.data(),
-			                                entry.label.size()) ||
-			    !yyjson_mut_obj_add_sint(document, model, "id", entry.id)) {
+			if (model == nullptr ||
+			    !yyjson_mut_obj_add_sint(document, model,
+			                             user_model_codec_internal::kModelTimeField, entry.time) ||
+			    !yyjson_mut_obj_add_strncpy(document, model,
+			                                user_model_codec_internal::kModelLabelField,
+			                                entry.label.data(), entry.label.size()) ||
+			    !yyjson_mut_obj_add_sint(document, model, user_model_codec_internal::kModelIdField,
+			                             entry.id)) {
 				return nullptr;
 			}
 
-			auto *data = yyjson_mut_obj_add_arr(document, model, "data");
+			auto *data =
+			    yyjson_mut_obj_add_arr(document, model, user_model_codec_internal::kModelDataField);
 			if (data == nullptr) {
 				return nullptr;
 			}
@@ -125,11 +125,14 @@ namespace howdy::native::user_model_codec {
 				}
 				const auto spelling = FaceMetricSpelling(*metric);
 				return !spelling.empty() &&
-				       yyjson_mut_obj_add_strncpy(document, model, "metric", spelling.data(),
-				                                  spelling.size());
+				       yyjson_mut_obj_add_strncpy(document, model,
+				                                  user_model_codec_internal::kModelMetricField,
+				                                  spelling.data(), spelling.size());
 			};
-			if (!add_optional_string("backend", entry.backend) ||
-			    !add_optional_metric(entry.metric) || !add_optional_string("model", entry.model)) {
+			if (!add_optional_string(user_model_codec_internal::kModelBackendField,
+			                         entry.backend) ||
+			    !add_optional_metric(entry.metric) ||
+			    !add_optional_string(user_model_codec_internal::kModelNameField, entry.model)) {
 				return nullptr;
 			}
 			return model;
@@ -165,8 +168,8 @@ namespace howdy::native::user_model_codec {
 			impl->AdoptImmutable(doc_owner.release());
 			return {std::move(decoded.result), std::move(impl)};
 		} catch (const std::bad_alloc &) {
-			return Document{
-			    Failure(UserModelStatus::kParseError, "Failed to process user model JSON")};
+			return Document{UserModelListFailure(UserModelStatus::kParseError,
+			                                     "Failed to process user model JSON")};
 		}
 	}
 
@@ -240,14 +243,16 @@ namespace howdy::native::user_model_codec {
 
 	auto ValidateEncoding(const std::vector<float> &encoding) -> UserModelListResult {
 		if (encoding.empty() || encoding.size() > user_model_limits::kMaxEncodingLength) {
-			return Failure(UserModelStatus::kOversized,
-			               std::string(user_model_codec_internal::kStoredEncodingLimitMessage));
+			return UserModelListFailure(
+			    UserModelStatus::kOversized,
+			    std::string(user_model_codec_internal::kStoredEncodingLimitMessage));
 		}
 		if (!std::ranges::all_of(encoding, [](float value) -> bool {
 			    return std::isfinite(value);
 		    })) {
-			return Failure(UserModelStatus::kInvalidShape,
-			               std::string(user_model_codec_internal::kStoredEncodingInvalidMessage));
+			return UserModelListFailure(
+			    UserModelStatus::kInvalidShape,
+			    std::string(user_model_codec_internal::kStoredEncodingInvalidMessage));
 		}
 		return UserModelListResult{.status = UserModelStatus::kOk};
 	}

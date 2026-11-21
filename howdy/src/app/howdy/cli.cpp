@@ -70,7 +70,7 @@ namespace howdy::native::howdy_cli_internal {
 				return true;
 			}
 			const bool known_command =
-			    FindCommand(*parsed.command) != nullptr || *parsed.command == "__complete";
+			    FindCommand(*parsed.command) != nullptr || *parsed.command == kCompleteCommandName;
 			return known_command &&
 			       (option.parses_after_command || option.id == GlobalOptionId::kHelp);
 		}
@@ -126,15 +126,17 @@ namespace howdy::native::howdy_cli_internal {
 				};
 			}
 			if (parsed.plain && !CommandAcceptsGlobalOption(command, GlobalOptionId::kPlain)) {
+				const auto *option = FindGlobalOption(GlobalOptionId::kPlain);
 				return CliSyntaxError{
 				    .kind  = CliSyntaxErrorKind::kUnexpectedArgument,
-				    .value = "--plain",
+				    .value = option != nullptr ? std::string(option->long_name) : std::string{},
 				};
 			}
 			if (parsed.assume_yes && !CommandAcceptsGlobalOption(command, GlobalOptionId::kYes)) {
+				const auto *option = FindGlobalOption(GlobalOptionId::kYes);
 				return CliSyntaxError{
 				    .kind  = CliSyntaxErrorKind::kUnexpectedArgument,
-				    .value = "-y",
+				    .value = option != nullptr ? std::string(option->short_name) : std::string{},
 				};
 			}
 			return std::nullopt;

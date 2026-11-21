@@ -87,9 +87,9 @@ _howdy() {
 
 	local positional_argument_count=0
 	local -a positional_arguments=()
+	local -A seen_command_specific_options=()
 	if ((command_index >= 0 && ! completion_disabled)); then
 		local command_options_ended=$options_ended
-		local -A seen_command_specific_options=()
 		index=$((command_index + 1))
 		while ((index < COMP_CWORD)); do
 			local word="${COMP_WORDS[index]}"
@@ -100,7 +100,8 @@ _howdy() {
 			fi
 			if ((! command_options_ended)) && [[ $word == -* ]]; then
 				if [[ -z ${command_option_takes_argument[$word]+set} ]] \
-					|| [[ $word == "-h" || $word == "--help" ]]; then
+					|| { [[ -n ${global_option_parses_after_command[$word]+set} ]] \
+						&& [[ ${global_option_parses_after_command[$word]} != 1 ]]; }; then
 					completion_disabled=1
 					break
 				fi
@@ -166,33 +167,8 @@ _howdy() {
 
 	if [[ $current_word == -* ]] && ((! options_ended)); then
 		if ((command_index >= 0)); then
-			local -A used_command_options=()
-			local command_options_ended=0
-			index=$((command_index + 1))
-			while ((index < COMP_CWORD)); do
-				local word="${COMP_WORDS[index]}"
-				if ((! command_options_ended)) && [[ $word == "--" ]]; then
-					command_options_ended=1
-					((index += 1))
-					continue
-				fi
-				if ((! command_options_ended)) \
-					&& [[ -n ${command_option_takes_argument[$word]+set} ]]; then
-					if [[ -z ${global_option_takes_argument[$word]+set} ]]; then
-						used_command_options["$word"]=1
-					fi
-					if [[ ${command_option_takes_argument[$word]} == "1" ]]; then
-						((index += 2))
-					else
-						((index += 1))
-					fi
-					continue
-				fi
-				((index += 1))
-			done
-
 			for spelling in "${command_option_spellings[@]}"; do
-				if [[ -n ${used_command_options[$spelling]+set} ]]; then
+				if [[ -n ${seen_command_specific_options[$spelling]+set} ]]; then
 					continue
 				fi
 				if [[ $spelling == "$current_word"* ]]; then

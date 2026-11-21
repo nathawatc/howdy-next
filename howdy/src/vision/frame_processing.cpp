@@ -84,7 +84,7 @@ namespace howdy::native {
 
 	auto ClassifyBrightness(double hist_total, float darkness, float dark_threshold)
 	    -> BrightnessDecision {
-		if (hist_total == 0.0 || darkness == kBrightnessPercentScale) {
+		if (hist_total == 0.0 || darkness >= kBrightnessPercentScale) {
 			return BrightnessDecision::kBlackFrame;
 		}
 		if (darkness > dark_threshold) {

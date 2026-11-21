@@ -8,9 +8,12 @@
 #include <expected>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace howdy::native::howdy_cli_internal {
+
+	inline constexpr std::string_view kCompleteCommandName = "__complete";
 
 	enum class CliSyntaxErrorKind : std::uint8_t {
 		kUnexpectedArgument,

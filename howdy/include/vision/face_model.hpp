@@ -18,6 +18,8 @@ namespace howdy::native {
 	[[nodiscard]] auto ConfigureFaceModelEnvironment() -> bool;
 
 	inline constexpr auto kFaceModelNotInitializedMessage = "Face model was not initialized";
+	inline constexpr auto kOpenCvDnnEngineConfigErrorMessage =
+	    "OpenCV New DNN graph engine could not be configured";
 
 	class FaceModel {
 	public:

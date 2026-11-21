@@ -103,19 +103,22 @@ namespace howdy::native {
 		ApplyClaheIfEnabled(gray_frame, config_, clahe_);
 		gray_frame            = RotateFrame(gray_frame, config_, ++frame_number_);
 		const auto brightness = MeasureBrightness(gray_frame);
-		if (brightness.hist_total == 0.0 || brightness.darkness == kBrightnessPercentScale) {
-			return {
-			    .status     = PreviewFrameStatus::kBlackFrame,
-			    .brightness = brightness,
-			    .gray_frame = std::move(gray_frame),
-			};
-		}
-		if (brightness.darkness > config_.dark_threshold) {
-			return {
-			    .status     = PreviewFrameStatus::kTooDark,
-			    .brightness = brightness,
-			    .gray_frame = std::move(gray_frame),
-			};
+		switch (ClassifyBrightness(brightness.hist_total, brightness.darkness,
+		                           config_.dark_threshold)) {
+			case BrightnessDecision::kBlackFrame:
+				return {
+				    .status     = PreviewFrameStatus::kBlackFrame,
+				    .brightness = brightness,
+				    .gray_frame = std::move(gray_frame),
+				};
+			case BrightnessDecision::kTooDark:
+				return {
+				    .status     = PreviewFrameStatus::kTooDark,
+				    .brightness = brightness,
+				    .gray_frame = std::move(gray_frame),
+				};
+			case BrightnessDecision::kProcessFrame:
+				break;
 		}
 
 		const auto inference_start   = dependencies_.now(dependencies_.inference.context);

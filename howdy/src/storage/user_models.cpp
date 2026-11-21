@@ -33,19 +33,17 @@ namespace howdy::native {
 		constexpr auto kModelSaveFailedMessage          = "Failed to save model file";
 		constexpr auto kExistingModelsIncompatibleMessage =
 		    "Existing face models use incompatible face-recognition metadata";
+		constexpr auto kModelRemovedSyncFailedMessage =
+		    "Model file was removed, but its directory could not be synced; verify state before "
+		    "retrying";
+		constexpr auto kModelUpdatedSyncFailedMessage =
+		    "Model file was updated, but its directory could not be synced; verify state before "
+		    "retrying";
 
 		auto ModelChangedFailure() -> UserModelMutationResult {
 			return UserModelMutationResult{
 			    .status        = UserModelStatus::kModelChanged,
 			    .error_message = std::string(kUserModelChangedMessage),
-			};
-		}
-
-		auto UserModelsListFailure(UserModelStatus status, std::string message)
-		    -> UserModelListResult {
-			return UserModelListResult{
-			    .status        = status,
-			    .error_message = std::move(message),
 			};
 		}
 
@@ -155,10 +153,7 @@ namespace howdy::native {
 				const auto commit_result = transaction.RemoveFile();
 				if (!AtomicFileCommitIsDurable(commit_result)) {
 					return CommitFailure(commit_result, UserModelStatus::kDeleteFailed,
-					                     kModelRemoveFailedMessage,
-					                     "Model file was removed, but its directory could not be "
-					                     "synced; verify state "
-					                     "before retrying",
+					                     kModelRemoveFailedMessage, kModelRemovedSyncFailedMessage,
 					                     std::move(removed), true);
 				}
 				return UserModelMutationResult{
@@ -169,11 +164,9 @@ namespace howdy::native {
 			}
 			const auto commit_result = transaction.WriteDocument(*document);
 			if (!AtomicFileCommitIsDurable(commit_result)) {
-				return CommitFailure(
-				    commit_result, UserModelStatus::kWriteFailed, kModelUpdateFailedMessage,
-				    "Model file was updated, but its directory could not be synced; verify state "
-				    "before retrying",
-				    std::move(removed));
+				return CommitFailure(commit_result, UserModelStatus::kWriteFailed,
+				                     kModelUpdateFailedMessage, kModelUpdatedSyncFailedMessage,
+				                     std::move(removed));
 			}
 			return UserModelMutationResult{
 			    .status = UserModelStatus::kOk,
@@ -197,7 +190,8 @@ namespace howdy::native {
 			                             DefaultSecureOwnerUid(), validation_root);
 		const auto &entries = document.Result();
 		if (entries.status != UserModelStatus::kOk) {
-			return UserModelsListFailure(entries.status, entries.error_message);
+			return user_model_codec_internal::UserModelListFailure(entries.status,
+			                                                       entries.error_message);
 		}
 		return entries;
 	}
@@ -272,11 +266,7 @@ namespace howdy::native {
 		const auto commit_result = mutation.transaction->WriteDocument(mutation.document);
 		if (!AtomicFileCommitIsDurable(commit_result)) {
 			return CommitFailure(commit_result, UserModelStatus::kWriteFailed,
-			                     kModelSaveFailedMessage,
-			                     "Model file was updated, but its directory could not be synced; "
-			                     "verify state before "
-			                     "retrying",
-			                     entry);
+			                     kModelSaveFailedMessage, kModelUpdatedSyncFailedMessage, entry);
 		}
 		return UserModelMutationResult{.status = UserModelStatus::kOk, .entry = std::move(entry)};
 	}
@@ -341,11 +331,8 @@ namespace howdy::native {
 		const auto commit_result = transaction.transaction->RemoveFile();
 		if (!AtomicFileCommitIsDurable(commit_result)) {
 			return CommitFailure(commit_result, UserModelStatus::kDeleteFailed,
-			                     kModelRemoveFailedMessage,
-			                     "Model file was removed, but its directory could not be synced; "
-			                     "verify state before "
-			                     "retrying",
-			                     {}, true);
+			                     kModelRemoveFailedMessage, kModelRemovedSyncFailedMessage, {},
+			                     true);
 		}
 		return UserModelMutationResult{
 		    .status       = UserModelStatus::kOk,
@@ -371,7 +358,7 @@ namespace howdy::native {
 	auto LoadUserModelsFromFd(int model_fd, const std::filesystem::path &display_path,
 	                          const std::string &expected_backend, uid_t owner_uid)
 	    -> UserModelLoadResult {
-		const auto read_only = CheckReadOnlyFd(model_fd, display_path, "User model file");
+		const auto read_only = CheckReadOnlyFd(model_fd, display_path, kUserModelFileLabel);
 		if (!read_only.ok) {
 			return UserModelLoadResult{
 			    .status        = UserModelStatus::kInsecurePath,
