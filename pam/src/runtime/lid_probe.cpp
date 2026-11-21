@@ -1,11 +1,12 @@
 #include "runtime/lid_probe.hpp"
 
+#include "support/error_message.hpp"
+
 #include <cerrno>
 #include <fstream>
 #include <span>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 
 #include <glob.h>
@@ -43,9 +44,8 @@ namespace howdy::pam::runtime {
 		auto GlobErrorMessage(int return_value, int error_number) -> std::string {
 			std::string message = "Failed to read files from glob: " + std::to_string(return_value);
 			if (error_number != 0) {
-				const std::error_code error(error_number, std::generic_category());
 				message += "; Underlying error: ";
-				message += error.message();
+				message += howdy::native::SystemErrorMessage(error_number);
 				message += " (" + std::to_string(error_number) + ")";
 			}
 			return message;

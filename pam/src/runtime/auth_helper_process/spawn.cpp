@@ -2,6 +2,7 @@
 #	define _GNU_SOURCE
 #endif
 
+#include "../spawn_operations.hpp"
 #include "internal.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/auth_helper_process.hpp"
@@ -26,8 +27,7 @@
 
 namespace {
 
-	using AuthHelperOperations   = howdy::pam::auth_helper_process::Operations;
-	using AuthHelperSpawnRequest = howdy::pam::auth_helper_process::SpawnRequest;
+	using AuthHelperOperations = howdy::pam::auth_helper_process::Operations;
 	using howdy::native::runtime_descriptor_message::kHelperSocketFd;
 	using howdy::pam::auth_helper_process::internal::CloseOwnedFd;
 	using howdy::pam::auth_helper_process::internal::HelperSpawn;
@@ -36,55 +36,15 @@ namespace {
 
 	constexpr auto kNullDevice = "/dev/null";
 
-	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-	auto ProductionSocketpair(void *context, int domain, int type, int protocol, int *socket_fds)
-	    -> int {
-		(void)context;
-		return socketpair(domain, type, protocol, socket_fds);
-	}
-
 	auto ProductionDuplicateFd(void *context, int fd, int minimum_fd) -> int {
 		(void)context;
 		return fcntl(fd, F_DUPFD_CLOEXEC, minimum_fd);
-	}
-
-	auto ProductionActionsInit(void *context, posix_spawn_file_actions_t *actions) -> int {
-		(void)context;
-		return posix_spawn_file_actions_init(actions);
 	}
 
 	auto ProductionActionsAddopen(void *context, posix_spawn_file_actions_t *actions, int fd,
 	                              const char *path, int flags) -> int {
 		(void)context;
 		return posix_spawn_file_actions_addopen(actions, fd, path, flags, 0);
-	}
-
-	auto ProductionActionsAdddup2(void *context, posix_spawn_file_actions_t *actions, int source_fd,
-	                              int target_fd) -> int {
-		(void)context;
-		return posix_spawn_file_actions_adddup2(actions, source_fd, target_fd);
-	}
-
-	auto ProductionActionsAddclosefrom(void *context, posix_spawn_file_actions_t *actions,
-	                                   int from_fd) -> int {
-		(void)context;
-		return posix_spawn_file_actions_addclosefrom_np(actions, from_fd);
-	}
-
-	auto ProductionActionsDestroy(void *context, posix_spawn_file_actions_t *actions) -> int {
-		(void)context;
-		return posix_spawn_file_actions_destroy(actions);
-	}
-
-	auto ProductionSpawn(const AuthHelperSpawnRequest &request) -> int {
-		(void)request.context;
-		return howdy::pam::runtime::SpawnChild(request.child_pid, request.child_pidfd,
-		                                       {
-		                                           .path    = request.path,
-		                                           .actions = request.actions,
-		                                           .argv    = request.argv.data(),
-		                                           .envp    = request.envp.data(),
-		                                       });
 	}
 
 	auto ProductionClose(void *context, int fd) -> int {
@@ -183,14 +143,14 @@ namespace howdy::pam::auth_helper_process::internal {
 
 	auto ProductionOperations() -> AuthHelperOperations {
 		return {
-		    .socketpair           = ProductionSocketpair,
+		    .socketpair           = howdy::pam::runtime::internal::Socketpair,
 		    .duplicate_fd         = ProductionDuplicateFd,
-		    .actions_init         = ProductionActionsInit,
+		    .actions_init         = howdy::pam::runtime::internal::ActionsInit,
 		    .actions_addopen      = ProductionActionsAddopen,
-		    .actions_adddup2      = ProductionActionsAdddup2,
-		    .actions_addclosefrom = ProductionActionsAddclosefrom,
-		    .actions_destroy      = ProductionActionsDestroy,
-		    .spawn                = ProductionSpawn,
+		    .actions_adddup2      = howdy::pam::runtime::internal::ActionsAdddup2,
+		    .actions_addclosefrom = howdy::pam::runtime::internal::ActionsAddclosefrom,
+		    .actions_destroy      = howdy::pam::runtime::internal::ActionsDestroy,
+		    .spawn                = howdy::pam::runtime::internal::Spawn,
 		    .close                = ProductionClose,
 		};
 	}
@@ -281,7 +241,7 @@ namespace howdy::pam::auth_helper_process::internal {
 	auto SpawnOpenHelper(std::string_view username, const AuthHelperOperations &operations,
 	                     HelperSpawn *spawn) -> bool {
 		std::string           helper_path(kAuthHelperPath);
-		std::string           command("open");
+		std::string           command(howdy::native::runtime_descriptor_message::kOpenSubcommand);
 		std::string           username_string(username);
 		std::array<char *, 4> args = {
 		    helper_path.data(),

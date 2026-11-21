@@ -3,6 +3,8 @@
 #include <memory>
 
 namespace howdy::pam {
+	inline constexpr auto kUinputDevicePath = "/dev/uinput";
+
 	class PromptSubmitter {
 	public:
 		PromptSubmitter()                                            = default;

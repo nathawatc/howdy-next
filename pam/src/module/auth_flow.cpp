@@ -213,8 +213,7 @@ namespace howdy::pam::auth_flow {
 			return PAM_SYSTEM_ERR;
 		}
 
-		if (runtime_result.status != howdy::pam::RuntimeSessionLoadStatus::kOk ||
-		    runtime_result.config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
+		if (!howdy::pam::RuntimeSessionLoadSucceeded(runtime_result) ||
 		    !runtime_result.config_result.config.has_value()) {
 			pam_syslog(pamh, LOG_ERR, "%s", runtime_result.config_result.error_message.c_str());
 			return PAM_SYSTEM_ERR;
