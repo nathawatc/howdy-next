@@ -428,7 +428,10 @@ namespace {
 		return true;
 	}
 
-	// The private socket pair compare reports its verdict on (protocol/compare_verdict.hpp).
+	// The private socket pair compare reports its verdict on (protocol/compare_verdict.hpp). A
+	// PAM application that auto-reaps SIGCHLD, or reaps every child, takes compare's exit status
+	// before Howdy can read it, so compare also reports the code as one byte here. A socket,
+	// unlike a pipe, cannot be reopened through /proc/<pid>/fd, so no other process can add a byte.
 	auto OpenVerdictSocket(const CompareOperations &operations, howdy::native::ScopedFd *pam_end,
 	                       howdy::native::ScopedFd *compare_end) -> int {
 		using howdy::native::compare_descriptors::kFirstUnusedFd;
@@ -476,8 +479,12 @@ namespace {
 		// when the library loads and reserves address space per thread (about 128 MiB per OpenMP
 		// thread with Arch's OpenBLAS), which can exhaust the compare RLIMIT_AS. The pool is
 		// created before main(), so the environment is the only place to limit it. These are fixed
-		// values, never copied from the caller. If compare starts using BLAS-heavy OpenCV calls,
-		// revisit this.
+		// values, never copied from the caller. Issues #11 and #12. Compare made no BLAS or LAPACK
+		// calls when counted on OpenCV 5.0.0 and 5.1.0 (detector, align, SFace feature; 5.1 runs
+		// DNN GEMM through its vendored MLAS), so the pins cost no BLAS speed. Recheck that count
+		// when OpenCV changes, and revisit this if compare starts using BLAS-heavy OpenCV calls.
+		// The `cv::setNumThreads` call in compare's `entrypoint.cpp` overrides the OMP_NUM_THREADS
+		// pin for an OpenMP-backend OpenCV.
 		auto                pins = std::ranges::to<std::vector<std::string>>(kCompareThreadPins);
 		std::string         verdict_env(howdy::native::compare_verdict::kEnvironmentEntry);
 		std::string         config_env(protocol::kConfigEnvironmentEntry);
