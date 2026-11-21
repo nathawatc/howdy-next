@@ -1,10 +1,13 @@
 #include "cli/download_models/internal.hpp"
 #include "cli/download_models_test_support.hpp"
+#include "support/atomic_files.hpp"
 #include "test_support.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <limits>
 #include <system_error>
 
 #include <sys/stat.h>
@@ -221,6 +224,56 @@ namespace howdy::test::download_models {
 		    "run installed matching test model");
 		ok &= Expect(second_run_exit == 0 && AttemptedDownloads() == 0,
 		             "second run performs zero downloads");
+
+		const auto overflow_destination = temp_root / "overflow-write.onnx";
+		auto       overflow_staged =
+		    howdy::native::PrepareStagedFile(overflow_destination, ".howdy-download-");
+		ok &=
+		    Expect(overflow_staged.has_value(), "prepare staged file for overflow write callback");
+		if (overflow_staged.has_value()) {
+			howdy::native::download_models_internal::DownloadWriteContext write_context{
+			    .staged = &*overflow_staged,
+			};
+			std::array<char, 2> payload        = {'x', 'y'};
+			const auto          overflow_size  = (std::numeric_limits<std::size_t>::max() / 2) + 2;
+			const auto          overflow_count = static_cast<std::size_t>(2);
+			const auto          result =
+			    howdy::native::download_models_internal::DownloadModelsWriteCallback(
+			        payload.data(), overflow_size, overflow_count, &write_context);
+			ok &= Expect(result == 0, "overflowing write callback returns 0");
+			ok &= Expect(ReadFile(overflow_staged->path).empty(),
+			             "overflowing write callback leaves staged file empty");
+			howdy::native::CleanupStagedFile(*overflow_staged);
+		}
+
+		const auto limited_destination = temp_root / "limited-write.onnx";
+		auto       limited_staged =
+		    howdy::native::PrepareStagedFile(limited_destination, ".howdy-download-");
+		ok &= Expect(limited_staged.has_value(), "prepare staged file for cumulative write limit");
+		if (limited_staged.has_value()) {
+			howdy::native::download_models_internal::DownloadWriteContext write_context{
+			    .staged    = &*limited_staged,
+			    .max_bytes = 3,
+			};
+			std::array<char, 2> first_payload  = {'x', 'y'};
+			std::array<char, 2> second_payload = {'z', '!'};
+			const auto          first_result =
+			    howdy::native::download_models_internal::DownloadModelsWriteCallback(
+			        first_payload.data(), 1, first_payload.size(), &write_context);
+			const auto second_result =
+			    howdy::native::download_models_internal::DownloadModelsWriteCallback(
+			        second_payload.data(), 1, second_payload.size(), &write_context);
+			ok &= Expect(first_result == first_payload.size(),
+			             "write callback accepts data within cumulative limit");
+			ok &= Expect(second_result == 0,
+			             "write callback rejects data exceeding cumulative limit");
+			ok &= Expect(write_context.bytes_written == first_payload.size(),
+			             "write callback tracks only committed bytes");
+			ok &= Expect(ReadFile(limited_staged->path) == "xy",
+			             "write callback leaves rejected chunk unwritten");
+			howdy::native::CleanupStagedFile(*limited_staged);
+		}
+
 		return ok;
 	}
 

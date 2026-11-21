@@ -4,6 +4,7 @@
 #include "prompt/prompt_coordinator_test_access.hpp"
 #include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
+#include "runtime/compare_process_test_support.hpp"
 #include "support/process_status.hpp"
 #include "support/process_test_support.hpp"
 #include "test_support.hpp"
@@ -637,9 +638,5 @@ namespace howdy::test::prompt_coordinator {
 		    .config_fd = config_fd,
 		    .model_fd  = model_fd,
 		};
-	}
-
-	inline auto TimeoutWaitStatus() -> int {
-		return howdy::native::EncodeWaitExitStatus(CompareExit::kTimeoutReached);
 	}
 }  // namespace howdy::test::prompt_coordinator

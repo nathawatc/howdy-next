@@ -1,9 +1,11 @@
 #pragma once
 
+#include "protocol/compare_exit.hpp"
 #include "protocol/compare_verdict.hpp"
 #include "runtime/child_process.hpp"
 #include "runtime/compare_launch.hpp"
 #include "runtime/compare_process.hpp"
+#include "support/process_status.hpp"
 #include "support/scoped_fd.hpp"
 
 #include <cerrno>
@@ -196,6 +198,10 @@ namespace howdy::test::prompt_coordinator {
 		return howdy::pam::compare_process::WaitUntil(child_pid, pidfd.Get(), -1, deadline,
 		                                              cancellation_context, cancellation_requested,
 		                                              cancellation_fd);
+	}
+
+	inline auto TimeoutWaitStatus() -> int {
+		return howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kTimeoutReached);
 	}
 
 }  // namespace howdy::test::prompt_coordinator

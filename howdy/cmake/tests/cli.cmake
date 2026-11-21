@@ -47,6 +47,16 @@ howdy_add_native_test(
 target_link_libraries(howdy_add_cli_test PRIVATE howdy_cli howdy_opencv)
 
 howdy_add_native_test(
+ howdy_enrollment_capture_test
+ native-enrollment-capture
+ tests/cli/enrollment_capture_test.cpp
+)
+target_link_libraries(
+ howdy_enrollment_capture_test
+ PRIVATE howdy_frame_processing howdy_opencv
+)
+
+howdy_add_native_test(
  howdy_remove_cli_test
  native-remove-cli
  tests/cli/remove_cli_test.cpp
@@ -85,6 +95,7 @@ howdy_add_native_test(
  howdy_snapshot_writer_test
  native-snapshot-writer
  tests/cli/snapshot_writer_test.cpp
+ tests/cli/snapshot_writer_security_test.cpp
 )
 target_link_libraries(
  howdy_snapshot_writer_test PRIVATE howdy_cli howdy_opencv
@@ -99,7 +110,6 @@ howdy_add_native_test(
  tests/cli/download_models_manifest_test.cpp
  tests/cli/download_models_proxy_test.cpp
  tests/cli/download_models_test_support.cpp
- tests/support/atomic_files_test.cpp
 )
 target_link_libraries(howdy_download_models_test PRIVATE howdy_cli
                        PkgConfig::LIBCURL Threads::Threads)

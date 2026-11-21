@@ -175,7 +175,6 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 
-	ok &= RunProcessWaitTests();
 	ok &= ExpectConversationHelpers();
 	ok &= ExpectStatusHelpers();
 	ok &= ExpectAuthenticationGuards();

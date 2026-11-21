@@ -43,4 +43,5 @@ Dependency-injection contracts under `include/cli/<command>/internal.hpp` are sh
 design. Keep test-only helpers under `tests/include/cli/`.
 
 Inspect `howdy/CMakeLists.txt` and `howdy/cmake/tests/*.cmake` before changing a suite; add, config,
-and download-models tests span multiple translation units, while snapshot tests two single-TU suites.
+and download-models tests span multiple translation units, while snapshot has a single-TU CLI
+test and a two-TU writer test.

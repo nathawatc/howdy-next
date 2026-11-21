@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 
 #include <fcntl.h>
@@ -321,9 +322,20 @@ namespace howdy::test::user_models {
 		return paths;
 	}
 
+	inline auto RequireSnapshot(const std::filesystem::path &temp_root, const std::string &user)
+	    -> std::optional<howdy::native::UserModelFileSnapshot> {
+		const auto inspection = howdy::native::InspectUserModelFile(user, {temp_root});
+		if (inspection.status != howdy::native::UserModelStatus::kOk ||
+		    !inspection.snapshot.has_value()) {
+			return std::nullopt;
+		}
+		return inspection.snapshot;
+	}
+
 	auto TestUserModelLoading() -> bool;
 	auto TestUserModelDescriptorLoading() -> bool;
 	auto TestUserModelMutationStart() -> bool;
 	auto TestUserModelMutationFailures() -> bool;
+	auto TestUserModelVerifiedOperations() -> bool;
 
 }  // namespace howdy::test::user_models

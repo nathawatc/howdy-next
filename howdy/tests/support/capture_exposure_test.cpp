@@ -1,5 +1,5 @@
+#include "support/capture_exposure.hpp"
 #include "test_support.hpp"
-#include "vision/capture_exposure.hpp"
 
 #include <string>
 #include <vector>

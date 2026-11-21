@@ -19,6 +19,7 @@ howdy_add_pam_test(
  tests/prompt/native_prompt_terminal_test.cpp
  tests/prompt/native_prompt_fd_test.cpp
  tests/prompt/native_prompt_input_test.cpp
+ tests/prompt/native_prompt_pty_test.cpp
 )
 target_link_libraries(pam_native_prompt_conversation_test PRIVATE pam_prompt)
 
@@ -70,13 +71,6 @@ target_link_libraries(
 target_link_options(
  pam_prompt_coordinator_runtime_test
  PRIVATE
-  "LINKER:--wrap=pidfd_open"
   "LINKER:--wrap=eventfd"
   "LINKER:--wrap=eventfd_write"
-  "LINKER:--wrap=ppoll"
-  "LINKER:--wrap=__ppoll_chk"
-  "LINKER:--wrap=kill"
-  "LINKER:--wrap=waitpid"
-  "LINKER:--wrap=pidfd_send_signal"
-  "LINKER:--wrap=waitid"
 )

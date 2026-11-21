@@ -17,6 +17,12 @@ howdy_add_native_test(
  tests/support/file_security_test.cpp
 )
 
+howdy_add_native_test(
+ howdy_atomic_files_test
+ native-atomic-files
+ tests/support/atomic_files_test.cpp
+)
+
 set_tests_properties(
  native-auth-helper
  native-config-utils
@@ -30,6 +36,7 @@ set_tests_properties(
  native-download-models
  native-snapshot-writer
  native-file-security
+ native-atomic-files
  PROPERTIES WORKING_DIRECTORY "${howdy_security_test_workdir}"
 )
 
@@ -82,6 +89,13 @@ howdy_add_native_test(
  native-capture-device-path
  tests/support/capture_device_path_test.cpp
 )
+
+howdy_add_native_test(
+ howdy_capture_exposure_test
+ native-capture-exposure
+ tests/support/capture_exposure_test.cpp
+)
+target_link_libraries(howdy_capture_exposure_test PRIVATE howdy_opencv)
 
 howdy_add_native_test(
  howdy_cpu_topology_test

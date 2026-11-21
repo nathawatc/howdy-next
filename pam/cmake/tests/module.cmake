@@ -59,7 +59,6 @@ howdy_add_pam_test(
  pam-auth-flow-helpers
  tests/module/auth_flow_helpers_test.cpp
  tests/module/auth_flow_integration_test.cpp
- tests/runtime/process_wait_test.cpp
 )
 target_link_libraries(
  pam_auth_flow_helpers_test

@@ -8,7 +8,7 @@
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
-#include "vision/capture_exposure.hpp"
+#include "support/capture_exposure.hpp"
 #include "vision/face_detection.hpp"
 #include "vision/face_encoding.hpp"
 #include "vision/face_model.hpp"

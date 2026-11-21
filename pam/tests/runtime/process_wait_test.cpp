@@ -1,5 +1,4 @@
 #include "../../src/runtime/auth_helper_process/internal.hpp"
-#include "module/auth_flow_test_groups.hpp"
 #include "protocol/compare_exit.hpp"
 #include "protocol/compare_verdict.hpp"
 #include "runtime/child_process.hpp"
@@ -557,6 +556,6 @@ namespace {
 
 }  // namespace
 
-auto RunProcessWaitTests() -> bool {
-	return ExpectProcessWaiting();
+auto main() -> int {
+	return ExpectProcessWaiting() ? 0 : 1;
 }
