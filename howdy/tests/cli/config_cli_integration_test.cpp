@@ -205,7 +205,7 @@ namespace howdy::test::config_cli {
 				std::ostringstream const output;
 				int                      exit_code = 0;
 				{
-					ScopedStreamBuffer const stdout_guard(std::cout, output.rdbuf());
+					StreamRedirect const stdout_guard(std::cout, output.rdbuf());
 					howdy::native::file_security_internal::ValidationRoot const validation_root{
 					    temp_root,
 					};
@@ -383,7 +383,7 @@ namespace howdy::test::config_cli {
 			std::ostringstream const output;
 			int                      exit_code = 0;
 			{
-				ScopedStreamBuffer const stdout_guard(std::cout, output.rdbuf());
+				StreamRedirect const stdout_guard(std::cout, output.rdbuf());
 				howdy::native::file_security_internal::ValidationRoot const validation_root{
 				    temp_root,
 				};

@@ -44,6 +44,6 @@ directory either: its safety depends on its `0750` mode, not on this code.
 `LoadRuntimeConfigFromFd`: no path walk, an explicit owner, open read-only and not `O_PATH`, one
 link, and a positional read.
 
-`user_model_readiness` remains descriptor-relative and fail closed. Keep
+`user_model_readiness` remains path-based (`lstat`) and fail closed. Keep
 `storage/user_model_store/test_hooks.hpp` in production includes because the production store
 implements those deterministic hooks.

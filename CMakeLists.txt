@@ -116,7 +116,6 @@ set_property(CACHE HOWDY_ENABLE_FUZZING PROPERTY STRINGS AUTO ON OFF)
 set(HOWDY_BUILD_FUZZERS OFF)
 if(BUILD_TESTING AND NOT HOWDY_ENABLE_FUZZING STREQUAL "OFF")
   # libFuzzer ships with Clang; probe that a fuzz target links rather than trusting the ID.
-  include(CheckCXXSourceCompiles)
   cmake_push_check_state(RESET)
   set(CMAKE_REQUIRED_FLAGS "-fsanitize=fuzzer")
   set(CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=fuzzer")
@@ -152,27 +151,27 @@ endif()
 set(howdy_cxx_compiler "$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>")
 add_compile_options(
  # Build performance.
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-pipe>"
+ "$<${howdy_cxx_compiler}:-pipe>"
 
  # High-signal compiler diagnostics.
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wall>"
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wextra>"
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wpedantic>"
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wconversion>"
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wsign-conversion>"
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wshadow>"
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wformat=2>"
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wundef>"
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wdate-time>"
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wmissing-declarations>"
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Woverloaded-virtual>"
+ "$<${howdy_cxx_compiler}:-Wall>"
+ "$<${howdy_cxx_compiler}:-Wextra>"
+ "$<${howdy_cxx_compiler}:-Wpedantic>"
+ "$<${howdy_cxx_compiler}:-Wconversion>"
+ "$<${howdy_cxx_compiler}:-Wsign-conversion>"
+ "$<${howdy_cxx_compiler}:-Wshadow>"
+ "$<${howdy_cxx_compiler}:-Wformat=2>"
+ "$<${howdy_cxx_compiler}:-Wundef>"
+ "$<${howdy_cxx_compiler}:-Wdate-time>"
+ "$<${howdy_cxx_compiler}:-Wmissing-declarations>"
+ "$<${howdy_cxx_compiler}:-Woverloaded-virtual>"
 
  # Partial aggregate initialization is intentional. Remaining members are
  # value-initialized by C++, while clang-tidy checks unsafe member state.
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wno-missing-field-initializers>"
+ "$<${howdy_cxx_compiler}:-Wno-missing-field-initializers>"
 
  # Build hardening.
- "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-fstack-protector-strong>"
+ "$<${howdy_cxx_compiler}:-fstack-protector-strong>"
 
  # Enable only in maintainer/CI builds.
  "$<$<AND:$<BOOL:${HOWDY_WARNINGS_AS_ERRORS}>,${howdy_cxx_compiler}>:-Werror>"

@@ -36,9 +36,9 @@ targets.
 
 ## CMake and Tests
 
-`howdy/CMakeLists.txt` owns production/test source membership. Keep every new translation unit in
-exactly one intended target and avoid adding `howdy/src` as a global include root just to reach
-private headers.
+`howdy/CMakeLists.txt` and `howdy/cmake/tests/*.cmake` own production/test source membership. Keep every
+new translation unit in exactly one intended target and avoid adding `howdy/src` as a global
+include root just to reach private headers.
 
 Run focused tests while editing, then both Release and Debug full suites before a broad maintenance
 change is considered complete.

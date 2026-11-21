@@ -5,7 +5,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -14,12 +13,7 @@ namespace fs = std::filesystem;
 namespace {
 
 	using Cleanup = howdy::test::TemporaryDirectory;
-
-	auto Require(bool condition, const std::string &message) -> void {
-		if (!condition) {
-			throw std::runtime_error(message);
-		}
-	}
+	using howdy::test::Require;
 
 }  // namespace
 

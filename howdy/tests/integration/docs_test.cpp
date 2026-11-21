@@ -1,4 +1,5 @@
 #include "integration/process.hpp"
+#include "test_support.hpp"
 
 #include <cstddef>
 #include <exception>
@@ -7,7 +8,6 @@
 #include <iostream>
 #include <iterator>
 #include <regex>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -15,11 +15,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-	auto Require(bool condition, const std::string &message) -> void {
-		if (!condition) {
-			throw std::runtime_error(message);
-		}
-	}
+	using howdy::test::Require;
 
 	auto Read(const fs::path &path) -> std::string {
 		std::ifstream input(path, std::ios::binary);

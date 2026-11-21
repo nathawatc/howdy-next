@@ -56,39 +56,28 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
     pam_installed_path_validator
     pam_installed_state_verifier
   )
+    set(
+   pam_installed_e2e_args
+   "${pam_integration_dir}/installed_pam_setuid_e2e.sh"
+   "$<TARGET_FILE:pam_installed_path_validator>"
+   "$<TARGET_FILE:pam_installed_state_verifier>"
+   "${PROJECT_BINARY_DIR}"
+   "${CMAKE_INSTALL_PREFIX}"
+   "${HOWDY_PAM_DIR}"
+   "${HOWDY_HELPER_DIR}"
+   "${HOWDY_CONFIG_DIR}"
+   "${HOWDY_USER_MODELS_DIR}"
+   "$<TARGET_FILE:pam_installed_e2e_driver>"
+   "$<TARGET_FILE:pam_installed_runtime_e2e_driver>"
+   "$<TARGET_FILE:pam_installed_compare_e2e_probe>"
+  )
     add_test(
    NAME installed-pam-setuid-e2e
-   COMMAND
-    bash
-    "${pam_integration_dir}/installed_pam_setuid_e2e.sh"
-    "$<TARGET_FILE:pam_installed_path_validator>"
-    "$<TARGET_FILE:pam_installed_state_verifier>"
-    "${PROJECT_BINARY_DIR}"
-    "${CMAKE_INSTALL_PREFIX}"
-    "${HOWDY_PAM_DIR}"
-    "${HOWDY_HELPER_DIR}"
-    "${HOWDY_CONFIG_DIR}"
-    "${HOWDY_USER_MODELS_DIR}"
-    "$<TARGET_FILE:pam_installed_e2e_driver>"
-    "$<TARGET_FILE:pam_installed_runtime_e2e_driver>"
-    "$<TARGET_FILE:pam_installed_compare_e2e_probe>"
+   COMMAND bash ${pam_installed_e2e_args}
   )
     add_test(
    NAME installed-pam-setuid-install-environment
-   COMMAND
-    pam_installed_install_environment_test
-    "${pam_integration_dir}/installed_pam_setuid_e2e.sh"
-    "$<TARGET_FILE:pam_installed_path_validator>"
-    "$<TARGET_FILE:pam_installed_state_verifier>"
-    "${PROJECT_BINARY_DIR}"
-    "${CMAKE_INSTALL_PREFIX}"
-    "${HOWDY_PAM_DIR}"
-    "${HOWDY_HELPER_DIR}"
-    "${HOWDY_CONFIG_DIR}"
-    "${HOWDY_USER_MODELS_DIR}"
-    "$<TARGET_FILE:pam_installed_e2e_driver>"
-    "$<TARGET_FILE:pam_installed_runtime_e2e_driver>"
-    "$<TARGET_FILE:pam_installed_compare_e2e_probe>"
+   COMMAND pam_installed_install_environment_test ${pam_installed_e2e_args}
   )
   else()
     add_test(

@@ -17,13 +17,9 @@
 namespace {
 
 	using howdy::test::Expect;
+	using howdy::test::ExpectNear;
 	using howdy::test::ScopedEnvironmentVariable;
 	using howdy::test::WriteFile;
-
-	auto Near(float value, float expected) -> bool {
-		constexpr float tolerance = 0.0001F;
-		return value > expected - tolerance && value < expected + tolerance;
-	}
 
 }  // namespace
 
@@ -75,17 +71,16 @@ auto main() -> int {
 	ok &= Expect(empty.Ok(), "empty config should parse");
 	ok &= Expect(howdy::native::ReadRuntimeInt(empty, OptionId::kVideoTimeout) == 4,
 	             "timeout default is used");
-	ok &= Expect(Near(howdy::native::ReadRuntimeFloat(empty, OptionId::kVideoDarkThreshold), 75.0F),
-	             "dark threshold default is used");
-	ok &= Expect(Near(howdy::native::ReadRuntimeFloat(empty, OptionId::kVideoMaxHeight), 320.0F),
-	             "max height default is used");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(empty, OptionId::kVideoDarkThreshold), 75.0F,
+	                 0.0001F, "dark threshold default is used");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(empty, OptionId::kVideoMaxHeight), 320.0F,
+	                 0.0001F, "max height default is used");
 	ok &= Expect(howdy::native::ReadRuntimeInt(empty, OptionId::kVideoRotate) == 0,
 	             "rotate default is used");
 	ok &= Expect(howdy::native::ReadRuntimeInt(empty, OptionId::kVideoExposure) == -1,
 	             "exposure default is used");
-	ok &=
-	    Expect(Near(howdy::native::ReadRuntimeFloat(empty, OptionId::kVideoClaheClipLimit), 1.25F),
-		       "clahe clip limit default is used");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(empty, OptionId::kVideoClaheClipLimit), 1.25F,
+	                 0.0001F, "clahe clip limit default is used");
 	ok &= Expect(howdy::native::ReadRuntimeInt(empty, OptionId::kVideoClaheTileGridSize) == 8,
 	             "clahe tile grid size default is used");
 	ok &= Expect(howdy::native::ReadRuntimeInt(empty, OptionId::kVideoFrameWidth) == -1,
@@ -94,12 +89,10 @@ auto main() -> int {
 	             "frame height default is used");
 	ok &= Expect(howdy::native::ReadRuntimeInt(empty, OptionId::kVideoDeviceFps) == 0,
 	             "device fps default is used");
-	ok &= Expect(
-	    Near(howdy::native::ReadRuntimeFloat(empty, OptionId::kFaceYunetScoreThreshold), 0.8845F),
-	    "yunet score threshold default is used");
-	ok &=
-	    Expect(Near(howdy::native::ReadRuntimeFloat(empty, OptionId::kFaceYunetNmsThreshold), 0.3F),
-		       "yunet nms threshold default is used");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(empty, OptionId::kFaceYunetScoreThreshold),
+	                 0.8845F, 0.0001F, "yunet score threshold default is used");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(empty, OptionId::kFaceYunetNmsThreshold), 0.3F,
+	                 0.0001F, "yunet nms threshold default is used");
 	ok &= Expect(howdy::native::ReadRuntimeInt(empty, OptionId::kFaceYunetTopK) == 1000,
 	             "yunet top k default is used");
 	ok &= Expect(howdy::native::ReadRuntimeString(empty, OptionId::kFaceSfaceMetric) ==
@@ -109,12 +102,10 @@ auto main() -> int {
 	ok &= Expect(empty_metric.has_value() &&
 	                 *empty_metric == howdy::native::config_schema::kSfaceDefaultMetric,
 	             "sface metric boundary parses default");
-	ok &= Expect(
-	    Near(howdy::native::ReadSfaceThreshold(empty, howdy::native::FaceMetric::kCosine), 0.6942F),
-	    "cosine sface threshold default is used");
-	ok &= Expect(
-	    Near(howdy::native::ReadSfaceThreshold(empty, howdy::native::FaceMetric::kL2), 0.6942F),
-	    "l2 sface threshold default is used");
+	ok &= ExpectNear(howdy::native::ReadSfaceThreshold(empty, howdy::native::FaceMetric::kCosine),
+	                 0.6942F, 0.0001F, "cosine sface threshold default is used");
+	ok &= ExpectNear(howdy::native::ReadSfaceThreshold(empty, howdy::native::FaceMetric::kL2),
+	                 0.6942F, 0.0001F, "l2 sface threshold default is used");
 
 	const auto bool_path = temp_root / "typed-bools.ini";
 	ok &= Expect(WriteFile(bool_path, "[core]\n"
@@ -159,10 +150,9 @@ auto main() -> int {
 	                                            "max_height = 4096\n"),
 	             "write float boundary config");
 	howdy::native::ConfigReader const float_boundaries(float_boundary_path.string());
-	ok &= Expect(
-	    Near(howdy::native::ReadRuntimeFloat(float_boundaries, OptionId::kVideoDarkThreshold),
-		     0.0F),
-	    "generic float reader accepts minimum");
+	ok &=
+	    ExpectNear(howdy::native::ReadRuntimeFloat(float_boundaries, OptionId::kVideoDarkThreshold),
+		           0.0F, 0.0001F, "generic float reader accepts minimum");
 	ok &= Expect(howdy::native::ReadRuntimeFloat(float_boundaries, OptionId::kVideoMaxHeight) ==
 	                 4096.0F,
 	             "generic float reader accepts maximum");
@@ -207,10 +197,10 @@ auto main() -> int {
 	                 "/dev/video0",
 	             "generic string reader preserves special free-form path");
 
-	ok &= Expect(Near(howdy::native::ParseConfigFloatStrict("1.25").value_or(0.0F), 1.25F),
-	             "strict float parser accepts dot decimal");
-	ok &= Expect(Near(howdy::native::ParseConfigFloatStrict("+1.25").value_or(0.0F), 1.25F),
-	             "strict float parser accepts leading plus");
+	ok &= ExpectNear(howdy::native::ParseConfigFloatStrict("1.25").value_or(0.0F), 1.25F, 0.0001F,
+	                 "strict float parser accepts dot decimal");
+	ok &= ExpectNear(howdy::native::ParseConfigFloatStrict("+1.25").value_or(0.0F), 1.25F, 0.0001F,
+	                 "strict float parser accepts leading plus");
 	for (const auto *const value :
 	     {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf", " 1.25", "1.25 "}) {
 		ok &= Expect(!howdy::native::ParseConfigFloatStrict(value).has_value(),
@@ -231,26 +221,24 @@ auto main() -> int {
 		howdy::native::ConfigReader const defaults(default_floats_path.string());
 		defaults_ok &= Expect(defaults.Ok(), label + ": default float config parses");
 		defaults_ok &=
-		    Expect(Near(howdy::native::ParseConfigFloatStrict("1.25").value_or(0.0F), 1.25F),
-			       label + ": strict float parser accepts dot decimal");
+		    ExpectNear(howdy::native::ParseConfigFloatStrict("1.25").value_or(0.0F), 1.25F, 0.0001F,
+			           label + ": strict float parser accepts dot decimal");
 		defaults_ok &= Expect(!howdy::native::ParseConfigFloatStrict("1,25").has_value(),
 		                      label + ": strict float parser rejects comma decimal");
 		defaults_ok &= Expect(!howdy::native::ValidateRuntimeConfig(defaults).has_value(),
 		                      label + ": default float config validates");
-		defaults_ok &= Expect(
-		    Near(howdy::native::ReadRuntimeFloat(defaults, OptionId::kVideoClaheClipLimit), 1.25F),
-		    label + ": clahe_clip_limit keeps dot decimal value");
-		defaults_ok &= Expect(
-		    Near(howdy::native::ReadRuntimeFloat(defaults, OptionId::kFaceYunetScoreThreshold),
-			     0.8845F),
-		    label + ": yunet_score_threshold keeps dot decimal value");
-		defaults_ok &= Expect(
-		    Near(howdy::native::ReadRuntimeFloat(defaults, OptionId::kFaceYunetNmsThreshold), 0.3F),
-		    label + ": yunet_nms_threshold keeps dot decimal value");
-		defaults_ok &= Expect(
-		    Near(howdy::native::ReadSfaceThreshold(defaults, howdy::native::FaceMetric::kCosine),
-			     0.6942F),
-		    label + ": sface_threshold keeps dot decimal value");
+		defaults_ok &=
+		    ExpectNear(howdy::native::ReadRuntimeFloat(defaults, OptionId::kVideoClaheClipLimit),
+			           1.25F, 0.0001F, label + ": clahe_clip_limit keeps dot decimal value");
+		defaults_ok &= ExpectNear(
+		    howdy::native::ReadRuntimeFloat(defaults, OptionId::kFaceYunetScoreThreshold), 0.8845F,
+		    0.0001F, label + ": yunet_score_threshold keeps dot decimal value");
+		defaults_ok &=
+		    ExpectNear(howdy::native::ReadRuntimeFloat(defaults, OptionId::kFaceYunetNmsThreshold),
+			           0.3F, 0.0001F, label + ": yunet_nms_threshold keeps dot decimal value");
+		defaults_ok &= ExpectNear(
+		    howdy::native::ReadSfaceThreshold(defaults, howdy::native::FaceMetric::kCosine),
+		    0.6942F, 0.0001F, label + ": sface_threshold keeps dot decimal value");
 		return defaults_ok;
 	};
 
@@ -287,10 +275,9 @@ auto main() -> int {
 		ok &= Expect(invalid_float.Ok(), "invalid float config still parses for " + value);
 		const auto validation = howdy::native::ValidateRuntimeConfig(invalid_float);
 		ok &= Expect(validation.has_value(), "invalid float validation rejects " + value);
-		ok &= Expect(
-		    Near(howdy::native::ReadRuntimeFloat(invalid_float, OptionId::kVideoClaheClipLimit),
-			     1.25F),
-		    "invalid float getter falls back for " + value);
+		ok &= ExpectNear(
+		    howdy::native::ReadRuntimeFloat(invalid_float, OptionId::kVideoClaheClipLimit), 1.25F,
+		    0.0001F, "invalid float getter falls back for " + value);
 	}
 
 	const auto                        missing_path = temp_root / "does-not-exist.ini";
@@ -323,18 +310,16 @@ auto main() -> int {
 	             "invalid bounded config fails semantic validation");
 	ok &= Expect(howdy::native::ReadRuntimeInt(invalid, OptionId::kVideoTimeout) == 4,
 	             "invalid timeout falls back");
-	ok &=
-	    Expect(Near(howdy::native::ReadRuntimeFloat(invalid, OptionId::kVideoDarkThreshold), 75.0F),
-		       "invalid dark threshold falls back");
-	ok &= Expect(Near(howdy::native::ReadRuntimeFloat(invalid, OptionId::kVideoMaxHeight), 320.0F),
-	             "invalid max height falls back");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(invalid, OptionId::kVideoDarkThreshold), 75.0F,
+	                 0.0001F, "invalid dark threshold falls back");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(invalid, OptionId::kVideoMaxHeight), 320.0F,
+	                 0.0001F, "invalid max height falls back");
 	ok &= Expect(howdy::native::ReadRuntimeInt(invalid, OptionId::kVideoRotate) == 0,
 	             "invalid rotate falls back");
 	ok &= Expect(howdy::native::ReadRuntimeInt(invalid, OptionId::kVideoExposure) == -1,
 	             "invalid exposure falls back");
-	ok &= Expect(
-	    Near(howdy::native::ReadRuntimeFloat(invalid, OptionId::kVideoClaheClipLimit), 1.25F),
-	    "invalid clahe clip limit falls back");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(invalid, OptionId::kVideoClaheClipLimit),
+	                 1.25F, 0.0001F, "invalid clahe clip limit falls back");
 	ok &= Expect(howdy::native::ReadRuntimeInt(invalid, OptionId::kVideoClaheTileGridSize) == 8,
 	             "invalid clahe tile grid size falls back");
 	ok &= Expect(howdy::native::ReadRuntimeInt(invalid, OptionId::kVideoFrameWidth) == -1,
@@ -347,32 +332,25 @@ auto main() -> int {
 	ok &= Expect(WriteFile(wide_threshold_path, "[face]\nsface_threshold = 3\n"),
 	             "write threshold above the unit-vector distance bound");
 	howdy::native::ConfigReader const wide_threshold(wide_threshold_path.string());
-	ok &= Expect(
-	    Near(howdy::native::ReadSfaceThreshold(wide_threshold, howdy::native::FaceMetric::kL2),
-		     3.0F),
-	    "l2 keeps threshold of 3");
-	ok &= Expect(
-	    Near(howdy::native::ReadSfaceThreshold(wide_threshold, howdy::native::FaceMetric::kL2Norm),
-		     0.6942F),
-	    "l2norm falls back from a threshold above 2");
-	ok &= Expect(
-	    Near(howdy::native::ReadRuntimeFloat(invalid, OptionId::kFaceYunetScoreThreshold), 0.8845F),
-	    "invalid yunet score threshold falls back");
-	ok &= Expect(
-	    Near(howdy::native::ReadRuntimeFloat(invalid, OptionId::kFaceYunetNmsThreshold), 0.3F),
-	    "invalid yunet nms threshold falls back");
+	ok &= ExpectNear(
+	    howdy::native::ReadSfaceThreshold(wide_threshold, howdy::native::FaceMetric::kL2), 3.0F,
+	    0.0001F, "l2 keeps threshold of 3");
+	ok &= ExpectNear(
+	    howdy::native::ReadSfaceThreshold(wide_threshold, howdy::native::FaceMetric::kL2Norm),
+	    0.6942F, 0.0001F, "l2norm falls back from a threshold above 2");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(invalid, OptionId::kFaceYunetScoreThreshold),
+	                 0.8845F, 0.0001F, "invalid yunet score threshold falls back");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(invalid, OptionId::kFaceYunetNmsThreshold),
+	                 0.3F, 0.0001F, "invalid yunet nms threshold falls back");
 	ok &= Expect(howdy::native::ReadRuntimeInt(invalid, OptionId::kFaceYunetTopK) == 1000,
 	             "invalid yunet top k falls back");
 	ok &= Expect(howdy::native::ReadRuntimeString(invalid, OptionId::kFaceSfaceMetric) ==
 	                 howdy::native::config_schema::RuntimeDefaultString(OptionId::kFaceSfaceMetric),
 	             "invalid sface metric falls back");
-	ok &=
-	    Expect(Near(howdy::native::ReadSfaceThreshold(invalid, howdy::native::FaceMetric::kCosine),
-		            0.6942F),
-		       "invalid sface threshold falls back");
-	ok &= Expect(
-	    Near(howdy::native::ReadSfaceThreshold(invalid, howdy::native::FaceMetric::kL2), 0.6942F),
-	    "invalid l2 sface threshold falls back");
+	ok &= ExpectNear(howdy::native::ReadSfaceThreshold(invalid, howdy::native::FaceMetric::kCosine),
+	                 0.6942F, 0.0001F, "invalid sface threshold falls back");
+	ok &= ExpectNear(howdy::native::ReadSfaceThreshold(invalid, howdy::native::FaceMetric::kL2),
+	                 0.6942F, 0.0001F, "invalid l2 sface threshold falls back");
 	ok &= Expect(howdy::native::IsAllowedCaptureDevicePath("/dev/video0"),
 	             "video device path prefix is allowed");
 	ok &= Expect(howdy::native::IsAllowedCaptureDevicePath("/dev/v4l/by-path/platform-camera"),
@@ -399,13 +377,11 @@ auto main() -> int {
 	             "malformed numeric config fails semantic validation");
 	ok &= Expect(howdy::native::ReadRuntimeInt(malformed, OptionId::kVideoTimeout) == 4,
 	             "malformed timeout falls back");
-	ok &= Expect(
-	    Near(howdy::native::ReadRuntimeFloat(malformed, OptionId::kVideoDarkThreshold), 75.0F),
-	    "malformed dark threshold falls back");
-	ok &= Expect(
-	    Near(howdy::native::ReadSfaceThreshold(malformed, howdy::native::FaceMetric::kCosine),
-		     0.6942F),
-	    "malformed sface threshold falls back");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(malformed, OptionId::kVideoDarkThreshold),
+	                 75.0F, 0.0001F, "malformed dark threshold falls back");
+	ok &=
+	    ExpectNear(howdy::native::ReadSfaceThreshold(malformed, howdy::native::FaceMetric::kCosine),
+		           0.6942F, 0.0001F, "malformed sface threshold falls back");
 
 	const auto non_finite_path = temp_root / "non-finite.ini";
 	ok &= Expect(WriteFile(non_finite_path, "[video]\n"
@@ -418,17 +394,14 @@ auto main() -> int {
 	ok &= Expect(non_finite.Ok(), "non-finite config should still parse");
 	ok &= Expect(howdy::native::ValidateRuntimeConfig(non_finite).has_value(),
 	             "non-finite numeric values fail semantic validation");
-	ok &= Expect(
-	    Near(howdy::native::ReadRuntimeFloat(non_finite, OptionId::kVideoDarkThreshold), 75.0F),
-	    "non-finite float falls back to schema default");
+	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(non_finite, OptionId::kVideoDarkThreshold),
+	                 75.0F, 0.0001F, "non-finite float falls back to schema default");
 	ok &=
-	    Expect(Near(howdy::native::ReadRuntimeFloat(non_finite, OptionId::kFaceYunetScoreThreshold),
-		            0.8845F),
-		       "infinite float falls back to schema default");
-	ok &= Expect(
-	    Near(howdy::native::ReadSfaceThreshold(non_finite, howdy::native::FaceMetric::kCosine),
-		     0.6942F),
-	    "non-finite sface threshold falls back to schema default");
+	    ExpectNear(howdy::native::ReadRuntimeFloat(non_finite, OptionId::kFaceYunetScoreThreshold),
+		           0.8845F, 0.0001F, "infinite float falls back to schema default");
+	ok &= ExpectNear(
+	    howdy::native::ReadSfaceThreshold(non_finite, howdy::native::FaceMetric::kCosine), 0.6942F,
+	    0.0001F, "non-finite sface threshold falls back to schema default");
 
 	const auto negative_fps_path = temp_root / "negative-fps.ini";
 	ok &= Expect(WriteFile(negative_fps_path, "[video]\n"
@@ -452,8 +425,8 @@ auto main() -> int {
 	ok &= Expect(memory_with_path.Ok(), "ConfigReader(path, content) parses valid ini buffer");
 	ok &= Expect(memory_with_path.GetInt("video", "timeout", 3) == 12,
 	             "ConfigReader(path, content) parses timeout value");
-	ok &= Expect(Near(memory_with_path.GetFloat("video", "dark_threshold", 0.0F), 42.0F),
-	             "ConfigReader(path, content) parses dark_threshold value");
+	ok &= ExpectNear(memory_with_path.GetFloat("video", "dark_threshold", 0.0F), 42.0F, 0.0001F,
+	                 "ConfigReader(path, content) parses dark_threshold value");
 
 	fs::remove_all(temp_root, ec);
 	return ok ? 0 : 1;

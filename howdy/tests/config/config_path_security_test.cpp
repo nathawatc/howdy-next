@@ -77,7 +77,7 @@ namespace howdy::test {
 		ok &= Expect(update_failed, "update_config_value returns false when install fails");
 		ok &= Expect(update_error == "Failed to update config file",
 		             "failed update_config_value install reports fallback error: " + update_error);
-		ok &= Expect(ReadConfigTestFile(install_failure_path) == "[core]\ndisabled = false\n",
+		ok &= Expect(ReadFile(install_failure_path) == "[core]\ndisabled = false\n",
 		             "failed install leaves original config unchanged");
 		ok &= Expect(CountFilesWithPrefix(install_failure_dir, ".howdy-config-") == 0,
 		             "failed install leaves no staged config file");
@@ -92,7 +92,7 @@ namespace howdy::test {
 		ok &= Expect(!howdy::native::UpdateConfigValue(symlink_config, "disabled", &symlink_error,
 		                                               "true", false, false, {context.temp_root}),
 		             "update_config_value rejects symlinked config path");
-		ok &= Expect(ReadConfigTestFile(symlink_target) == "[core]\ndisabled = false\n",
+		ok &= Expect(ReadFile(symlink_target) == "[core]\ndisabled = false\n",
 		             "symlinked config target is left unchanged");
 
 		const auto config_lock_path = LockFilePath(context.config_path);

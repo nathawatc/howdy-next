@@ -4,8 +4,6 @@
 #include "support/face_metric.hpp"
 #include "test_support.hpp"
 
-#include <cmath>
-#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -20,12 +18,9 @@ namespace {
 
 	using howdy::test::CreateTempDirectory;
 	using howdy::test::Expect;
+	using howdy::test::ExpectNear;
 	using howdy::test::TemporaryDirectory;
 	using howdy::test::WriteFile;
-
-	auto NearlyEqual(float lhs, float rhs) -> bool {
-		return std::abs(lhs - rhs) < 0.0001F;
-	}
 
 	auto LoadConfig(const std::filesystem::path &root, const std::string &filename,
 	                std::string_view content) -> howdy::native::RuntimeConfigLoadResult {
@@ -80,8 +75,8 @@ auto main() -> int {
 	};
 	const auto expect_float_default = [&](float actual, howdy::native::config_schema::OptionId id,
 	                                      const std::string &message) -> bool {
-		return Expect(NearlyEqual(actual, howdy::native::config_schema::RuntimeDefaultFloat(id)),
-		              message);
+		return ExpectNear(actual, howdy::native::config_schema::RuntimeDefaultFloat(id), 0.0001F,
+		                  message);
 	};
 	const auto expect_string_default = [&](const std::string                     &actual,
 	                                       howdy::native::config_schema::OptionId id,
@@ -166,10 +161,9 @@ auto main() -> int {
 		                 howdy::native::config_schema::RuntimeDefaultBool(kCoreDetectionNotice),
 		             "core default loads from schema");
 		ok &= expect_video_defaults(config.video, "minimal config");
-		ok &= Expect(
-		    NearlyEqual(config.face.sface_threshold,
-			            howdy::native::config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold)),
-		    "cosine threshold default loads from schema");
+		ok &= ExpectNear(config.face.sface_threshold,
+		                 howdy::native::config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold),
+		                 0.0001F, "cosine threshold default loads from schema");
 	}
 
 	const auto custom = LoadConfig(root, "custom.ini",
@@ -210,22 +204,28 @@ auto main() -> int {
 		                 !config.core.abort_if_ssh && config.core.abort_if_lid_closed &&
 		                 !config.core.disabled,
 		             "custom core fields map to their schema options");
-		ok &= Expect(
-		    config.video.timeout == 12 && config.video.device_path == "none" &&
-		        !config.video.warn_no_device && NearlyEqual(config.video.max_height, 640.0F) &&
-		        config.video.frame_width == 1280 && config.video.frame_height == 720 &&
-		        !config.video.clahe_enabled && NearlyEqual(config.video.clahe_clip_limit, 2.5F) &&
-		        config.video.clahe_tile_grid_size == 13 &&
-		        NearlyEqual(config.video.dark_threshold, 42.5F) && config.video.force_mjpeg &&
-		        config.video.exposure == 20 && config.video.device_fps == 30 &&
-		        config.video.rotate == 2,
-		    "custom video fields map to their schema options");
-		ok &= Expect(NearlyEqual(config.face.yunet_score_threshold, 0.8F) &&
-		                 NearlyEqual(config.face.yunet_nms_threshold, 0.2F) &&
-		                 config.face.yunet_top_k == 1234 &&
-		                 config.face.sface_metric == howdy::native::FaceMetric::kL2 &&
-		                 NearlyEqual(config.face.sface_threshold, 3.5F),
+		ok &= Expect(config.video.timeout == 12 && config.video.device_path == "none" &&
+		                 !config.video.warn_no_device && config.video.frame_width == 1280 &&
+		                 config.video.frame_height == 720 && !config.video.clahe_enabled &&
+		                 config.video.clahe_tile_grid_size == 13 && config.video.force_mjpeg &&
+		                 config.video.exposure == 20 && config.video.device_fps == 30 &&
+		                 config.video.rotate == 2,
+		             "custom video fields map to their schema options");
+		ok &= ExpectNear(config.video.max_height, 640.0F, 0.0001F,
+		                 "custom video max_height maps to its schema option");
+		ok &= ExpectNear(config.video.clahe_clip_limit, 2.5F, 0.0001F,
+		                 "custom video clahe_clip_limit maps to its schema option");
+		ok &= ExpectNear(config.video.dark_threshold, 42.5F, 0.0001F,
+		                 "custom video dark_threshold maps to its schema option");
+		ok &= Expect(config.face.yunet_top_k == 1234 &&
+		                 config.face.sface_metric == howdy::native::FaceMetric::kL2,
 		             "custom face fields map to their schema options");
+		ok &= ExpectNear(config.face.yunet_score_threshold, 0.8F, 0.0001F,
+		                 "custom face yunet_score_threshold maps to its schema option");
+		ok &= ExpectNear(config.face.yunet_nms_threshold, 0.2F, 0.0001F,
+		                 "custom face yunet_nms_threshold maps to its schema option");
+		ok &= ExpectNear(config.face.sface_threshold, 3.5F, 0.0001F,
+		                 "custom face sface_threshold maps to its schema option");
 		ok &= Expect(config.debug.end_report, "custom debug field maps to its schema option");
 	}
 
@@ -268,9 +268,10 @@ auto main() -> int {
 	ok &= Expect(l2.config.has_value(), "l2 config has config");
 	if (l2.config.has_value()) {
 		const auto &config = *l2.config;
-		ok &= Expect(config.face.sface_metric == howdy::native::FaceMetric::kL2 &&
-		                 NearlyEqual(config.face.sface_threshold, 4.0F),
-		             "l2 threshold up to four loads");
+		ok &= Expect(config.face.sface_metric == howdy::native::FaceMetric::kL2,
+		             "l2 threshold up to four selects l2 metric");
+		ok &=
+		    ExpectNear(config.face.sface_threshold, 4.0F, 0.0001F, "l2 threshold up to four loads");
 	}
 
 	const auto sentinel =
@@ -301,18 +302,18 @@ auto main() -> int {
 	ok &= Expect(empty.config.has_value(), "empty config has config");
 	if (empty.config.has_value()) {
 		const auto &config = *empty.config;
-		ok &= Expect(
-		    !config.core.disabled &&
-		        config.video.timeout ==
-		            howdy::native::config_schema::RuntimeDefaultInt(kVideoTimeout) &&
-		        NearlyEqual(config.video.dark_threshold,
-				            howdy::native::config_schema::RuntimeDefaultFloat(kVideoDarkThreshold)),
-		    "empty values preserve schema defaults");
-		ok &= Expect(
-		    config.face.sface_metric == howdy::native::config_schema::kSfaceDefaultMetric &&
-		        NearlyEqual(config.face.sface_threshold,
-				            howdy::native::config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold)),
-		    "empty face values preserve schema defaults");
+		ok &= Expect(!config.core.disabled &&
+		                 config.video.timeout ==
+		                     howdy::native::config_schema::RuntimeDefaultInt(kVideoTimeout),
+		             "empty values preserve schema core and video timeout defaults");
+		ok &= ExpectNear(config.video.dark_threshold,
+		                 howdy::native::config_schema::RuntimeDefaultFloat(kVideoDarkThreshold),
+		                 0.0001F, "empty values preserve schema dark_threshold default");
+		ok &= Expect(config.face.sface_metric == howdy::native::config_schema::kSfaceDefaultMetric,
+		             "empty face metric preserves schema default");
+		ok &= ExpectNear(config.face.sface_threshold,
+		                 howdy::native::config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold),
+		                 0.0001F, "empty face sface_threshold preserves schema default");
 	}
 
 	return ok ? 0 : 1;

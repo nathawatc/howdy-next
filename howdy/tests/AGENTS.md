@@ -4,8 +4,8 @@ Read [`../AGENTS.md`](../AGENTS.md) first, then the production subsystem guide f
 
 ## Rules
 
-- A CTest logical suite may span several `.cpp` files. Inspect `howdy/CMakeLists.txt` before moving
-  or adding coverage.
+- A CTest logical suite may span several `.cpp` files. Inspect `howdy/CMakeLists.txt` and
+  `howdy/cmake/tests/*.cmake` before moving or adding coverage.
 - Keep test-only shared headers under `tests/include/<module>/`.
 - Never add `tests/include` to production targets.
 - Prefer injected filesystem, clock, capture, renderer, process, and inference dependencies over

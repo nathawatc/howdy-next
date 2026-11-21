@@ -31,39 +31,37 @@ namespace howdy::test {
 				                                              nullptr, "1.25", false, true,
 				                                              {config_path.parent_path()}),
 				             label + ": update_config_value accepts clahe_clip_limit dot decimal");
-				ok &= Expect(ReadConfigTestFile(config_path).contains("clahe_clip_limit = 1.25\n"),
+				ok &= Expect(ReadFile(config_path).contains("clahe_clip_limit = 1.25\n"),
 				             label + ": clahe_clip_limit written unchanged");
 				ok &= Expect(howdy::native::UpdateConfigValue(config_path, "yunet_score_threshold",
 				                                              nullptr, "0.8845", false, true,
 				                                              {config_path.parent_path()}),
 				             label +
 				                 ": update_config_value accepts yunet_score_threshold dot decimal");
-				ok &= Expect(
-				    ReadConfigTestFile(config_path).contains("yunet_score_threshold = 0.8845\n"),
-				    label + ": yunet_score_threshold written unchanged");
+				ok &= Expect(ReadFile(config_path).contains("yunet_score_threshold = 0.8845\n"),
+				             label + ": yunet_score_threshold written unchanged");
 				ok &=
 				    Expect(howdy::native::UpdateConfigValue(config_path, "yunet_nms_threshold",
 					                                        nullptr, "0.3", false, true,
 					                                        {config_path.parent_path()}),
 					       label + ": update_config_value accepts yunet_nms_threshold dot decimal");
-				ok &=
-				    Expect(ReadConfigTestFile(config_path).contains("yunet_nms_threshold = 0.3\n"),
-					       label + ": yunet_nms_threshold written unchanged");
+				ok &= Expect(ReadFile(config_path).contains("yunet_nms_threshold = 0.3\n"),
+				             label + ": yunet_nms_threshold written unchanged");
 				ok &= Expect(howdy::native::UpdateConfigValue(config_path, "sface_threshold",
 				                                              nullptr, "0.6942", false, true,
 				                                              {config_path.parent_path()}),
 				             label + ": update_config_value accepts sface_threshold dot decimal");
-				ok &= Expect(ReadConfigTestFile(config_path).contains("sface_threshold = 0.6942\n"),
+				ok &= Expect(ReadFile(config_path).contains("sface_threshold = 0.6942\n"),
 				             label + ": sface_threshold written unchanged");
 
 				for (const auto *const value : {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf"}) {
-					const auto before_invalid = ReadConfigTestFile(config_path);
+					const auto before_invalid = ReadFile(config_path);
 					ok &= Expect(!howdy::native::UpdateConfigValue(config_path, "clahe_clip_limit",
 					                                               nullptr, value, false, true,
 					                                               {config_path.parent_path()}),
 					             label + ": update_config_value rejects invalid float " +
 					                 std::string(value));
-					ok &= Expect(ReadConfigTestFile(config_path) == before_invalid,
+					ok &= Expect(ReadFile(config_path) == before_invalid,
 					             label + ": invalid float update leaves config unchanged for " +
 					                 std::string(value));
 				}
@@ -128,7 +126,7 @@ namespace howdy::test {
 		             "update_config_value rejects oversized current config");
 		ok &= Expect(size_error == "Failed to read config file",
 		             "oversized update reports config read failure");
-		ok &= Expect(ReadConfigTestFile(context.config_path) == context.config_over_limit,
+		ok &= Expect(ReadFile(context.config_path) == context.config_over_limit,
 		             "oversized update leaves current config unchanged");
 		ok &= Expect(WriteConfigTestFile(context.config_path, "[core]\n"
 		                                                      "disabled = false\n"
@@ -140,12 +138,12 @@ namespace howdy::test {
 		ok &= Expect(howdy::native::UpdateConfigValue(context.config_path, "disabled", nullptr,
 		                                              "true", false, true, {context.temp_root}),
 		             "update_config_value succeeds for existing key");
-		const auto after_disabled = ReadConfigTestFile(context.config_path);
+		const auto after_disabled = ReadFile(context.config_path);
 		ok &= Expect(after_disabled.contains("disabled = true\n"), "disabled key updated");
 
 		constexpr auto expected_scalar_error =
 		    "Config values must be single-line scalars and cannot start with [";
-		const auto before_unsafe = ReadConfigTestFile(context.config_path);
+		const auto before_unsafe = ReadFile(context.config_path);
 
 		for (const auto &unsafe_value : {
 		         std::string(1, '\0'),
@@ -160,7 +158,7 @@ namespace howdy::test {
 			             "update_config_value rejects unsafe scalar value");
 			ok &= Expect(error == expected_scalar_error,
 			             "update_config_value returns exact scalar diagnostic");
-			ok &= Expect(ReadConfigTestFile(context.config_path) == before_unsafe,
+			ok &= Expect(ReadFile(context.config_path) == before_unsafe,
 			             "unsafe scalar update leaves config file unchanged");
 		}
 
@@ -178,14 +176,14 @@ namespace howdy::test {
 		ok &= Expect(howdy::native::UpdateConfigValue(empty_scalar_path, "device_path", nullptr, "",
 		                                              false, false, {context.temp_root}),
 		             "update_config_value accepts empty scalar value");
-		ok &= Expect(ReadConfigTestFile(empty_scalar_path) == "[video]\ndevice_path = \n",
+		ok &= Expect(ReadFile(empty_scalar_path) == "[video]\ndevice_path = \n",
 		             "empty scalar value is written unchanged");
 
 		ok &=
 		    Expect(howdy::native::UpdateConfigValue(context.config_path, "dark_threshold", nullptr,
 			                                        "42", false, true, {context.temp_root}),
 			       "update_config_value succeeds in later section");
-		const auto after_threshold = ReadConfigTestFile(context.config_path);
+		const auto after_threshold = ReadFile(context.config_path);
 		ok &=
 		    Expect(after_threshold.contains("dark_threshold = 42\n"), "dark_threshold key updated");
 
@@ -201,7 +199,7 @@ namespace howdy::test {
 		ok &= Expect(howdy::native::UpdateConfigValue(alternate_syntax_path, "disabled", nullptr,
 		                                              "false", false, false, {context.temp_root}),
 		             "update_config_value accepts space-separated option syntax");
-		ok &= Expect(ReadConfigTestFile(alternate_syntax_path) == "[core]\ndisabled = false\n",
+		ok &= Expect(ReadFile(alternate_syntax_path) == "[core]\ndisabled = false\n",
 		             "space-separated option is normalized");
 
 		const auto mixed_case_path = context.temp_root / "mixed-case.ini";
@@ -210,7 +208,7 @@ namespace howdy::test {
 		ok &= Expect(howdy::native::UpdateConfigValue(mixed_case_path, "disabled", nullptr, "true",
 		                                              false, false, {context.temp_root}),
 		             "update_config_value matches config identifiers case-insensitively");
-		ok &= Expect(ReadConfigTestFile(mixed_case_path) == "[CORE]\ndisabled = true\n",
+		ok &= Expect(ReadFile(mixed_case_path) == "[CORE]\ndisabled = true\n",
 		             "mixed-case option is updated in matching section");
 
 		const auto bom_path = context.temp_root / "bom.ini";
@@ -219,7 +217,7 @@ namespace howdy::test {
 		ok &= Expect(howdy::native::UpdateConfigValue(bom_path, "disabled", nullptr, "true", false,
 		                                              false, {context.temp_root}),
 		             "update_config_value recognizes BOM-prefixed section");
-		ok &= Expect(ReadConfigTestFile(bom_path) == "\xEF\xBB\xBF[core]\ndisabled = true\n",
+		ok &= Expect(ReadFile(bom_path) == "\xEF\xBB\xBF[core]\ndisabled = true\n",
 		             "BOM-prefixed config option is updated");
 
 		const auto duplicate_name_path = context.temp_root / "duplicate-name.ini";
@@ -233,7 +231,7 @@ namespace howdy::test {
 		ok &= Expect(howdy::native::UpdateConfigValue(duplicate_name_path, "disabled", nullptr,
 		                                              "true", false, false, {context.temp_root}),
 		             "update_config_value targets schema-owned section");
-		const auto duplicate_name_content = ReadConfigTestFile(duplicate_name_path);
+		const auto duplicate_name_content = ReadFile(duplicate_name_path);
 		ok &= Expect(duplicate_name_content == "[other]\n"
 		                                       "disabled = false\n"
 		                                       "\n"
@@ -263,7 +261,7 @@ namespace howdy::test {
 		             "update_config_value rejects duplicate target options");
 		ok &= Expect(duplicate_target_error.contains("appears more than once"),
 		             "duplicate target update reports duplicate option");
-		ok &= Expect(ReadConfigTestFile(duplicate_target_path) == duplicate_target_content,
+		ok &= Expect(ReadFile(duplicate_target_path) == duplicate_target_content,
 		             "rejected duplicate target update leaves config unchanged");
 
 		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "missing_key", nullptr,
@@ -273,18 +271,18 @@ namespace howdy::test {
 		                                               nullptr, "0\n[core]\ndisabled = true", false,
 		                                               true, {context.temp_root}),
 		             "update_config_value rejects newline injection");
-		ok &= Expect(ReadConfigTestFile(context.config_path) == after_threshold,
+		ok &= Expect(ReadFile(context.config_path) == after_threshold,
 		             "rejected injection leaves config unchanged");
 		ok &=
 		    Expect(!howdy::native::UpdateConfigValue(context.config_path, "dark_threshold", nullptr,
 			                                         "1000", false, true, {context.temp_root}),
 			       "update_config_value rejects semantically invalid values");
-		ok &= Expect(ReadConfigTestFile(context.config_path) == after_threshold,
+		ok &= Expect(ReadFile(context.config_path) == after_threshold,
 		             "semantic validation failure leaves config unchanged");
 		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "device_fps", nullptr,
 		                                               "-1", false, true, {context.temp_root}),
 		             "update_config_value rejects invalid device_fps values");
-		ok &= Expect(ReadConfigTestFile(context.config_path) == after_threshold,
+		ok &= Expect(ReadFile(context.config_path) == after_threshold,
 		             "invalid device_fps update leaves config unchanged");
 
 		ok &= ExpectFloatWritePaths(context.config_path);
@@ -298,7 +296,7 @@ namespace howdy::test {
 		ok &= Expect(howdy::native::UpdateConfigValue(context.config_path, "disabled", nullptr,
 		                                              "true", false, false, {context.temp_root}),
 		             "update_config_value can bypass runtime validation for recovery writes");
-		const auto after_disable_recovery = ReadConfigTestFile(context.config_path);
+		const auto after_disable_recovery = ReadFile(context.config_path);
 		ok &= Expect(after_disable_recovery.contains("disabled = true\n"),
 		             "recovery write updates disabled key");
 		howdy::native::ConfigReader const still_invalid(context.config_path.string());

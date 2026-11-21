@@ -6,8 +6,8 @@
 #include "storage/user_models_test_support.hpp"
 #include "support/bit_flags.hpp"
 #include "support/face_metric.hpp"
+#include "test_support.hpp"
 
-#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstddef>
@@ -44,12 +44,7 @@ namespace howdy::test::user_models {
 			return document;
 		}
 
-		auto HasStagedModelFile(const std::filesystem::path &models_dir) -> bool {
-			return std::ranges::any_of(
-			    std::filesystem::directory_iterator(models_dir), [](const auto &entry) -> bool {
-				    return entry.path().filename().string().starts_with(".howdy-user-model-");
-			    });
-		}
+		using howdy::test::CountFilesWithPrefix;
 
 		void RemoveStagedModelFiles(const std::filesystem::path &models_dir,
 		                            std::error_code             *error) {
@@ -153,9 +148,10 @@ namespace howdy::test::user_models {
 				    "alice", *snapshot, {temp_root});
 				ok &= Expect(result.status == howdy::native::UserModelStatus::kDeleteFailed,
 				             "clear reports injected unlink failure");
-				ok &= Expect(ReadFile(model_path) == original_content &&
-				                 !HasStagedModelFile(model_path.parent_path()),
-				             "unlink failure moves the original model back to its path");
+				ok &= Expect(
+				    ReadFile(model_path) == original_content &&
+				        (CountFilesWithPrefix(model_path.parent_path(), ".howdy-user-model-") == 0),
+				    "unlink failure moves the original model back to its path");
 			}
 			{
 				const auto original_content = ReadFile(model_path);
@@ -255,7 +251,8 @@ namespace howdy::test::user_models {
 				struct stat path_stat{};
 				ok &= Expect(lstat(model_path.c_str(), &path_stat) != 0 && errno == ENOENT,
 				             description + ": nothing at the model path");
-				ok &= Expect(!HasStagedModelFile(models_dir), description + ": no staged file");
+				ok &= Expect((CountFilesWithPrefix(models_dir, ".howdy-user-model-") == 0),
+				             description + ": no staged file");
 			};
 			const auto expect_failure = [&](Hooks hooks, UserModelStatus status,
 			                                const std::string &description) -> void {
@@ -296,7 +293,8 @@ namespace howdy::test::user_models {
 				});
 				ok &= Expect(append().status == UserModelStatus::kModelChanged,
 				             "first enrollment rejects a path filled after the open");
-				ok &= Expect(ReadFile(model_path) == intruder && !HasStagedModelFile(models_dir),
+				ok &= Expect(ReadFile(model_path) == intruder &&
+				                 (CountFilesWithPrefix(models_dir, ".howdy-user-model-") == 0),
 				             "a path filled after the open is left as it was");
 				fs::remove(model_path, ec);
 			}
@@ -311,7 +309,8 @@ namespace howdy::test::user_models {
 				});
 				ok &= Expect(append().status == UserModelStatus::kModelChanged,
 				             "first enrollment commit refuses to replace a new file");
-				ok &= Expect(ReadFile(model_path) == intruder && !HasStagedModelFile(models_dir),
+				ok &= Expect(ReadFile(model_path) == intruder &&
+				                 (CountFilesWithPrefix(models_dir, ".howdy-user-model-") == 0),
 				             "a refused first enrollment leaves the new file and no staged file");
 				fs::remove(model_path, ec);
 			}
@@ -383,7 +382,8 @@ namespace howdy::test::user_models {
 				    howdy::native::AppendUserModelEntry("alice", entry, {temp_root});
 				ok &= Expect(result.status == UserModelStatus::kModelChanged,
 				             "append reports a model removed before the exchange as changed");
-				ok &= Expect(!fs::exists(model_path) && !HasStagedModelFile(models_dir),
+				ok &= Expect(!fs::exists(model_path) &&
+				                 (CountFilesWithPrefix(models_dir, ".howdy-user-model-") == 0),
 				             "a model removed before the exchange is not recreated");
 			}
 			ok &= Expect(WriteFile(model_path, original_content),
@@ -416,7 +416,8 @@ namespace howdy::test::user_models {
 				                     .status == UserModelStatus::kModelChanged,
 				             "clear reports a model replaced before its unlink as changed");
 			}
-			ok &= Expect(ReadFile(model_path) == replacement && !HasStagedModelFile(models_dir),
+			ok &= Expect(ReadFile(model_path) == replacement &&
+			                 (CountFilesWithPrefix(models_dir, ".howdy-user-model-") == 0),
 			             "clear leaves a replacement made before its unlink in place");
 			fs::remove(model_path, ec);
 			ok &= Expect(WriteFile(model_path, original_content),
@@ -437,7 +438,7 @@ namespace howdy::test::user_models {
 				             "clear removes a long user name's model");
 			}
 			ok &= Expect(!fs::exists(models_dir / (long_user + ".dat")) &&
-			                 !HasStagedModelFile(models_dir),
+			                 (CountFilesWithPrefix(models_dir, ".howdy-user-model-") == 0),
 			             "clearing a long user name's model leaves nothing behind");
 			return ok;
 		}
@@ -678,7 +679,7 @@ namespace howdy::test::user_models {
 				             "append explains unsupported atomic exchange");
 				ok &= Expect(ReadFile(model_path) == before_unsupported_exchange,
 				             "unsupported atomic exchange leaves model bytes unchanged");
-				ok &= Expect(!HasStagedModelFile(models_dir),
+				ok &= Expect((CountFilesWithPrefix(models_dir, ".howdy-user-model-") == 0),
 				             "unsupported atomic exchange cleans staged model file");
 			}
 		}
@@ -694,7 +695,7 @@ namespace howdy::test::user_models {
 			             "generic exchange failure remains a generic write failure");
 			ok &= Expect(ReadFile(model_path) == before_generic_exchange,
 			             "generic exchange failure leaves model bytes unchanged");
-			ok &= Expect(!HasStagedModelFile(models_dir),
+			ok &= Expect((CountFilesWithPrefix(models_dir, ".howdy-user-model-") == 0),
 			             "generic exchange failure cleans staged model file");
 		}
 		{
@@ -738,14 +739,14 @@ namespace howdy::test::user_models {
 				                 after.entries.size() == before.entries.size() + 1,
 				             "committed write with cleanup failure remains canonical");
 			}
-			ok &= Expect(HasStagedModelFile(models_dir),
+			ok &= Expect((CountFilesWithPrefix(models_dir, ".howdy-user-model-") != 0),
 			             "write cleanup failure leaves injected temporary artifact");
 			const auto cleanup_retry =
 			    howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
 			ok &= Expect(cleanup_retry.status == howdy::native::UserModelStatus::kOk,
 			             "next append succeeds after stale write cleanup");
-			ok &=
-			    Expect(!HasStagedModelFile(models_dir), "next append removes stale write artifact");
+			ok &= Expect((CountFilesWithPrefix(models_dir, ".howdy-user-model-") == 0),
+			             "next append removes stale write artifact");
 			fs::remove(model_path, ec);
 			ec.clear();
 			ok &= Expect(WriteFile(model_path, original_content),
@@ -836,7 +837,7 @@ namespace howdy::test::user_models {
 			             "failed post-commit recovery requires state inspection");
 			ok &= Expect(result.entry.id == -1 && !result.removed_last,
 			             "uncertain commit result makes no mutation-state claim");
-			ok &= Expect(HasStagedModelFile(models_dir),
+			ok &= Expect((CountFilesWithPrefix(models_dir, ".howdy-user-model-") != 0),
 			             "failed rollback retains staged file for uncertain state");
 			ok &= Expect(CanonicalShowsChangedEntry(model_path, replacement_model),
 			             "failed rollback leaves changed canonical namespace visible");

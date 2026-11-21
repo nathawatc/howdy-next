@@ -21,7 +21,6 @@
 #include <ranges>
 #include <sstream>
 #include <stdexcept>
-#include <streambuf>
 #include <string>
 #include <utility>
 
@@ -513,35 +512,12 @@ namespace {
 		return line.substr(0, colon) + line.substr(bracket);
 	}
 
-	// Restores std::cerr's buffer even if the logging call throws.
-	class ScopedStderrCapture {
-	public:
-		ScopedStderrCapture()
-		    : previous_(std::cerr.rdbuf(captured_.rdbuf())) {}
-
-		~ScopedStderrCapture() {
-			std::cerr.rdbuf(previous_);
-		}
-
-		ScopedStderrCapture(const ScopedStderrCapture &)                     = delete;
-		ScopedStderrCapture(ScopedStderrCapture &&)                          = delete;
-		auto operator=(const ScopedStderrCapture &) -> ScopedStderrCapture & = delete;
-		auto operator=(ScopedStderrCapture &&) -> ScopedStderrCapture &      = delete;
-
-		[[nodiscard]] auto Text() const -> std::string {
-			return captured_.str();
-		}
-
-	private:
-		std::ostringstream captured_;
-		std::streambuf    *previous_;
-	};
-
 	auto CaptureOpenCvLog(cv::utils::logging::LogLevel level, const char *tag, const char *file,
 	                      const char *func, const char *message) -> std::string {
-		const ScopedStderrCapture capture;
+		std::ostringstream const          captured;
+		const howdy::test::StreamRedirect capture(std::cerr, captured.rdbuf());
 		cv::utils::logging::internal::writeLogMessageEx(level, tag, file, 42, func, message);
-		return NormalizeOpenCvLogLine(capture.Text());
+		return NormalizeOpenCvLogLine(captured.str());
 	}
 
 	auto TestOpenCvLogFilterOutput() -> bool {

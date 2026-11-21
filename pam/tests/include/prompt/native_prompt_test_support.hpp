@@ -12,7 +12,6 @@
 
 #include <fcntl.h>
 #include <poll.h>
-#include <stdlib.h>
 #include <unistd.h>
 
 namespace howdy::test {
@@ -35,14 +34,11 @@ namespace howdy::test {
 		}
 
 		auto Create(const char *target) -> const char * {
-			std::error_code error;
-			auto            path_template =
-			    (std::filesystem::temp_directory_path(error) / "howdy-pam-tty-link-XXXXXX")
-			        .string();
-			if (error || mkdtemp(path_template.data()) == nullptr) {
+			const auto created = howdy::test::CreateTempDirectory("howdy-pam-tty-link-");
+			if (!created.has_value()) {
 				return nullptr;
 			}
-			directory_ = path_template;
+			directory_ = created->string();
 			link_      = directory_ + "/tty";
 			if (symlink(target, link_.c_str()) != 0) {
 				link_.clear();

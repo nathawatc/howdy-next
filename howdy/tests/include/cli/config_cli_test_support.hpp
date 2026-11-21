@@ -5,7 +5,7 @@
 namespace howdy::test::config_cli {
 
 	using howdy::test::ScopedEnvironmentVariable;
-	using howdy::test::ScopedStreamBuffer;
+	using howdy::test::StreamRedirect;
 
 	auto RunConfigCliCallbackExceptionTest() -> bool;
 	auto RunConfigCliIntegrationTests() -> bool;
