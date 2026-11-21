@@ -184,7 +184,6 @@ target_link_libraries(
   howdy_runtime_config
  PRIVATE
   howdy_frame_processing
-  howdy_compare_logic
 )
 
 add_library(
@@ -238,7 +237,6 @@ target_link_libraries(
   howdy_compare_capture_session
   howdy_face_model
   howdy_user_models
-  howdy_runtime_paths
   howdy_compare_engine
   howdy_compare_logic
 )

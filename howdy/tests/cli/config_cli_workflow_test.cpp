@@ -17,7 +17,6 @@
 #include <system_error>
 #include <utility>
 
-#include <stdlib.h>
 #include <unistd.h>
 
 #include <sys/stat.h>

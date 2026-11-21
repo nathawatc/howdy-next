@@ -226,11 +226,6 @@ namespace howdy::native {
 			cv::Mat faces;
 			backend_->detect(prepared, faces);
 			return ParseYunetDetections(faces);
-		} catch (const cv::Exception &) {
-			return FaceDetectionResult{
-			    .status        = FaceDetectionStatus::kInferenceError,
-			    .error_message = kFaceDetectionFailedMessage,
-			};
 		} catch (const std::exception &) {
 			return FaceDetectionResult{
 			    .status        = FaceDetectionStatus::kInferenceError,
@@ -277,11 +272,6 @@ namespace howdy::native {
 			                       .align_face      = AlignFace,
 			                       .extract_feature = ExtractFeature,
 			                   });
-		} catch (const cv::Exception &) {
-			return {
-			    .status        = FaceEncodingStatus::kInferenceError,
-			    .error_message = kFaceEncodingProcessingFailureMessage,
-			};
 		} catch (const std::exception &) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,

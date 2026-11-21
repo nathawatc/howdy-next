@@ -17,8 +17,6 @@ namespace howdy::pam::auth_helper_process::internal {
 
 	using HelperDeadline = std::chrono::steady_clock::time_point;
 
-	constexpr auto kAuthHelperTimeout = std::chrono::seconds(10);
-
 	class __attribute__((visibility("hidden"))) ProcessChannel {
 	public:
 		[[nodiscard]] auto Data() noexcept -> int * {
@@ -87,8 +85,6 @@ namespace howdy::pam::auth_helper_process::internal {
 	__attribute__((visibility("hidden"))) void LogAuthHelperFailure(const Operations &operations,
 	                                                                const char       *operation,
 	                                                                int error_code) noexcept;
-	__attribute__((visibility("hidden"))) void DestroySpawnActions(const Operations &operations,
-	                                                               HelperSpawn &spawn) noexcept;
 	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
 	__attribute__((visibility("hidden"))) void CloseOwnedFd(const Operations &operations,
 	                                                        int              &fd) noexcept;
@@ -103,21 +99,10 @@ namespace howdy::pam::auth_helper_process::internal {
 	// `pidfd` is the borrowed descriptor taken at spawn and must be passed explicitly. With -1
 	// every operation uses the PID, each only after the kernel reports an unreaped child with it;
 	// production always passes one, and only tests use -1.
-	__attribute__((visibility("hidden"))) auto TerminateAndReapHelperProcess(pid_t child_pid,
-	                                                                         int   pidfd) noexcept
-	    -> int;
+	__attribute__((visibility("hidden"))) void TerminateAndReapHelperProcess(pid_t child_pid,
+	                                                                         int   pidfd) noexcept;
 	__attribute__((visibility("hidden"))) auto
 	WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status,
 	                          int pidfd) noexcept -> HelperWaitResult;
-	// The result for a helper reaped elsewhere: past the deadline it counts as a timeout, as a
-	// helper the wait collects late does.
-	__attribute__((visibility("hidden"))) auto
-	ReapedElsewhereResult(HelperDeadline deadline) noexcept -> HelperWaitResult;
-
-	// auth_helper_process.cpp
-	// Polls the helper's socket until its one message and then end of file arrive.
-	__attribute__((visibility("hidden"))) auto
-	ReceiveHelperResult(int socket_fd, HelperDeadline deadline, const Operations &operations,
-	                    RuntimeDescriptorSet *descriptors) -> bool;
 
 }  // namespace howdy::pam::auth_helper_process::internal

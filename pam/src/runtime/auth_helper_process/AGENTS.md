@@ -8,8 +8,7 @@ guides.
 - `../auth_helper_process.cpp`: helper orchestration and the descriptor-message exchange
 - `spawn.cpp`: the helper's socket pair, stdio, and spawn with its pidfd
 - `io.cpp`: timeout, wait, terminate, reap
-- `internal.hpp`: private cross-TU plumbing (`HelperSpawn`, `ReceiveHelperResult`); not a public or
-  test seam
+- `internal.hpp`: private cross-TU plumbing (`HelperSpawn`); not a public or test seam
 
 ## Invariants
 

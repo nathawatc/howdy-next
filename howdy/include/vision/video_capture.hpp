@@ -37,7 +37,6 @@ namespace howdy::native {
 
 		auto Open(bool perform_warm_up = true) -> bool;
 		auto WarmUp() -> bool;
-		auto Grab() -> bool;
 		auto Read(cv::Mat &frame, cv::Mat *gray_frame = nullptr) -> bool;
 		void Release();
 
@@ -60,6 +59,7 @@ namespace howdy::native {
 
 		VideoCapture(CaptureSettings settings, std::shared_ptr<FrameReader> frame_reader);
 
+		auto Grab() -> bool;
 		void SetError(CaptureError error, std::string message);
 
 		friend class VideoCaptureTestAccess;

@@ -60,10 +60,6 @@ namespace howdy::native::snapshot_internal {
 		file_security_internal::ValidationRoot validation_root;
 	};
 
-	auto EnsureSnapshotDirectory(const std::filesystem::path                  &directory,
-	                             const file_security_internal::ValidationRoot &validation_root = {})
-	    -> bool;
-
 	auto WriteSnapshotAtPath(const std::vector<cv::Mat>       &frames,
 	                         const std::vector<std::string>   &text_lines,
 	                         const std::filesystem::path      &path,

@@ -63,29 +63,29 @@ namespace {
 		return suffix_start == std::string::npos ? std::string{} : filename.substr(suffix_start);
 	}
 
+	[[nodiscard]] auto EnsureSnapshotDirectory(
+	    const std::filesystem::path                                 &directory,
+	    const howdy::native::file_security_internal::ValidationRoot &validation_root) -> bool {
+		const auto log_root          = directory.parent_path();
+		const auto log_root_security = howdy::native::CreateSecureDirectoryTree(
+		    log_root, "Log directory", kSnapshotDirectoryMode, kSnapshotDirectoryMode,
+		    howdy::native::DefaultSecureOwnerUid(), validation_root);
+		if (!log_root_security.ok) {
+			std::cerr << log_root_security.error_message << "\n";
+			return false;
+		}
+
+		const auto directory_security = howdy::native::CreateSecureDirectoryTree(
+		    directory, "Snapshot directory", kSnapshotDirectoryMode, kSnapshotDirectoryMode,
+		    howdy::native::DefaultSecureOwnerUid(), validation_root);
+		if (!directory_security.ok) {
+			std::cerr << directory_security.error_message << "\n";
+			return false;
+		}
+		return true;
+	}
+
 }  // namespace
-
-auto howdy::native::snapshot_internal::EnsureSnapshotDirectory(
-    const std::filesystem::path                  &directory,
-    const file_security_internal::ValidationRoot &validation_root) -> bool {
-	const auto log_root          = directory.parent_path();
-	const auto log_root_security = howdy::native::CreateSecureDirectoryTree(
-	    log_root, "Log directory", kSnapshotDirectoryMode, kSnapshotDirectoryMode,
-	    DefaultSecureOwnerUid(), validation_root);
-	if (!log_root_security.ok) {
-		std::cerr << log_root_security.error_message << "\n";
-		return false;
-	}
-
-	const auto directory_security = howdy::native::CreateSecureDirectoryTree(
-	    directory, "Snapshot directory", kSnapshotDirectoryMode, kSnapshotDirectoryMode,
-	    DefaultSecureOwnerUid(), validation_root);
-	if (!directory_security.ok) {
-		std::cerr << directory_security.error_message << "\n";
-		return false;
-	}
-	return true;
-}
 
 auto howdy::native::snapshot_internal::WriteSnapshotAtPath(
     const std::vector<cv::Mat> &frames, const std::vector<std::string> &text_lines,

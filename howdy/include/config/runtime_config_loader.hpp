@@ -38,7 +38,6 @@ namespace howdy::native {
 	auto LoadRuntimeConfigFromFd(int config_fd, const std::filesystem::path &display_path,
 	                             uid_t owner_uid) -> RuntimeConfigLoadResult;
 #ifndef HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
-	auto LoadRuntimeConfig(const std::filesystem::path &config_path) -> RuntimeConfigLoadResult;
 	auto LoadRuntimeConfig() -> RuntimeConfigLoadResult;
 #endif
 

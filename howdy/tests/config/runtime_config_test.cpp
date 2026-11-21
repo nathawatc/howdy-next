@@ -10,8 +10,6 @@
 #include <string>
 #include <string_view>
 
-#include <stdlib.h>
-
 #include <sys/stat.h>
 
 namespace {

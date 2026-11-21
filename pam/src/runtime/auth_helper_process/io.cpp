@@ -3,9 +3,7 @@
 #endif
 
 #include "internal.hpp"
-#include "protocol/compare_exit.hpp"
 #include "runtime/child_process.hpp"
-#include "support/process_status.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -17,17 +15,6 @@
 #include <sys/poll.h>
 #include <sys/syslog.h>
 #include <sys/types.h>
-
-namespace {
-
-	using howdy::native::CompareExit;
-	using howdy::pam::auth_helper_process::internal::HelperDeadline;
-
-	auto MakeAuthHelperWaitExitStatus(CompareExit exit_code) -> int {
-		return howdy::native::EncodeWaitExitStatus(exit_code);
-	}
-
-}  // namespace
 
 namespace howdy::pam::auth_helper_process::internal {
 
@@ -53,11 +40,10 @@ namespace howdy::pam::auth_helper_process::internal {
 		}
 
 		// Signal confirms the helper is still ours before sending anything.
-		auto TerminateAndReapTracked(TrackedChild &child) noexcept -> int {
-			const int abort_status = MakeAuthHelperWaitExitStatus(CompareExit::kAbort);
+		void TerminateAndReapTracked(TrackedChild &child) noexcept {
 			if (const int error_number = child.Signal(SIGTERM); error_number != 0) {
 				if (error_number == ECHILD) {
-					return abort_status;  // reaped elsewhere: nothing of ours left to stop
+					return;  // reaped elsewhere: nothing of ours left to stop
 				}
 				LogHelperSignalFailure("terminate", error_number);
 			} else {
@@ -65,24 +51,26 @@ namespace howdy::pam::auth_helper_process::internal {
 				(void)child.AwaitExit(kHelperTerminationGrace);
 			}
 			// Reaps a helper that exited during the grace period, and kills one that did not.
-			return howdy::pam::runtime::KillAndReap(child).value_or(abort_status);
+			(void)howdy::pam::runtime::KillAndReap(child);
+		}
+
+		// The result for a helper reaped elsewhere: past the deadline it counts as a timeout, as a
+		// helper the wait collects late does.
+		auto ReapedElsewhereResult(HelperDeadline deadline) noexcept -> HelperWaitResult {
+			return std::chrono::steady_clock::now() >= deadline
+			           ? HelperWaitResult::kTimedOut
+					   : HelperWaitResult::kReapedElsewhere;
 		}
 
 	}  // namespace
 
 	// Every helper wait and signal goes through TrackedChild, so a helper the PAM application
-	// reaped itself is reported as kReapedElsewhere (or an abort status here) and never
-	// signalled.
-	auto TerminateAndReapHelperProcess(pid_t child_pid, int pidfd) noexcept -> int {
+	// reaped itself is reported as kReapedElsewhere and never signalled.
+	void TerminateAndReapHelperProcess(pid_t child_pid, int pidfd) noexcept {
 		// Signal confirms the helper is still ours before sending anything, and a helper that
-		// already exited is reaped with its status after the (immediate) grace wait.
+		// already exited is reaped after the (immediate) grace wait.
 		TrackedChild child(child_pid, pidfd);
-		return TerminateAndReapTracked(child);
-	}
-
-	auto ReapedElsewhereResult(HelperDeadline deadline) noexcept -> HelperWaitResult {
-		return std::chrono::steady_clock::now() >= deadline ? HelperWaitResult::kTimedOut
-		                                                    : HelperWaitResult::kReapedElsewhere;
+		TerminateAndReapTracked(child);
 	}
 
 	auto WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status,
@@ -101,13 +89,13 @@ namespace howdy::pam::auth_helper_process::internal {
 					if (errno == ECHILD) {
 						return ReapedElsewhereResult(deadline);
 					}
-					(void)TerminateAndReapTracked(child);
+					TerminateAndReapTracked(child);
 					return HelperWaitResult::kWaitError;
 				case ChildState::kRunning:
 					break;
 			}
 			if (std::chrono::steady_clock::now() >= deadline) {
-				(void)TerminateAndReapTracked(child);
+				TerminateAndReapTracked(child);
 				return HelperWaitResult::kTimedOut;
 			}
 			// DeadlinePollTimeout never goes negative, which poll would treat as wait forever, and

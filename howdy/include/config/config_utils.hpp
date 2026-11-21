@@ -62,11 +62,6 @@ namespace howdy::native {
 		    validation_root));
 	}
 
-	inline auto CheckSecureConfigFd(int fd, const std::filesystem::path &config_path)
-	    -> ConfigPathCheckResult {
-		return CheckSecureConfigFd(fd, config_path, DefaultSecureOwnerUid());
-	}
-
 	inline auto
 	CheckSecureConfigPath(const std::filesystem::path                  &config_path,
 	                      const std::optional<uid_t>                    owner_uid,
@@ -75,11 +70,6 @@ namespace howdy::native {
 		return ApplyConfigAccessErrorHint(CheckSecureRootOwnedFileWithDirectory(
 		    config_path, {.directory = "Config directory", .file = kConfigFileLabel}, owner_uid,
 		    validation_root));
-	}
-
-	inline auto CheckSecureConfigPath(const std::filesystem::path &config_path)
-	    -> ConfigPathCheckResult {
-		return CheckSecureConfigPath(config_path, DefaultSecureOwnerUid());
 	}
 
 	auto OpenSecureConfigForRead(const std::filesystem::path                  &config_path,
@@ -114,10 +104,5 @@ namespace howdy::native {
 	                       bool                                          validate_runtime = true,
 	                       const file_security_internal::ValidationRoot &validation_root  = {})
 	    -> bool;
-
-	inline auto UpdateConfigValue(const std::filesystem::path &config_path, const std::string &key,
-	                              const std::string &value, bool lock = false) -> bool {
-		return UpdateConfigValue(config_path, key, nullptr, value, lock, true);
-	}
 
 }  // namespace howdy::native

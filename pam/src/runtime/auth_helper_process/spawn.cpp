@@ -73,10 +73,25 @@ namespace {
 		return true;
 	}
 
+	void DestroySpawnActions(const AuthHelperOperations &operations, HelperSpawn &spawn) noexcept {
+		if (!std::exchange(spawn.actions_initialized, false)) {
+			return;
+		}
+		try {
+			const int result = operations.actions_destroy(operations.context, &spawn.actions);
+			if (result != 0) {
+				LogAuthHelperFailure(operations, "posix_spawn_file_actions_destroy", result);
+			}
+		} catch (...) {
+			syslog(LOG_AUTHPRIV | LOG_ERR,
+			       "pam_howdy: Exception destroying auth helper spawn actions");
+		}
+	}
+
 	auto FailSpawnSetup(const AuthHelperOperations &operations, HelperSpawn *spawn,
 	                    const char *operation, int error_code) -> bool {
 		LogAuthHelperFailure(operations, operation, error_code);
-		howdy::pam::auth_helper_process::internal::DestroySpawnActions(operations, *spawn);
+		DestroySpawnActions(operations, *spawn);
 		CloseOwnedFd(operations, spawn->socket.Parent());
 		CloseOwnedFd(operations, spawn->socket.Child());
 		return false;
@@ -122,22 +137,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		CloseOwnedFd(operations_, spawn_.socket.Parent());
 		CloseOwnedFd(operations_, spawn_.socket.Child());
 		if (spawn_.child_pid > 0) {
-			(void)TerminateAndReapHelperProcess(spawn_.child_pid, spawn_.child_pidfd.Get());
-		}
-	}
-
-	void DestroySpawnActions(const Operations &operations, HelperSpawn &spawn) noexcept {
-		if (!std::exchange(spawn.actions_initialized, false)) {
-			return;
-		}
-		try {
-			const int result = operations.actions_destroy(operations.context, &spawn.actions);
-			if (result != 0) {
-				LogAuthHelperFailure(operations, "posix_spawn_file_actions_destroy", result);
-			}
-		} catch (...) {
-			syslog(LOG_AUTHPRIV | LOG_ERR,
-			       "pam_howdy: Exception destroying auth helper spawn actions");
+			TerminateAndReapHelperProcess(spawn_.child_pid, spawn_.child_pidfd.Get());
 		}
 	}
 

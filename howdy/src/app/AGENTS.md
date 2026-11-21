@@ -21,7 +21,6 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
   executables, registries, DI containers, or abstract interface frameworks.
 - Keep catalog data and lookup APIs in `command_catalog.cpp`; validation belongs in
   `command_catalog/validation.cpp`.
-- `command_catalog/internal.hpp` is private cross-TU plumbing, not a public/test seam.
 - Keep CLI syntax policy in app dispatch/CLI parsing, not duplicated inside unrelated commands.
 - Preserve help/status behavior: help succeeds; usage errors use status 2; runtime failures keep
   command-specific diagnostics/status.

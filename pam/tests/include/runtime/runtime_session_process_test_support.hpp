@@ -3,18 +3,14 @@
 #include "runtime/auth_helper_process.hpp"
 #include "runtime/child_process.hpp"
 
+#include <algorithm>
 #include <array>
-#include <cerrno>
-#include <chrono>
 #include <filesystem>
-#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <vector>
 
-#include <spawn.h>
 #include <unistd.h>
 
 #include <sys/types.h>
@@ -88,20 +84,6 @@ namespace howdy::test::runtime_session {
 		return std::ranges::any_of(context.log_messages, [&](const std::string &message) -> bool {
 			return message.contains(text);
 		});
-	}
-
-	// Waits up to `timeout` for a child mode to create `marker`.
-	inline auto WaitForMarker(const std::filesystem::path &marker,
-	                          std::chrono::milliseconds timeout = std::chrono::seconds(5)) -> bool {
-		const auto      deadline = std::chrono::steady_clock::now() + timeout;
-		std::error_code error;
-		while (!std::filesystem::exists(marker, error)) {
-			if (std::chrono::steady_clock::now() >= deadline) {
-				return false;
-			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(5));
-		}
-		return true;
 	}
 
 	// A marker path unique to this process and `name`.
