@@ -386,11 +386,13 @@ namespace howdy::native {
 			// Serializes cooperating UserModelStore writers only. Parent-directory write
 			// permission still allows uncooperative actors to rename or unlink entries.
 			// Writers lock a root-only file, never the models directory or a model file: flock
-			// needs only a readable descriptor, and users can open a 0755 models directory and
-			// get a read-only descriptor to their own model from the auth helper, so a lock on
-			// either would let a user stall every writer. The lock file sits in the models
-			// directory, which Resolve checked, root-owned and not writable by others, before
-			// either caller gets here, so no user can plant or replace it.
+			// needs only a readable descriptor, and the auth helper gives each user a read-only
+			// descriptor to their own model, so a lock on that model would let the user stall
+			// every writer. The models directory is 0750, so other users cannot open it, but a
+			// lock there would depend on that mode. The 0600 lock file is closed to every user.
+			// The lock file sits in the models directory, which Resolve checked, root-owned and
+			// not writable by others, before either caller gets here, so no user can plant or
+			// replace it.
 			const auto lock_path = ModelNamespaceLockPath(model_path);
 			ScopedFd   fd(open(lock_path.c_str(), O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC,
 			                   kUserModelLockFileMode));

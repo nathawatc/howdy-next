@@ -35,9 +35,10 @@ storage. The exchange, no-replace link, and move-aside steps are commented in
 `user_model_store.cpp`. Go through `AtomicRename` in `support/atomic_files.hpp`; do not call
 `renameat2` here.
 
-Writers lock only `.howdy-writers.lock`, a root-only file in the models directory
-(`LockModelNamespace`). Never lock the models directory or a model file: users can hold a read-only
-descriptor to their own model, so a lock on either would let a user stall root's writers.
+Writers lock only `.howdy-writers.lock`, a root-only `0600` file in the models directory
+(`LockModelNamespace`). Never lock a model file: the auth helper gives each user a read-only
+descriptor to their own model, which is enough to stall root's writers. Never lock the models
+directory either: its safety depends on its `0750` mode, not on this code.
 
 `LoadUserModelsFromFd` loads from a descriptor another process opened, with the same rules as
 `LoadRuntimeConfigFromFd`: no path walk, an explicit owner, open read-only and not `O_PATH`, one
