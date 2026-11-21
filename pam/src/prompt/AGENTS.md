@@ -11,6 +11,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `observed_prompt_conversation.cpp`: caller-thread secret-prompt observation/delegation
 - `conversation_response.cpp`: secure PAM response erasure/release
 - `internal_fd.cpp`: safe Howdy-owned descriptor normalization
+- `prompt_submitter.cpp`: uinput prompt submitter (`CreateUinputPromptSubmitter`, libevdev)
+- `native_prompt_input.cpp`: canonical-mode line editing for the native TTY prompt
+- `pam_conversation.cpp`: `PamConversation` wrapper over the PAM conversation callback
+- `workaround.cpp`: prompt workaround modes selected by the `workaround=` option
 
 ## Invariants
 

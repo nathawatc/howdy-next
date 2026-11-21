@@ -208,6 +208,9 @@ namespace howdy::pam::auth_helper_process::internal {
 		}
 	}
 
+	// The helper's socket cannot be reopened through /proc/<pid>/fd, and its exit status is only
+	// logged, never used to decide, so a host that reaps the helper itself changes nothing.
+	//
 	// The helper gets /dev/null as stdio (its diagnostics go to syslog), its end of the socket at
 	// kHelperSocketFd, and nothing else.
 	auto SetupHelperSpawn(const AuthHelperOperations &operations, HelperSpawn *spawn) -> bool {

@@ -311,6 +311,13 @@ namespace howdy::pam::runtime {
 		(void)KillAndReap(child);
 	}
 
+	// Neither child changes the application's SIGCHLD action, and nothing drains children with
+	// waitid(P_ALL). Changing the action around the spawn, as pam_unix does around unix_chkpwd,
+	// is process-wide: host children that exit meanwhile stay zombies, host threads changing the
+	// action race with it, and a handler that reaps every child still takes the status. Spawning
+	// with exit_signal = 0 does not work either, because exec resets it to SIGCHLD (de_thread in
+	// fs/exec.c). Draining zombies with waitid(P_ALL) would reap host children Howdy does not own.
+	//
 	// HOWDY_HAVE_PIDFD_SPAWN comes from the build (CMakeLists.txt) when the C library has
 	// pidfd_spawn and pidfd_getpid (glibc 2.39); without it only the posix_spawn path is built.
 	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)

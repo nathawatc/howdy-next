@@ -7,6 +7,8 @@ Read the [repository guidelines](../AGENTS.md) first.
 - [`src/module/AGENTS.md`](src/module/AGENTS.md): PAM ABI and auth policy
 - [`src/prompt/AGENTS.md`](src/prompt/AGENTS.md): prompt lifecycle and conversation safety
 - [`src/runtime/AGENTS.md`](src/runtime/AGENTS.md): helper/compare process runtime
+- [`src/runtime/auth_helper_process/AGENTS.md`](src/runtime/auth_helper_process/AGENTS.md): auth
+  helper spawn, wait, and result message
 - [`tests/AGENTS.md`](tests/AGENTS.md): PAM test organization
 
 ## Package Invariants

@@ -13,6 +13,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `config_utils/file_ops.cpp`: locks, secure file I/O, staging/install, expected-content checks,
   content validation
 - `config_utils/key_file.cpp`: INI scalar/line parsing and comment-preserving replacement
+- `runtime_paths.cpp`: installed path selection; `HOWDY_CONFIG` and `HOWDY_USER_MODELS_DIR` apply
+  only while the real and effective UID and GID match (not setuid or setgid)
 
 Private cross-TU contracts stay in each component's `internal.hpp`. ConfigReader and strict float
 parsing live in `config_reader/internal.hpp`; semantic validation lives in

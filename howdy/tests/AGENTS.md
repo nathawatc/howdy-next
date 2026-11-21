@@ -13,6 +13,9 @@ Read [`../AGENTS.md`](../AGENTS.md) first, then the production subsystem guide f
 - Security-sensitive tests should cover success, malformed input, partial failure, rollback/cleanup,
   and uncertain-commit paths where relevant.
 - Do not change production behavior merely to simplify a test.
+- Protocol decoders have fuzz targets (`tests/protocol/runtime_descriptor_message_fuzz*.cpp`). Their
+  fixed-input replay runs in every build; the libFuzzer binary builds only when
+  `HOWDY_ENABLE_FUZZING` (default `AUTO`) finds libFuzzer, which needs Clang.
 
 Representative multi-source areas include CLI add/config/download-models, user-model codec/storage,
 compare engine/privileges, auth helper, dispatcher/completion, and preview/snapshot.

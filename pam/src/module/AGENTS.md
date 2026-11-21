@@ -11,7 +11,7 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `entrypoint.cpp`: injectable entrypoint boundary
 - `auth_flow.cpp`: service policy, readiness, runtime/prompt composition, PAM result mapping
 - `auth_eligibility.cpp`, `confirmation_message.cpp`, `pam_options.cpp`, `status_mapping.cpp`:
-  focused policy helpers
+  focused policy helpers; `pam_option_catalog.cpp`: the PAM option catalog
 
 ## Rules
 

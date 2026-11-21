@@ -18,7 +18,7 @@ follow `Run`, so static teardown never runs.
 
 The helper trusts only the real UID: the argv user must be the caller's own passwd name, and it
 validates the name and descriptor 3 (an `AF_UNIX` `SOCK_SEQPACKET` socket) before opening anything.
-It ignores `HOWDY_CONFIG` and `HOWDY_USER_MODELS_DIR` for an unprivileged caller
+It ignores `HOWDY_CONFIG` and `HOWDY_USER_MODELS_DIR` while it runs setuid
 (`config/runtime_paths.cpp`), so it only ever opens the installed files.
 
 The opener opens the config by path with `O_NOFOLLOW` and then checks its ancestors, and opens the

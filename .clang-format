@@ -1,3 +1,7 @@
+# Verify formatting by running `clang-format -i` and checking `git diff`, not with
+# `clang-format --dry-run` (or `--dry-run --Werror`). With SeparateDefinitionBlocks: Always and
+# UseTab: ForIndentation, LLVM 22 can emit no-op replacements and report false violations even
+# when `clang-format -i` changes no bytes.
 Language: Cpp
 BasedOnStyle: LLVM
 Standard: c++23

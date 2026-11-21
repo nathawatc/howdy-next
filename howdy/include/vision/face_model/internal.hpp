@@ -15,6 +15,9 @@ namespace howdy::native {
 	// OpenCV 5.0.0 through 5.1.0 log a false-positive warning when YuNet and SFace request the
 	// default CPU target on the New graph engine. opencv/opencv#29457 silenced it, but
 	// opencv/opencv#29286 reintroduced it for builds without CUDA before 5.1.0 was tagged.
+	// Keep the filter for 5.0.0 through 5.1.0 even after upstream ships a fix, because those
+	// releases always print the warning. Extend the range only after confirming that a newer
+	// release still prints it. Upstream status: https://github.com/nathawatc/howdy-next/issues/2
 #if CV_VERSION_MAJOR == 5 &&                                                                       \
     (CV_VERSION_MINOR == 0 || (CV_VERSION_MINOR == 1 && CV_VERSION_REVISION == 0))
 	inline constexpr bool kFiltersOpenCvTargetWarning = true;
@@ -43,6 +46,10 @@ namespace howdy::native {
 	// removed the Classic engine and renamed ENGINE_NEW to ENGINE_OPENCV; its value 2 now means
 	// ENGINE_ORT (ONNX Runtime), so do not hard-code it.
 	[[nodiscard]] auto ForcedDnnEngine() -> const char *;
+
+	// OpenCV 5.1 SFace embeddings differ slightly from 5.0 (cosine about 0.99 for the same
+	// input), while YuNet detections and the preprocessing are bit-identical. Enrollments made on
+	// 5.0 stay usable on 5.1; scores right at sface_threshold may move by a few hundredths.
 
 	struct FaceModel::Backend {
 		std::function<OpenCvModelReadiness(const std::filesystem::path &)> check_readiness;

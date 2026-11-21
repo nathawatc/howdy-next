@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.31)
 
+# Runs clang-tidy on the code changed since BASE, against BUILD_DIR's compile_commands.json. Use
+# build/debug: build/release enables _FORTIFY_SOURCE=3, which triggers known android-cloexec-open
+# false positives on 3-argument open calls.
+
 if(NOT DEFINED BUILD_DIR)
   message(FATAL_ERROR "BUILD_DIR is required")
 endif()
