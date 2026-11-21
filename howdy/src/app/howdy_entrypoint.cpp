@@ -1,4 +1,5 @@
 #include "app/howdy_entrypoint.hpp"
+
 #include "config/runtime_paths.hpp"
 
 #include <exception>

@@ -26,7 +26,7 @@ namespace {
 	auto Readiness(const std::filesystem::path &path, const std::string_view label = "Model file",
 	               const std::optional<uid_t> owner_uid = std::nullopt)
 	    -> howdy::native::OpenCvModelReadiness {
-		return howdy::native::CheckOpencvModelReadinessWithLabel(
+		return howdy::native::CheckOpencvModelReadiness(
 		    path, label, owner_uid, {std::filesystem::current_path() / "howdy-model-file-test"});
 	}
 

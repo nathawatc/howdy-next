@@ -165,8 +165,7 @@ namespace howdy::native {
 	    : metric_(config.sface_metric)
 	    , backend_(std::make_unique<Backend>()) {
 		backend_->check_readiness = [](const std::filesystem::path &path) -> OpenCvModelReadiness {
-			return CheckOpencvModelReadinessWithLabel(path, "OpenCV face model file",
-			                                          static_cast<uid_t>(0));
+			return CheckOpencvModelReadiness(path, "OpenCV face model file", static_cast<uid_t>(0));
 		};
 		backend_->create_detector = [](const std::string &path, const cv::Size &size,
 		                               float score_threshold, float nms_threshold,

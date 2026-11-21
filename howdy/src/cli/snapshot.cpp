@@ -6,7 +6,7 @@
 #include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
 #include "support/atomic_files.hpp"
-#include "support/capture_exposure.hpp"
+#include "vision/capture_exposure.hpp"
 #include "vision/video_capture.hpp"
 
 #include <array>

@@ -8,7 +8,7 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `howdy/production.cpp`: explicit production user/privilege adapters and concrete command binding
 - `howdy/cli.cpp`: argv parsing, validation, help, usage errors
 - `howdy/completion.cpp`: hidden completion protocol
-- `howdy/entrypoint.cpp`: runtime entrypoint wiring (`MainWithOverrides` / `Main`)
+- `howdy_entrypoint.cpp`: runtime entrypoint wiring (`MainWithOverrides` / `Main`)
 - `command_catalog.cpp`: command/global-option data and lookup façade
 - `command_catalog/validation.cpp`: catalog structural validation
 - `src/bin/howdy_main.cpp`: process entrypoint only

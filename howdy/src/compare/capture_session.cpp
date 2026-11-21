@@ -1,7 +1,7 @@
 #include "compare/capture_session.hpp"
 
 #include "config/runtime_config.hpp"
-#include "support/capture_exposure.hpp"
+#include "vision/capture_exposure.hpp"
 #include "vision/video_capture.hpp"
 
 #include <chrono>

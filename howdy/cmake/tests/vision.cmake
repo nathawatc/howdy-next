@@ -56,3 +56,10 @@ target_link_libraries(
  howdy_preview_engine_test
  PRIVATE howdy_preview_engine
 )
+
+howdy_add_native_test(
+ howdy_capture_exposure_test
+ native-capture-exposure
+ tests/vision/capture_exposure_test.cpp
+)
+target_link_libraries(howdy_capture_exposure_test PRIVATE howdy_opencv)
