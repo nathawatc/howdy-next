@@ -12,7 +12,9 @@ Covers `ci/archlinux/`, `.github/workflows/archlinux.yml`, and `.github/workflow
 - Build from `docker.io/library/archlinux:latest`.
 - Install dependencies with pacman; do not build OpenCV from source in CI.
 - Keep dependency floors aligned with root CMake requirements, including CMake, glibc, OpenCV,
-  yyjson, and libinih requirements.
+  yyjson, libinih, and libcurl requirements.
+- Keep `qt6-base`. Arch's OpenCV HighGUI uses its Qt 6 backend, and `howdy test` shows its preview
+  through HighGUI. No CMake target names Qt, so the package looks unused but is not.
 - Keep the image minimal and clear pacman caches in the same layer.
 - Keep OCI labels in `Containerfile`, not duplicated in wrapper commands.
 - Keep the `clang` floor aligned with the LLVM version `.clang-tidy` is written for.

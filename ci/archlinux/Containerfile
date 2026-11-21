@@ -1,5 +1,7 @@
 FROM docker.io/library/archlinux:latest
 
+# qt6-base provides the Qt 6 backend that Arch's OpenCV HighGUI uses, and `howdy test` shows its
+# preview through HighGUI. Keep it even though no CMake target names Qt.
 # The base image's pacman.conf skips usr/share/i18n/*, so locale sources such as
 # th_TH are missing; stop skipping them and reinstall glibc (no --needed) to restore them.
 RUN sed -i 's|usr/share/i18n/\*||' /etc/pacman.conf \
@@ -8,7 +10,7 @@ RUN sed -i 's|usr/share/i18n/\*||' /etc/pacman.conf \
 		'cmake>=3.31' \
 		ccache \
 		'clang>=23' \
-		curl \
+		'curl>=7.85.0' \
 		gcc \
 		gettext \
 		git \
