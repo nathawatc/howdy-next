@@ -29,9 +29,7 @@ ctest --preset debug
 ```
 
 Look up pkg-config dependencies with `howdy_pkg_check_modules()` (`cmake/howdy_pkg_config.cmake`),
-not `pkg_check_modules()` directly. Since CMake 4.5, `pkg_check_modules(REQUIRED)` accepts a package
-whose `Requires` cannot be resolved (issue #15); the wrapper first runs the same
-`pkg-config --cflags --libs` query and fails configure when it fails.
+not `pkg_check_modules()` directly; the wrapper's header explains why.
 
 Use focused tests while iterating, then run the full relevant preset before closing a change. A
 CTest suite may span several translation units; inspect CMake source lists before assuming one test
@@ -69,16 +67,13 @@ git ls-files '*.sh' | xargs shellcheck
 shfmt -w .
 ```
 
-Do not use `clang-format --dry-run` (including `--dry-run --Werror`) as a formatting
-verifier. With this repository's `SeparateDefinitionBlocks: Always` and `UseTab: ForIndentation`
-settings, LLVM 22 can emit no-op replacements and report false formatting violations even when
-`clang-format -i` produces no byte changes. Verify formatting by running `clang-format -i` and
-checking `git diff`, or by comparing formatter stdout with the source file.
+Do not use `clang-format --dry-run` (including `--dry-run --Werror`) as a formatting verifier;
+`.clang-format` explains why. Verify by running `clang-format -i` and checking `git diff`, or by
+comparing formatter stdout with the source file.
 
 CI runs `clang-tidy` on pull requests through `cmake/tidy_incremental.cmake` against `build/debug`
 (see [`ci/archlinux/AGENTS.md`](ci/archlinux/AGENTS.md)). For changed code, run the same script
-locally before pushing. Do not use `build/release` (it enables `_FORTIFY_SOURCE=3`, which triggers
-known `android-cloexec-open` false positives on 3-argument `open` calls).
+locally before pushing. Never use `build/release` for tidy; the script header explains why.
 
 ## Security
 
