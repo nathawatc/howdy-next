@@ -27,6 +27,7 @@ add_library(
  src/runtime/lid_probe.cpp
  src/runtime/runtime_session.cpp
  src/runtime/session_probe.cpp
+ src/runtime/spawn_operations.hpp
 )
 howdy_configure_pam_target(pam_runtime)
 if(HOWDY_HAVE_PIDFD_SPAWN)

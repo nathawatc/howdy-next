@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace howdy::native::runtime_descriptor_message {
@@ -21,10 +22,11 @@ namespace howdy::native::runtime_descriptor_message {
 	// helper's exit status is never part of the result. When the config cannot be opened the
 	// helper sends nothing. A socket, unlike a pipe, cannot be reopened through /proc/<pid>/fd, so
 	// no other process can add a message.
-	inline constexpr int         kHelperSocketFd = 3;
-	inline constexpr char        kMarker         = 'D';
-	inline constexpr std::size_t kPayloadSize    = 2;
-	inline constexpr std::size_t kMaxDescriptors = 2;
+	inline constexpr int              kHelperSocketFd = 3;
+	inline constexpr char             kMarker         = 'D';
+	inline constexpr std::size_t      kPayloadSize    = 2;
+	inline constexpr std::size_t      kMaxDescriptors = 2;
+	inline constexpr std::string_view kOpenSubcommand = "open";
 
 	enum class ModelState : char {
 		kReady          = 'R',

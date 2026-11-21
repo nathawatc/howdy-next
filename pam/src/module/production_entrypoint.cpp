@@ -28,7 +28,7 @@ namespace {
 
 	auto InputPromptPreflight(void *context) -> bool {
 		(void)context;
-		if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
+		if (euidaccess(howdy::pam::kUinputDevicePath, W_OK | R_OK) != 0) {
 			const int access_errno = errno;
 			syslog(LOG_AUTHPRIV | LOG_ERR,
 			       "pam_howdy: Input prompt workaround unavailable: %s (%d)",

@@ -87,10 +87,6 @@ auto MapCompareWaitStatus(int status) -> CompareStatusDecision {
 }
 
 auto BuildUnknownErrorMessage(int exit_status) -> std::string {
-	std::string template_text   = howdy::pam::Translate("Unknown error: {}");
-	const auto  placeholder_pos = template_text.find("{}");
-	if (placeholder_pos != std::string::npos) {
-		template_text.replace(placeholder_pos, 2, std::to_string(exit_status));
-	}
-	return template_text;
+	return howdy::pam::ReplaceFirstPlaceholder(howdy::pam::Translate("Unknown error: {}"),
+	                                           std::to_string(exit_status));
 }

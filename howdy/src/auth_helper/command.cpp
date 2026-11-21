@@ -147,7 +147,9 @@ namespace howdy::native::auth_helper::command {
 				return 0;
 			}
 		}
-		if (arguments.size() == 3 && std::string_view(arguments.subspan(1, 1).front()) == "open") {
+		if (arguments.size() == 3 &&
+		    std::string_view(arguments.subspan(1, 1).front()) ==
+		        howdy::native::runtime_descriptor_message::kOpenSubcommand) {
 			return OpenForUser(arguments.subspan(2, 1).front());
 		}
 		Usage(program);

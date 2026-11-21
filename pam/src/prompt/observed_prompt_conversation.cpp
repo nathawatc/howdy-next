@@ -25,15 +25,6 @@ namespace {
 		return pam_set_item(pamh, item_type, item);
 	}
 
-	auto ObservedPromptFailClosedDispatch(int /*num_msg*/, const struct pam_message ** /*messages*/,
-	                                      struct pam_response **response, void * /*appdata_ptr*/)
-	    -> int {
-		if (response != nullptr) {
-			*response = nullptr;
-		}
-		return PAM_CONV_ERR;
-	}
-
 }  // namespace
 
 namespace howdy::pam {
@@ -193,7 +184,7 @@ namespace howdy::pam {
 		}
 
 		static const struct pam_conv kFailClosedConv{
-		    .conv        = ObservedPromptFailClosedDispatch,
+		    .conv        = howdy::pam::FailClosedConversationDispatch,
 		    .appdata_ptr = nullptr,
 		};
 		if (pamh_ != nullptr && operations_.set_item != nullptr &&

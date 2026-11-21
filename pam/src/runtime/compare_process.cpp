@@ -10,6 +10,7 @@
 #include "protocol/compare_verdict.hpp"
 #include "runtime/child_process.hpp"
 #include "runtime/compare_launch.hpp"
+#include "spawn_operations.hpp"
 #include "support/bit_flags.hpp"
 #include "support/eintr.hpp"
 #include "support/error_message.hpp"
@@ -42,8 +43,7 @@
 #include <sys/types.h>
 
 namespace {
-	using CompareOperations   = howdy::pam::compare_process::Operations;
-	using CompareSpawnRequest = howdy::pam::compare_process::SpawnRequest;
+	using CompareOperations = howdy::pam::compare_process::Operations;
 
 	// Fixed compare environment entries that keep a threaded BLAS from reserving address space per
 	// CPU thread. OpenBLAS built with OpenMP (Arch) obeys OMP_NUM_THREADS and ignores
@@ -57,10 +57,6 @@ namespace {
 	constexpr auto kCompareTerminationGrace = std::chrono::milliseconds(250);
 
 	using howdy::native::CompareExit;
-
-	auto MakeCompareWaitExitStatus(CompareExit exit_code) -> int {
-		return howdy::native::EncodeWaitExitStatus(exit_code);
-	}
 
 	using howdy::pam::runtime::ChildState;
 
@@ -81,7 +77,7 @@ namespace {
 			const auto state = child_.Wait(false, status);
 			if (state == ChildState::kError) {
 				const int error_number = errno;
-				*status                = MakeCompareWaitExitStatus(CompareExit::kAbort);
+				*status                = howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
 				if (error_number == ECHILD) {
 					return state;
 				}
@@ -126,7 +122,7 @@ namespace {
 				return *status;
 			}
 			return Gone() ? ReapedElsewhereStatus()
-			              : MakeCompareWaitExitStatus(CompareExit::kAbort);
+			              : howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
 		}
 
 		// False means the child could not be signalled at all; do not block on it afterwards.
@@ -159,7 +155,7 @@ namespace {
 				// reported where the result is mapped.
 				syslog(LOG_AUTHPRIV | LOG_NOTICE,
 				       "pam_howdy: compare process was reaped elsewhere");
-				return MakeCompareWaitExitStatus(CompareExit::kAbort);
+				return howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
 			}
 			// Two bytes of room, so a longer record shows up as more than one byte instead of
 			// being cut to its first.
@@ -186,7 +182,7 @@ namespace {
 					       "pam_howdy: compare result could not be read: %s (%d)",
 					       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 				}
-				return MakeCompareWaitExitStatus(CompareExit::kAbort);
+				return howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
 			}
 			const unsigned char verdict = record.front();
 			const ssize_t       more    = read_record();
@@ -196,7 +192,7 @@ namespace {
 				syslog(LOG_AUTHPRIV | LOG_ERR,
 				       "pam_howdy: compare process was reaped elsewhere and reported more than one "
 				       "result");
-				return MakeCompareWaitExitStatus(CompareExit::kAbort);
+				return howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
 			}
 			// Normal on such hosts, so not worth a line on every authentication.
 			syslog(LOG_AUTHPRIV | LOG_DEBUG,
@@ -271,11 +267,12 @@ namespace {
 	// Ends a compare that had not exited when the wait reached its outcome (timeout,
 	// cancellation, or a poll error); the decision is made.
 	auto EndUnfinishedCompare(CompareChild &child, int child_pidfd, WaitOutcome outcome) -> int {
-		using Clock               = std::chrono::steady_clock;
-		const int abort_status    = MakeCompareWaitExitStatus(CompareExit::kAbort);
-		int       terminal_status = outcome == WaitOutcome::kTimeout
-		                                ? MakeCompareWaitExitStatus(CompareExit::kTimeoutReached)
-		                                : abort_status;
+		using Clock            = std::chrono::steady_clock;
+		const int abort_status = howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
+		int       terminal_status =
+		    outcome == WaitOutcome::kTimeout
+		        ? howdy::native::EncodeWaitExitStatus(CompareExit::kTimeoutReached)
+		        : abort_status;
 		// A child that is gone, reaped by this wait or by the application, ends with the decision;
 		// one that may still be running ends with an abort.
 		const auto end = [&](bool reaped) -> int {
@@ -331,7 +328,7 @@ namespace {
 	                           howdy::pam::CompareCancellationRequestedFn cancellation_requested,
 	                           int                                        cancellation_fd) -> int {
 		using Clock            = std::chrono::steady_clock;
-		const int abort_status = MakeCompareWaitExitStatus(CompareExit::kAbort);
+		const int abort_status = howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
 		if (child_pid <= 0) {
 			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Invalid compare child pid: %d", child_pid);
 			return abort_status;
@@ -363,54 +360,14 @@ namespace {
 		return EndUnfinishedCompare(child, child_pidfd, outcome);
 	}
 
-	auto CallPosixSpawnFileActionsInit(void *context, posix_spawn_file_actions_t *actions) -> int {
-		(void)context;
-		return posix_spawn_file_actions_init(actions);
-	}
-
-	auto CallPosixSpawnFileActionsAdddup2(void *context, posix_spawn_file_actions_t *actions,
-	                                      int fd, int new_fd) -> int {
-		(void)context;
-		return posix_spawn_file_actions_adddup2(actions, fd, new_fd);
-	}
-
-	auto CallPosixSpawnFileActionsAddclosefrom(void *context, posix_spawn_file_actions_t *actions,
-	                                           int from_fd) -> int {
-		(void)context;
-		return posix_spawn_file_actions_addclosefrom_np(actions, from_fd);
-	}
-
-	auto CallPosixSpawnFileActionsDestroy(void *context, posix_spawn_file_actions_t *actions)
-	    -> int {
-		(void)context;
-		return posix_spawn_file_actions_destroy(actions);
-	}
-
-	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-	auto CallSocketpair(void *context, int domain, int type, int protocol, int *socket_fds) -> int {
-		(void)context;
-		return socketpair(domain, type, protocol, socket_fds);
-	}
-
-	auto CallPosixSpawn(const CompareSpawnRequest &request) -> int {
-		(void)request.context;
-		return howdy::pam::runtime::SpawnChild(request.child_pid, request.child_pidfd,
-		                                       {
-		                                           .path    = request.path,
-		                                           .actions = request.actions,
-		                                           .argv    = request.argv.data(),
-		                                           .envp    = request.envp.data(),
-		                                       });
-	}
-
 	constexpr CompareOperations kPosixSpawnOperations = {
 	    .context                   = nullptr,
-	    .socketpair                = CallSocketpair,
-	    .file_actions_init         = CallPosixSpawnFileActionsInit,
-	    .file_actions_adddup2      = CallPosixSpawnFileActionsAdddup2,
-	    .file_actions_addclosefrom = CallPosixSpawnFileActionsAddclosefrom,
-	    .file_actions_destroy      = CallPosixSpawnFileActionsDestroy,
-	    .spawn                     = CallPosixSpawn,
+	    .socketpair                = howdy::pam::runtime::internal::Socketpair,
+	    .file_actions_init         = howdy::pam::runtime::internal::ActionsInit,
+	    .file_actions_adddup2      = howdy::pam::runtime::internal::ActionsAdddup2,
+	    .file_actions_addclosefrom = howdy::pam::runtime::internal::ActionsAddclosefrom,
+	    .file_actions_destroy      = howdy::pam::runtime::internal::ActionsDestroy,
+	    .spawn                     = howdy::pam::runtime::internal::Spawn,
 	};
 
 	// Moves `fd` to at least `floor`, unless it is there already. Every descriptor compare gets
