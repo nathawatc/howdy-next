@@ -51,8 +51,12 @@ namespace howdy::native {
 
 	enum class AtomicFileCommitResult : std::uint8_t {
 		kNotCommitted,
-		kAtomicExchangeUnsupported,
+		// The kernel or filesystem lacks the renameat2 operation the commit needs.
+		kAtomicRenameUnsupported,
+		// A no-replace install found its destination taken.
 		kDestinationExists,
+		// The destination no longer names what the caller opened.
+		kDestinationChanged,
 		kCommitted,
 		kCommittedSyncFailed,
 		kStateUncertain,
@@ -69,6 +73,74 @@ namespace howdy::native {
 	}
 
 	using SyncParentDirectoryFn = bool (*)(const std::filesystem::path &path);
+
+	enum class AtomicRenameMode : std::uint8_t {
+		// Swap two existing paths (RENAME_EXCHANGE).
+		kExchange,
+		// Link a new path in only if nothing is there yet (RENAME_NOREPLACE).
+		kNoReplace,
+	};
+
+	enum class AtomicRenameResult : std::uint8_t {
+		kSuccess,
+		kFailed,
+		kUnsupported,
+		kDestinationExists,
+	};
+
+	inline auto AtomicRenameResultForErrno(int error_number) -> AtomicRenameResult {
+		if (error_number == EEXIST) {
+			return AtomicRenameResult::kDestinationExists;
+		}
+		if (error_number == ENOSYS || error_number == EINVAL || error_number == EOPNOTSUPP) {
+			return AtomicRenameResult::kUnsupported;
+		}
+#ifdef ENOTSUP
+		if (error_number == ENOTSUP) {
+			return AtomicRenameResult::kUnsupported;
+		}
+#endif
+		return AtomicRenameResult::kFailed;
+	}
+
+	// renameat2 in `mode`, retried on EINTR, in rename(2)'s argument order. kUnsupported when
+	// the build, the kernel or the filesystem lacks the operation.
+	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+	inline auto AtomicRename(const std::filesystem::path &from, const std::filesystem::path &to,
+	                         AtomicRenameMode mode) -> AtomicRenameResult {
+#if defined(SYS_renameat2) && defined(RENAME_EXCHANGE) && defined(RENAME_NOREPLACE)
+		const unsigned int flags =
+		    mode == AtomicRenameMode::kExchange ? RENAME_EXCHANGE : RENAME_NOREPLACE;
+		if (RetryOnEintr([&] -> decltype(syscall(0)) {
+			    return syscall(SYS_renameat2, AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), flags);
+		    }) != 0) {
+			return AtomicRenameResultForErrno(errno);
+		}
+		return AtomicRenameResult::kSuccess;
+#else
+		(void)from;
+		(void)to;
+		(void)mode;
+		errno = ENOSYS;
+		return AtomicRenameResult::kUnsupported;
+#endif
+	}
+
+	using AtomicRenameFn = AtomicRenameResult (*)(const std::filesystem::path &from,
+	                                              const std::filesystem::path &to,
+	                                              AtomicRenameMode             mode);
+
+	// The commit result of a rename that did not succeed.
+	[[nodiscard]] constexpr auto FailedAtomicRenameCommitResult(AtomicRenameResult result)
+	    -> AtomicFileCommitResult {
+		if (result == AtomicRenameResult::kUnsupported) {
+			return AtomicFileCommitResult::kAtomicRenameUnsupported;
+		}
+		if (result == AtomicRenameResult::kDestinationExists) {
+			return AtomicFileCommitResult::kDestinationExists;
+		}
+		return AtomicFileCommitResult::kNotCommitted;
+	}
 
 	inline auto SyncParentDirectory(const std::filesystem::path &path) -> bool {
 		const auto parent =
@@ -149,8 +221,8 @@ namespace howdy::native {
 	inline auto InstallStagedFile(
 	    StagedFile &staged, const std::filesystem::path &destination,
 	    SyncParentDirectoryFn   sync_parent    = SyncParentDirectory,
-	    AtomicFileInstallPolicy install_policy = AtomicFileInstallPolicy::kReplaceExisting)
-	    -> AtomicFileCommitResult {
+	    AtomicFileInstallPolicy install_policy = AtomicFileInstallPolicy::kReplaceExisting,
+	    AtomicRenameFn          atomic_rename  = AtomicRename) -> AtomicFileCommitResult {
 		if (staged.path.empty()) {
 			staged.fd.Reset();
 			return AtomicFileCommitResult::kNotCommitted;
@@ -178,21 +250,12 @@ namespace howdy::native {
 				return AtomicFileCommitResult::kNotCommitted;
 			}
 		} else {
-#if defined(SYS_renameat2) && defined(RENAME_NOREPLACE)
-			const auto rename_result = RetryOnEintr([&] -> decltype(syscall(0)) {
-				return syscall(SYS_renameat2, AT_FDCWD, staged.path.c_str(), AT_FDCWD,
-				               destination.c_str(), RENAME_NOREPLACE);
-			});
-			if (rename_result != 0) {
-				const int error_number = errno;
+			const auto rename_result =
+			    atomic_rename(staged.path, destination, AtomicRenameMode::kNoReplace);
+			if (rename_result != AtomicRenameResult::kSuccess) {
 				CleanupStagedFile(staged);
-				return error_number == EEXIST ? AtomicFileCommitResult::kDestinationExists
-				                              : AtomicFileCommitResult::kNotCommitted;
+				return FailedAtomicRenameCommitResult(rename_result);
 			}
-#else
-			CleanupStagedFile(staged);
-			return AtomicFileCommitResult::kNotCommitted;
-#endif
 		}
 		const bool parent_synced = sync_parent != nullptr && sync_parent(destination);
 		staged.path.clear();

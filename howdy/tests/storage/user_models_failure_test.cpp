@@ -153,8 +153,26 @@ namespace howdy::test::user_models {
 				    "alice", *snapshot, {temp_root});
 				ok &= Expect(result.status == howdy::native::UserModelStatus::kDeleteFailed,
 				             "clear reports injected unlink failure");
+				ok &= Expect(ReadFile(model_path) == original_content &&
+				                 !HasStagedModelFile(model_path.parent_path()),
+				             "unlink failure moves the original model back to its path");
+			}
+			{
+				const auto original_content = ReadFile(model_path);
+				const auto snapshot         = RequireSnapshot(temp_root, "alice");
+				if (!snapshot.has_value()) {
+					return Expect(false, "inspect model file before unsynced move-back test");
+				}
+				const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
+				    .fail_parent_sync   = true,
+				    .fail_delete_unlink = true,
+				});
+				const auto result = howdy::native::ClearUserModelEntriesIfUnchanged(
+				    "alice", *snapshot, {temp_root});
+				ok &= Expect(result.status == howdy::native::UserModelStatus::kCommitStateUncertain,
+				             "clear reports an unsynced move back as uncertain");
 				ok &= Expect(ReadFile(model_path) == original_content,
-				             "unlink failure leaves original model at canonical path");
+				             "unsynced move back still returns the original model to its path");
 			}
 			{
 				const auto original_content = ReadFile(model_path);
@@ -340,6 +358,87 @@ namespace howdy::test::user_models {
 				             "a rejected append leaves the empty model file unchanged");
 				fs::remove(model_path, ec);
 			}
+			return ok;
+		}
+
+		// A model removed or replaced after a writer's last identity check is a changed model:
+		// before an update's exchange, and before a clear's unlink.
+		auto ExpectModelRemovedDuringCommit(const std::filesystem::path            &model_path,
+		                                    const howdy::native::NewUserModelEntry &entry) -> bool {
+			namespace fs = std::filesystem;
+			using howdy::native::UserModelStatus;
+			using howdy::native::user_model_store_test_hooks::ScopedHooks;
+
+			bool            ok = true;
+			std::error_code ec;
+			const auto      models_dir       = model_path.parent_path();
+			const auto      temp_root        = models_dir.parent_path();
+			const auto      original_content = ReadFile(model_path);
+			const auto      remove_model     = [&](const fs::path &path) -> void {
+				ok &= Expect(fs::remove(path, ec) && !ec, "remove model during commit");
+			};
+			{
+				const ScopedHooks hooks({.after_write_identity_check = remove_model});
+				const auto        result =
+				    howdy::native::AppendUserModelEntry("alice", entry, {temp_root});
+				ok &= Expect(result.status == UserModelStatus::kModelChanged,
+				             "append reports a model removed before the exchange as changed");
+				ok &= Expect(!fs::exists(model_path) && !HasStagedModelFile(models_dir),
+				             "a model removed before the exchange is not recreated");
+			}
+			ok &= Expect(WriteFile(model_path, original_content),
+			             "restore model after removed-before-exchange test");
+			const auto snapshot = RequireSnapshot(temp_root, "alice");
+			ok &= Expect(snapshot.has_value(), "inspect model file before removed-model clear");
+			if (snapshot.has_value()) {
+				const ScopedHooks hooks({.before_delete_commit = remove_model});
+				ok &= Expect(
+				    howdy::native::ClearUserModelEntriesIfUnchanged("alice", *snapshot, {temp_root})
+				            .status == UserModelStatus::kModelChanged,
+				    "clear reports a model removed before its unlink as changed");
+			}
+			ok &= Expect(WriteFile(model_path, original_content),
+			             "restore model after removed-before-unlink test");
+
+			// A file put at the path after the identity check is moved back, not unlinked.
+			const auto replacement     = std::string("replacement\n");
+			const auto replaced_before = RequireSnapshot(temp_root, "alice");
+			ok &= Expect(replaced_before.has_value(), "inspect model file before replaced clear");
+			if (replaced_before.has_value()) {
+				const ScopedHooks hooks({
+				    .before_delete_commit = [&](const fs::path &path) -> void {
+					    ok &= Expect(fs::remove(path, ec) && WriteFile(path, replacement),
+						             "replace model during clear");
+				    },
+				});
+				ok &= Expect(howdy::native::ClearUserModelEntriesIfUnchanged(
+				                 "alice", *replaced_before, {temp_root})
+				                     .status == UserModelStatus::kModelChanged,
+				             "clear reports a model replaced before its unlink as changed");
+			}
+			ok &= Expect(ReadFile(model_path) == replacement && !HasStagedModelFile(models_dir),
+			             "clear leaves a replacement made before its unlink in place");
+			fs::remove(model_path, ec);
+			ok &= Expect(WriteFile(model_path, original_content),
+			             "restore model after replaced-before-unlink test");
+
+			// A removal's aside name must fit even when the model's own name is near NAME_MAX.
+			const auto long_user = std::string(240, 'l');
+			const auto long_appended =
+			    howdy::native::AppendUserModelEntry(long_user, entry, {temp_root});
+			ok &= Expect(long_appended.status == UserModelStatus::kOk,
+			             "append a first model for a long user name");
+			const auto long_snapshot = RequireSnapshot(temp_root, long_user);
+			ok &= Expect(long_snapshot.has_value(), "inspect a long user name's model file");
+			if (long_snapshot.has_value()) {
+				ok &= Expect(howdy::native::ClearUserModelEntriesIfUnchanged(
+				                 long_user, *long_snapshot, {temp_root})
+				                     .status == UserModelStatus::kOk,
+				             "clear removes a long user name's model");
+			}
+			ok &= Expect(!fs::exists(models_dir / (long_user + ".dat")) &&
+			                 !HasStagedModelFile(models_dir),
+			             "clearing a long user name's model leaves nothing behind");
 			return ok;
 		}
 
@@ -575,7 +674,7 @@ namespace howdy::test::user_models {
 				                 howdy::native::UserModelStatus::kAtomicExchangeUnsupported,
 				             "append reports unsupported atomic exchange failure");
 				ok &= Expect(result.error_message.contains("filesystem or kernel") &&
-				                 result.error_message.contains("atomic model-file exchange"),
+				                 result.error_message.contains("atomic rename (renameat2)"),
 				             "append explains unsupported atomic exchange");
 				ok &= Expect(ReadFile(model_path) == before_unsupported_exchange,
 				             "unsupported atomic exchange leaves model bytes unchanged");
@@ -669,8 +768,8 @@ namespace howdy::test::user_models {
 			    howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
 			ok &= Expect(hook.calls == 1 && hook.swapped,
 			             "swap-during-write hook atomically replaces model before commit");
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kWriteFailed,
-			             "append rejects swap during staged write commit");
+			ok &= Expect(result.status == howdy::native::UserModelStatus::kModelChanged,
+			             "append reports a swap during the staged write as a changed model");
 			ok &= Expect(ReadFile(model_path) == replacement_model,
 			             "swap-during-write replacement remains unmodified");
 			fs::remove(model_path, ec);
@@ -697,8 +796,9 @@ namespace howdy::test::user_models {
 			    howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
 			ok &= Expect(hook.calls == 1 && hook.swapped && !hook.rollback_failed,
 			             "post-check write hook replaces model after final identity check");
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kWriteFailed,
-			             "append fails when model changes after final write identity check");
+			ok &=
+			    Expect(result.status == howdy::native::UserModelStatus::kModelChanged,
+				       "append reports a model replaced after the final identity check as changed");
 			ok &= Expect(ReadFile(model_path) == replacement_model,
 			             "failed post-check write leaves replacement model unchanged");
 			ok &= Expect(ReadFile(hook.displaced_path) == before_swap_after_check,
@@ -749,6 +849,7 @@ namespace howdy::test::user_models {
 			ok &= Expect(WriteFile(model_path, original_content),
 			             "restore model after rollback-failure test");
 		}
+		ok &= ExpectModelRemovedDuringCommit(model_path, second_entry);
 		ok &= ExpectClearMutationFailures(model_path, backend);
 		ok &= ExpectUnwritableDirectoryFailures(model_path, second_entry);
 

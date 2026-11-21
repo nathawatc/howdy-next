@@ -60,7 +60,7 @@ namespace howdy::test::user_models {
 			std::error_code ec;
 			const auto      models_dir = model_path.parent_path();
 			const auto      temp_root  = models_dir.parent_path();
-			const auto      lock_path  = fs::path(models_dir.string() + ".lock");
+			const auto      lock_path  = models_dir / ".howdy-writers.lock";
 			const auto      before     = ReadFile(model_path);
 			{
 				// The test models directory is 0755, so any user could open and flock it.
@@ -74,7 +74,7 @@ namespace howdy::test::user_models {
 			struct stat lock_stat{};
 			ok &= Expect(lstat(lock_path.c_str(), &lock_stat) == 0 && S_ISREG(lock_stat.st_mode) &&
 			                 howdy::native::MaskedBits(lock_stat.st_mode, 07777) == 0600,
-			             "writers lock a 0600 file beside the models directory");
+			             "writers lock a 0600 file in the models directory");
 
 			const auto expect_rejected = [&](std::string_view description) -> void {
 				const auto current = ReadFile(model_path);
@@ -265,6 +265,7 @@ namespace howdy::test::user_models {
 				return WriteFile(path, taker_content);
 			};
 			const auto expect_taken = [&](const std::string &name, bool after_staging,
+			                              AtomicFileCommitResult                       expected,
 			                              const std::function<bool(const fs::path &)> &take,
 			                              const std::function<bool()> &left_alone) -> void {
 				fs::remove(first_path, ec);
@@ -300,8 +301,7 @@ namespace howdy::test::user_models {
 					                        ? mutation.transaction->WriteDocument(mutation.document)
 					                        : AtomicFileCommitResult::kNotCommitted;
 					ok &= Expect(taken, name + ": take the free model path after the open");
-					ok &= Expect(result == AtomicFileCommitResult::kDestinationExists,
-					             name + ": a first model refuses a taken path");
+					ok &= Expect(result == expected, name + ": a first model refuses a taken path");
 				}
 				ok &= Expect(left_alone() && ReadFile(victim_path) == victim_content,
 				             name + ": a refused first model leaves the path as it was");
@@ -317,9 +317,74 @@ namespace howdy::test::user_models {
 			const auto file_left = [&] -> bool {
 				return ReadFile(first_path) == taker_content;
 			};
-			expect_taken("symlink before staging", false, put_symlink, symlink_left);
-			expect_taken("symlink after staging", true, put_symlink, symlink_left);
-			expect_taken("regular file after staging", true, put_file, file_left);
+			// Staging refuses the symlink; RENAME_NOREPLACE refuses whatever is there later.
+			expect_taken("symlink before staging", false,
+			             AtomicFileCommitResult::kDestinationChanged, put_symlink, symlink_left);
+			expect_taken("symlink after staging", true, AtomicFileCommitResult::kDestinationExists,
+			             put_symlink, symlink_left);
+			expect_taken("regular file after staging", true,
+			             AtomicFileCommitResult::kDestinationExists, put_file, file_left);
+			return ok;
+		}
+
+		// An existing model replaced between the open and the commit is a changed model, for an
+		// update and for a removal alike.
+		auto ExpectExistingModelReplaced(const std::filesystem::path &model_path) -> bool {
+			namespace fs = std::filesystem;
+			using howdy::native::AtomicFileCommitResult;
+			using howdy::native::UserModelStore;
+
+			bool            ok = true;
+			std::error_code ec;
+			const auto      models_dir     = model_path.parent_path();
+			const auto      temp_root      = models_dir.parent_path();
+			const auto      before         = ReadFile(model_path);
+			const auto      victim_path    = temp_root / "update-symlink-victim.txt";
+			const auto      victim_content = std::string("update victim sentinel\n");
+			const auto      replacement    = std::string("replacement\n");
+			const auto      restore        = [&](const std::string &description) -> void {
+				fs::remove(model_path, ec);
+				ok &= Expect(WriteFile(model_path, before) && chmod(model_path.c_str(), 0600) == 0,
+				             "restore the model after " + description);
+			};
+
+			ok &= Expect(WriteFile(victim_path, victim_content), "write the update victim");
+			{
+				auto mutation = UserModelStore::BeginMutation("alice", {temp_root});
+				ok &= Expect(mutation.transaction.has_value() &&
+				                 mutation.document.Result().status ==
+				                     howdy::native::UserModelStatus::kOk,
+				             "begin an update");
+				fs::remove(model_path, ec);
+				ok &= Expect(symlink(victim_path.c_str(), model_path.c_str()) == 0,
+				             "replace the model with a symlink after the open");
+				ok &= Expect(mutation.transaction.has_value() &&
+				                 mutation.transaction->WriteDocument(mutation.document) ==
+				                     AtomicFileCommitResult::kDestinationChanged,
+				             "an update refuses a model a symlink replaced after the open");
+			}
+			struct stat path_stat{};
+			ok &= Expect(lstat(model_path.c_str(), &path_stat) == 0 && S_ISLNK(path_stat.st_mode) &&
+			                 ReadFile(victim_path) == victim_content &&
+			                 StagedUserModelPaths(models_dir).empty(),
+			             "a refused update leaves the symlink, its target, and nothing staged");
+			fs::remove(victim_path, ec);
+			restore("symlink update check");
+
+			{
+				const auto locked = UserModelStore::LockExisting("alice", {temp_root});
+				ok &= Expect(locked.transaction.has_value(), "lock the model to remove it");
+				fs::remove(model_path, ec);
+				ok &= Expect(WriteFile(model_path, replacement),
+				             "replace the model with another file after the open");
+				ok &= Expect(locked.transaction.has_value() &&
+				                 locked.transaction->RemoveFile() ==
+				                     AtomicFileCommitResult::kDestinationChanged,
+				             "a removal refuses a model replaced after the open");
+			}
+			ok &= Expect(ReadFile(model_path) == replacement,
+			             "a refused removal leaves the replacement in place");
+			restore("replaced removal check");
 			return ok;
 		}
 
@@ -727,6 +792,7 @@ namespace howdy::test::user_models {
 		ok &= ExpectRootOnlyNamespaceLock(model_path, second_entry);
 		ok &= ExpectOpenFailureCauses(model_path, second_entry);
 		ok &= ExpectFirstModelPathTaken(model_path);
+		ok &= ExpectExistingModelReplaced(model_path);
 		return ok;
 	}
 }  // namespace howdy::test::user_models

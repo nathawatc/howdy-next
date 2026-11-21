@@ -14,6 +14,10 @@
 
 namespace howdy::native {
 
+	// "Failed to inspect user model file: <path> (<errno text>)".
+	[[nodiscard]] auto UserModelInspectionFailedMessage(const std::filesystem::path &path,
+	                                                    int error_number) -> std::string;
+
 	class UserModelStoreTransaction {
 	public:
 		UserModelStoreTransaction(const UserModelStoreTransaction &)                     = delete;
@@ -41,7 +45,6 @@ namespace howdy::native {
 		                          ScopedFd file);
 
 		[[nodiscard]] auto Path() const -> const std::filesystem::path &;
-		[[nodiscard]] auto PathMatchesOpenedFile() const -> bool;
 		[[nodiscard]] auto Snapshot() const -> std::optional<UserModelFileSnapshot>;
 		[[nodiscard]] auto SnapshotMatches(const UserModelFileSnapshot &expected) const
 		    -> std::optional<bool>;
