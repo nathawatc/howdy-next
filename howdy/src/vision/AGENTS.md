@@ -25,6 +25,7 @@ upstream status, and the SFace embedding difference between 5.0 and 5.1 are comm
 - `frame_processing.*`: CLAHE, rotation, brightness analysis, and resize scaling
 - `face_detection.*`: detector-output parsing into semantic results
 - `FaceModel`: detector/recognizer initialization and model-backed inference
+  (`face_model/environment.cpp`: OpenCV DNN engine pin and warning filter)
 - `VideoCapture`: allowed device paths, open/read/configuration, warm-up, error mapping
 - `PreviewEngine`: orchestration on semantic inference adapters (`CompareEngine` lives in
   `src/compare/engine.*`)

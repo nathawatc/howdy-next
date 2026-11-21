@@ -2,7 +2,7 @@
 #	define _GNU_SOURCE
 #endif
 
-#include "../spawn_operations.hpp"
+#include "../child_process/internal.hpp"
 #include "internal.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/auth_helper_process.hpp"

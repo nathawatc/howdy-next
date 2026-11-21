@@ -9,9 +9,12 @@ in [`auth_helper_process/AGENTS.md`](auth_helper_process/AGENTS.md).
   otherwise), their validation, typed config load
 - `auth_helper_process.cpp`: helper orchestration and the descriptor-message exchange
   (`auth_helper_process/`: spawn and wait, see its guide)
-- `compare_process.cpp`: compare argv/environment, descriptor closure, timeout/reap
+- `compare_process.cpp`: compare timeout, verdict read, and reap (`compare_process/spawn.cpp`:
+  compare argv/environment, verdict socket, and descriptor closure)
 - `child_process.cpp`: `SpawnChild` and `TrackedChild`, the one spawn and the one pidfd
   wait/signal implementation with PID fallback, used by both child lifecycles
+  (`child_process/internal.hpp`: the production spawn, file-action, and socketpair adapters both
+  spawn paths share)
 - `session_probe.cpp`: SSH detection, used when the `abort_if_ssh` option is set (eligibility is in
   `module/auth_eligibility.cpp`); `lid_probe.cpp`: lid state;
   `environment.cpp`: PAM and process environment lookup; `message_locale.cpp`: PAM message locale
@@ -32,7 +35,7 @@ authentication returns. Compare always runs in descriptor mode (`protocol/compar
 `RuntimeSession` is one-shot. Rejected descriptors, missing typed config, or repeated load attempts
 fail closed.
 
-### Child processes
+### Child Processes
 
 Both children start through `SpawnChild` and are waited on and signalled through `TrackedChild`.
 
@@ -51,16 +54,16 @@ Both children start through `SpawnChild` and are waited on and signalled through
   fails the spawn. Compare's production `main` exits with `_exit` right after reporting.
 - A timeout or cancellation stays one when compare is gone by the time the wait ends it.
 
-### Compare environment
+### Compare Environment
 
 Compare runs with a fixed environment, never copied from the caller: only `OPENBLAS_NUM_THREADS=1`
 and `OMP_NUM_THREADS=1`, then `HOWDY_COMPARE_VERDICT_FD=3`, `HOWDY_COMPARE_CONFIG_FD=4` and
 `HOWDY_COMPARE_MODEL_FD=5`, with argv `{howdy-compare, user}`. The child keeps stdio and fds 3 to 5;
 every descriptor above that is closed. Both thread pins are required; their reasons are commented in
-`compare_process.cpp`.
+`compare_process/spawn.cpp`.
 
 ## Known Limitation: SSH Detection (Won't Fix)
 
-The `abort_if_ssh` option is a convenience, not a security boundary. The bypass, the rejected logind approach,
-and the conditions for reopening the question are documented in `session_probe.cpp`. Read them
-before changing SSH detection.
+The `abort_if_ssh` option is a convenience, not a security boundary. The bypass, the rejected
+logind approach, and the conditions for reopening the question are documented in
+`session_probe.cpp`. Read them before changing SSH detection.

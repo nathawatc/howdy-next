@@ -145,7 +145,9 @@ add_library(howdy_user_model_codec STATIC
 howdy_configure_native_target(howdy_user_model_codec)
 target_link_libraries(howdy_user_model_codec PRIVATE PkgConfig::YYJSON)
 
-add_library(howdy_face_model STATIC src/vision/face_model.cpp)
+add_library(
+ howdy_face_model STATIC src/vision/face_model.cpp src/vision/face_model/environment.cpp
+)
 howdy_configure_native_target(howdy_face_model)
 target_link_libraries(
  howdy_face_model
@@ -321,6 +323,9 @@ add_library(
  src/cli/clear.cpp
  src/cli/config.cpp
  src/cli/config/edit_session.cpp
+ src/cli/config/editor_process.cpp
+ src/cli/config/internal.hpp
+ src/cli/confirmation_prompt.cpp
  src/cli/disable.cpp
  src/cli/download_models.cpp
  src/cli/list.cpp
@@ -329,6 +334,7 @@ add_library(
  src/cli/snapshot.cpp
  src/cli/snapshot/workflow.cpp
  src/cli/test.cpp
+ src/cli/test/workflow.cpp
 )
 howdy_configure_native_target(howdy_cli)
 target_link_libraries(

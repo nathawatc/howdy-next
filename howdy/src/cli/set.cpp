@@ -19,10 +19,10 @@ namespace {
 		return howdy::native::ResolveConfigPath();
 	}
 
-	auto UpdateConfigValueDependency([[maybe_unused]] void       *context,
-	                                 const std::filesystem::path &config_path,
-	                                 const std::string &key, const std::string &value,
-	                                 std::string *error_message, bool lock) -> bool {
+	auto SetCliUpdateConfigValueDependency([[maybe_unused]] void       *context,
+	                                       const std::filesystem::path &config_path,
+	                                       const std::string &key, const std::string &value,
+	                                       std::string *error_message, bool lock) -> bool {
 		return howdy::native::UpdateConfigValue(config_path, key, error_message, value, lock);
 	}
 
@@ -55,6 +55,6 @@ auto SetMain(const howdy::native::CommandInvocation &invocation) -> int {
 	return howdy::native::set_internal::SetMainWithDependencies(
 	    invocation, howdy::native::set_internal::SetDependencies{
 	                    .resolve_config_path = SetCliResolveConfigPathDependency,
-	                    .update_config_value = UpdateConfigValueDependency,
+	                    .update_config_value = SetCliUpdateConfigValueDependency,
 	                });
 }

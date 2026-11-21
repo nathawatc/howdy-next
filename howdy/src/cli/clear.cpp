@@ -2,7 +2,7 @@
 
 #include "app/command_invocation.hpp"
 #include "cli/clear/internal.hpp"
-#include "confirmation_prompt.hpp"
+#include "cli/confirmation_prompt.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"

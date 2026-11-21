@@ -22,12 +22,13 @@ add_library(
  src/runtime/auth_helper_process/io.cpp
  src/runtime/auth_helper_process/spawn.cpp
  src/runtime/child_process.cpp
+ src/runtime/child_process/internal.hpp
  src/runtime/compare_process.cpp
+ src/runtime/compare_process/spawn.cpp
  src/runtime/environment.cpp
  src/runtime/lid_probe.cpp
  src/runtime/runtime_session.cpp
  src/runtime/session_probe.cpp
- src/runtime/spawn_operations.hpp
 )
 howdy_configure_pam_target(pam_runtime)
 if(HOWDY_HAVE_PIDFD_SPAWN)
