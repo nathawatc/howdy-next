@@ -1,3 +1,4 @@
+#include "integration/process.hpp"
 #include "test_support.hpp"
 
 #include <cerrno>
@@ -5,8 +6,6 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
-#include <span>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -22,12 +21,7 @@ namespace fs = std::filesystem;
 namespace {
 
 	using Cleanup = howdy::test::TemporaryDirectory;
-
-	auto Require(bool condition, const std::string &message) -> void {
-		if (!condition) {
-			throw std::runtime_error(message);
-		}
-	}
+	using howdy::test::Require;
 
 	auto RunHarness(const std::vector<std::string> &args, const fs::path &destdir) -> int {
 		const pid_t child = fork();
@@ -72,15 +66,14 @@ auto main(int argc, char **argv) -> int {
 		return 2;
 	}
 	try {
-		std::vector<std::string> args;
-		for (const auto *argument : std::span(argv, static_cast<std::size_t>(argc))) {
-			args.emplace_back(argument);
+		const auto args    = howdy::test::integration::CopyArguments(argc, argv);
+		const auto created = howdy::test::CreateTempDirectory("howdy-install-environment.");
+		if (!created.has_value()) {
+			Require(false, "cannot create fixture directory");
+			return 1;
 		}
-		std::string path_template = "/tmp/howdy-install-environment.XXXXXX";
-		const char *created       = mkdtemp(path_template.data());
-		Require(created != nullptr, "cannot create fixture directory");
-		const fs::path fixture = created;
-		const Cleanup  cleanup(fixture);
+		const fs::path &fixture = *created;
+		const Cleanup   cleanup(fixture);
 		Require(chmod(fixture.c_str(), 0777) == 0, "cannot set fixture permissions");
 		const auto hostile_destdir = fixture / "destdir";
 		const auto redirect_target = fixture / "redirect-target";

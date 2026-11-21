@@ -25,13 +25,19 @@ if(NOT DEFINED HOWDY_GIT_COMMIT)
   set(HOWDY_GIT_COMMIT "")
 endif()
 
-function(normalize_commit raw_commit output_variable)
+function(
+ normalize_commit
+ raw_commit
+ error_prefix
+ hex_qualifier
+ truncate_to_10
+ output_variable
+)
   string(LENGTH "${raw_commit}" raw_commit_length)
   if(raw_commit_length LESS 10)
     message(
    FATAL_ERROR
-   "HOWDY_GIT_COMMIT must contain at least "
-   "10 hexadecimal characters"
+   "${error_prefix} at least 10 hexadecimal characters"
   )
   endif()
   string(
@@ -43,18 +49,27 @@ function(normalize_commit raw_commit output_variable)
   if("${raw_commit_hex}" STREQUAL "")
     message(
    FATAL_ERROR
-   "HOWDY_GIT_COMMIT must contain only "
-   "hexadecimal characters"
+   "${error_prefix}${hex_qualifier} hexadecimal characters"
   )
   endif()
-  string(SUBSTRING "${raw_commit}" 0 10 normalized_commit)
+  if(truncate_to_10)
+    string(SUBSTRING "${raw_commit}" 0 10 normalized_commit)
+  else()
+    set(normalized_commit "${raw_commit}")
+  endif()
   string(TOLOWER "${normalized_commit}" normalized_commit)
   set("${output_variable}" "${normalized_commit}" PARENT_SCOPE)
 endfunction()
 
 set(HOWDY_BUILD_COMMIT "")
 if(NOT "${HOWDY_GIT_COMMIT}" STREQUAL "")
-  normalize_commit("${HOWDY_GIT_COMMIT}" HOWDY_BUILD_COMMIT)
+  normalize_commit(
+  "${HOWDY_GIT_COMMIT}"
+  "HOWDY_GIT_COMMIT must contain"
+  " only"
+  TRUE
+  HOWDY_BUILD_COMMIT
+ )
 elseif(NOT "${HOWDY_GIT_EXECUTABLE}" STREQUAL "")
   execute_process(
   COMMAND
@@ -63,32 +78,17 @@ elseif(NOT "${HOWDY_GIT_EXECUTABLE}" STREQUAL "")
   WORKING_DIRECTORY "${HOWDY_SOURCE_DIR}"
   RESULT_VARIABLE git_result
   OUTPUT_VARIABLE git_output
-  ERROR_VARIABLE git_error
+  ERROR_QUIET
   OUTPUT_STRIP_TRAILING_WHITESPACE
  )
   if("${git_result}" STREQUAL "0")
-    string(LENGTH "${git_output}" git_output_length)
-    string(
-   REGEX MATCH
-   "^[0-9A-Fa-f]+$"
-   git_output_hex
+    normalize_commit(
    "${git_output}"
+   "Git returned malformed commit metadata; expected"
+   ""
+   FALSE
+   HOWDY_BUILD_COMMIT
   )
-    if(git_output_length LESS 10)
-      message(
-    FATAL_ERROR
-    "Git returned malformed commit metadata; "
-    "expected at least 10 hexadecimal characters"
-   )
-    endif()
-    if("${git_output_hex}" STREQUAL "")
-      message(
-    FATAL_ERROR
-    "Git returned malformed commit metadata; "
-    "expected hexadecimal characters"
-   )
-    endif()
-    string(TOLOWER "${git_output}" HOWDY_BUILD_COMMIT)
   endif()
 endif()
 

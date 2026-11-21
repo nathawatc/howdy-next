@@ -20,8 +20,6 @@ namespace {
 	using howdy::test::Expect;
 	using howdy::test::StreamRedirect;
 
-	constexpr std::size_t kSnapshotFrameCount = 4;
-
 	struct SnapshotCliTestContext {
 		howdy::native::RuntimeConfigLoadResult                  config_result;
 		howdy::native::snapshot_internal::SnapshotCaptureResult capture_result;
@@ -218,13 +216,14 @@ namespace {
 	}
 
 	auto ShortSuccessfulCaptureStopsBeforeWrite() -> bool {
-		return UnexpectedSuccessfulCaptureFrameCountStopsBeforeWrite(kSnapshotFrameCount - 1,
-		                                                             "short successful capture");
+		return UnexpectedSuccessfulCaptureFrameCountStopsBeforeWrite(
+		    howdy::native::snapshot_internal::kSnapshotFrameCount - 1, "short successful capture");
 	}
 
 	auto OversizedSuccessfulCaptureStopsBeforeWrite() -> bool {
 		return UnexpectedSuccessfulCaptureFrameCountStopsBeforeWrite(
-		    kSnapshotFrameCount + 1, "oversized successful capture");
+		    howdy::native::snapshot_internal::kSnapshotFrameCount + 1,
+		    "oversized successful capture");
 	}
 
 	auto UnknownCaptureStatusFailsClosed() -> bool {

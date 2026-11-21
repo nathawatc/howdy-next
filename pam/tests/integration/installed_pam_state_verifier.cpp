@@ -13,14 +13,11 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
-#include <span>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <fcntl.h>
-#include <stdlib.h>
 #include <unistd.h>
 
 #include <sys/socket.h>
@@ -33,12 +30,7 @@ namespace fs = std::filesystem;
 namespace {
 	namespace message = howdy::native::runtime_descriptor_message;
 	using howdy::native::ScopedFd;
-
-	auto Require(bool condition, const std::string &text) -> void {
-		if (!condition) {
-			throw std::runtime_error(text);
-		}
-	}
+	using howdy::test::Require;
 
 	auto ParseId(const std::string &value) -> unsigned {
 		std::size_t parsed = 0;
@@ -182,7 +174,7 @@ namespace {
 		while (waitpid(child, &status, 0) < 0) {
 			Require(errno == EINTR, "cannot wait for helper probe");
 		}
-		run.status   = WIFEXITED(status) ? WEXITSTATUS(status) : 128;
+		run.status = WIFEXITED(status) ? WEXITSTATUS(status) : 128;  // NOLINT(misc-include-cleaner)
 		run.received = message::ReceiveMessage(pam_end.Get());
 		run.after    = message::ReceiveMessage(pam_end.Get()).status;
 		return run;
@@ -306,10 +298,12 @@ namespace {
 	// Checks this verifier's own descriptor plumbing without root: a file sent over a socket pair
 	// with the protocol's encoder arrives as a descriptor RequireDescriptorFor accepts.
 	auto SelfTest() -> void {
-		std::string template_path = "/tmp/howdy-e2e-state-verifier.XXXXXX";
-		const char *created       = mkdtemp(template_path.data());
-		Require(created != nullptr, "cannot create state-verifier fixture");
-		const fs::path                        root = created;
+		const auto created = howdy::test::CreateTempDirectory("howdy-e2e-state-verifier.");
+		if (!created.has_value()) {
+			Require(false, "cannot create state-verifier fixture");
+			return;
+		}
+		const fs::path                       &root = *created;
 		const howdy::test::TemporaryDirectory cleanup(root);
 		const auto                            file = root / "config.ini";
 		std::ofstream(file) << "[core]\ndisabled = true\n";
@@ -335,10 +329,7 @@ namespace {
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
-	std::vector<std::string> args;
-	for (const auto *argument : std::span(argv, static_cast<std::size_t>(argc))) {
-		args.emplace_back(argument);
-	}
+	const auto args = howdy::test::integration::CopyArguments(argc, argv);
 	try {
 		if (args.size() == 2 && args.at(1) == "--self-test") {
 			SelfTest();

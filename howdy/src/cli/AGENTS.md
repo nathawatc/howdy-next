@@ -38,5 +38,5 @@ Other commands remain single-file components unless a real boundary appears.
 Dependency-injection contracts under `include/cli/<command>/internal.hpp` are shared/test-facing by
 design. Keep test-only helpers under `tests/include/cli/`.
 
-Inspect `howdy/CMakeLists.txt` before changing a suite; add, config, download-models, snapshot, and
-preview tests span multiple translation units.
+Inspect `howdy/CMakeLists.txt` and `howdy/cmake/tests/*.cmake` before changing a suite; add, config,
+and download-models tests span multiple translation units, while snapshot tests two single-TU suites.

@@ -1,20 +1,17 @@
+#include "integration/process.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
-#include <cstddef>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
-#include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <vector>
 
-#include <stdlib.h>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -86,17 +83,15 @@ namespace {
 		return canonical;
 	}
 
-	auto Require(bool condition, const std::string &message) -> void {
-		if (!condition) {
-			throw std::runtime_error(message);
-		}
-	}
+	using howdy::test::Require;
 
 	auto SelfTest() -> void {
-		std::string template_path = "/tmp/howdy-e2e-path-validation.XXXXXX";
-		const char *created       = mkdtemp(template_path.data());
-		Require(created != nullptr, "cannot create path-validation fixture");
-		const fs::path parent = fs::canonical(created);
+		const auto created = howdy::test::CreateTempDirectory("howdy-e2e-path-validation.");
+		if (!created.has_value()) {
+			Require(false, "cannot create path-validation fixture");
+			return;
+		}
+		const fs::path parent = fs::canonical(*created);
 		const Cleanup  cleanup(parent);
 		const auto     other = parent / "other";
 		fs::create_directory(other);
@@ -170,10 +165,7 @@ namespace {
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
-	std::vector<std::string> args;
-	for (const auto *argument : std::span(argv, static_cast<std::size_t>(argc))) {
-		args.emplace_back(argument);
-	}
+	const auto args = howdy::test::integration::CopyArguments(argc, argv);
 	try {
 		if (args.size() == 2 && args.at(1) == "--self-test") {
 			SelfTest();

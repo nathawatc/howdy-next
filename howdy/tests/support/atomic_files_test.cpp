@@ -7,7 +7,6 @@
 #include "test_support.hpp"
 
 #include <array>
-#include <csignal>
 #include <cstddef>
 #include <filesystem>
 #include <limits>
@@ -17,10 +16,8 @@
 #include <system_error>
 
 #include <fcntl.h>
-#include <signal.h>
 #include <unistd.h>
 
-#include <sys/resource.h>
 #include <sys/stat.h>
 
 namespace howdy::test::download_models {
@@ -34,10 +31,6 @@ namespace howdy::test::download_models {
 
 		auto CommitIsDurable(howdy::native::AtomicFileCommitResult result) -> bool {
 			return howdy::native::AtomicFileCommitIsDurable(result);
-		}
-
-		auto FailParentSync(const std::filesystem::path & /*path*/) -> bool {
-			return false;
 		}
 
 		template <typename Value, typename Callback>
@@ -214,7 +207,7 @@ namespace howdy::test::download_models {
 			ok &= Expect(howdy::native::WriteAllToFd(uncertain_install->fd.Get(), "model"),
 			             "write uncertain staged install content");
 			const auto install_result = howdy::native::InstallStagedFile(
-			    *uncertain_install, uncertain_install_destination, FailParentSync);
+			    *uncertain_install, uncertain_install_destination, howdy::test::FailParentSync);
 			ok &= Expect(install_result ==
 			                 howdy::native::AtomicFileCommitResult::kCommittedSyncFailed,
 			             "failed parent sync reports committed install with uncertain durability");
@@ -369,28 +362,18 @@ namespace howdy::test::download_models {
 		const auto atomic_write_failure_path = temp_root / "atomic-write-failure";
 		ok &= Expect(WriteFile(atomic_write_failure_path, "original content"),
 		             "create atomic writer write-failure target");
-		struct rlimit original_file_size_limit{};
-		const bool have_file_size_limit = getrlimit(RLIMIT_FSIZE, &original_file_size_limit) == 0;
-		ok &= Expect(have_file_size_limit, "read file-size resource limit");
-		const auto previous_sigxfsz_handler = std::signal(SIGXFSZ, SIG_IGN);
-		const bool have_sigxfsz_handler     = previous_sigxfsz_handler != SIG_ERR;
-		ok &= Expect(have_sigxfsz_handler, "ignore file-size signal for failed atomic write");
+		howdy::test::FileSizeLimitGuard file_size_limit_guard;
+		ok &= Expect(file_size_limit_guard.Ready(),
+		             "prepare file-size limit for failed atomic write");
 		bool atomic_write_failed = false;
-		if (have_file_size_limit && have_sigxfsz_handler) {
-			auto zero_file_size_limit     = original_file_size_limit;
-			zero_file_size_limit.rlim_cur = 0;
-			const bool limited_file_size  = setrlimit(RLIMIT_FSIZE, &zero_file_size_limit) == 0;
+		if (file_size_limit_guard.Ready()) {
+			const bool limited_file_size = file_size_limit_guard.SetZero();
 			ok &= Expect(limited_file_size, "limit file size for failed atomic write");
 			if (limited_file_size) {
 				atomic_write_failed = !CommitIsDurable(
 				    howdy::native::WriteAtomicFile(atomic_write_failure_path, "replacement"));
-				ok &= Expect(setrlimit(RLIMIT_FSIZE, &original_file_size_limit) == 0,
-				             "restore file-size resource limit");
+				ok &= Expect(file_size_limit_guard.Restore(), "restore file-size resource limit");
 			}
-		}
-		if (have_sigxfsz_handler) {
-			ok &= Expect(std::signal(SIGXFSZ, previous_sigxfsz_handler) != SIG_ERR,
-			             "restore file-size signal handler");
 		}
 		ok &= Expect(atomic_write_failed, "atomic writer reports staged content write failure");
 		ok &= Expect(ReadFile(atomic_write_failure_path) == "original content",

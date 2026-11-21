@@ -149,7 +149,7 @@ namespace howdy::test::config_cli {
 		    -> RunResult {
 			ScopedEnvironmentVariable const config_env("HOWDY_CONFIG", config_path.string());
 			std::ostringstream const        output;
-			ScopedStreamBuffer const        stdout_guard(std::cout, output.rdbuf());
+			StreamRedirect const            stdout_guard(std::cout, output.rdbuf());
 			const int                       exit_code =
 			    howdy::native::config_internal::ConfigMainWithDependencies({}, dependencies);
 			return {.exit_code = exit_code, .output = output.str()};
@@ -158,7 +158,7 @@ namespace howdy::test::config_cli {
 		auto StdoutRestoresAfterCallbackException() -> bool {
 			bool                       ok = true;
 			std::ostringstream const   restored_output;
-			ScopedStreamBuffer const   outer_stdout_guard(std::cout, restored_output.rdbuf());
+			StreamRedirect const       outer_stdout_guard(std::cout, restored_output.rdbuf());
 			auto const                *original_stdout = std::cout.rdbuf();
 			TestDirectoryFixture const fixture;
 			TestContext                context;

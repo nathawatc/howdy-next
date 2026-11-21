@@ -4,8 +4,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Ownership
 
+- `args.*`: compare argv parsing and validation
 - `capture_session.*`: camera lifecycle, timeout clock, frame statistics, exposure restore
 - `engine.*`: preprocessing, validation, detection/embedding adapters, match selection
+- `logic.*`: compare threshold and best-match scoring policy
 - `sandbox.*`: sandbox policy
 - `processing.*`: shared processing helpers
 - `entrypoint.cpp`: composition, arguments, config/model load, output/report policy, exit mapping,

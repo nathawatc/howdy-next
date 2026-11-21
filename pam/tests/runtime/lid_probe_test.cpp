@@ -1,14 +1,10 @@
 #include "runtime/lid_probe.hpp"
 #include "test_support.hpp"
 
-#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <string_view>
-#include <system_error>
-
-#include <unistd.h>
 
 namespace {
 
@@ -44,15 +40,13 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 
-	const auto root = std::filesystem::temp_directory_path() /
-	                  ("howdy-lid-probe-" + std::to_string(getpid()) + "-" +
-	                   std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-	std::error_code error;
-	std::filesystem::remove_all(root, error);
-	ok &= Expect(std::filesystem::create_directories(root), "creates lid probe fixture root");
-	if (!ok) {
+	const auto created_root = howdy::test::CreateTempDirectory("howdy-lid-probe-");
+	ok &= Expect(created_root.has_value(), "creates lid probe fixture root");
+	if (!ok || !created_root.has_value()) {
 		return 1;
 	}
+	const howdy::test::TemporaryDirectory root_guard(*created_root);
+	const auto                           &root = root_guard.Path();
 
 	const auto no_lid = root / "no-lid";
 	ok &= Expect(std::filesystem::create_directories(no_lid), "creates no-match lid scenario");
@@ -159,6 +153,5 @@ auto main() -> int {
 	ok &= Expect(ReadLidStateFromPattern(PatternFor(closed_closed)).state == LidState::kClosed,
 	             "closed plus closed aggregates as closed");
 
-	std::filesystem::remove_all(root, error);
 	return ok ? 0 : 1;
 }

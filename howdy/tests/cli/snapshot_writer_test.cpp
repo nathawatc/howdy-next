@@ -214,10 +214,6 @@ namespace {
 		return {.context = &context, .encode_image = RealEncode, .validation_root = {root}};
 	}
 
-	auto FailParentSync(const std::filesystem::path & /*path*/) -> bool {
-		return false;
-	}
-
 	auto ExpectInvalidBatchRejected(const std::string &name, const std::vector<cv::Mat> &frames)
 	    -> bool {
 		bool                  ok        = true;
@@ -769,7 +765,7 @@ namespace {
 		const auto            output    = temp_root / "log" / "snapshots" / "test.jpg";
 		WriterCallbackContext context;
 		auto                  dependencies = FakeDependencies(context, temp_root);
-		dependencies.sync_parent           = FailParentSync;
+		dependencies.sync_parent           = howdy::test::FailParentSync;
 		howdy::native::AtomicFileCommitResult commit_result =
 		    howdy::native::AtomicFileCommitResult::kNotCommitted;
 		const bool result = snapshot_internal::WriteSnapshotAtPath(
