@@ -4,8 +4,8 @@
 #include "cli/confirmation_prompt.hpp"
 #include "cli/remove/internal.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_store.hpp"
 #include "storage/user_model_types.hpp"
-#include "storage/user_models.hpp"
 
 #include <charconv>
 #include <iostream>
@@ -18,20 +18,41 @@ namespace {
 	constexpr int kRemoveExitOk    = 0;
 	constexpr int kRemoveExitAbort = 1;
 
-	auto RemoveCliUserModelEntriesDependency([[maybe_unused]] void *context,
-	                                         const std::string     &user)
+	auto ListRemovableUserModelEntriesFromStore(void *context, const std::string &user)
 	    -> howdy::native::UserModelListResult {
-		return howdy::native::ListUserModelEntries(user, {});
+		const auto *store = static_cast<const howdy::native::UserModelStore *>(context);
+		if (store == nullptr) {
+			return {
+			    .status        = howdy::native::UserModelStatus::kParseError,
+			    .error_message = "User model store is not initialized",
+			};
+		}
+		return store->ListEntries(user, {});
 	}
 
-	auto RemoveUserModelEntryIfMatchesDependency(
-	    [[maybe_unused]] void *context, const std::string &user,
-	    const howdy::native::UserModelEntryExpectation &expected)
+	auto RemoveUserModelEntryFromStore(void *context, const std::string &user,
+	                                   const howdy::native::UserModelEntryExpectation &expected)
 	    -> howdy::native::UserModelMutationResult {
-		return howdy::native::RemoveUserModelEntryIfMatches(user, expected);
+		const auto *store = static_cast<const howdy::native::UserModelStore *>(context);
+		if (store == nullptr) {
+			return {
+			    .status        = howdy::native::UserModelStatus::kWriteFailed,
+			    .error_message = "User model store is not initialized",
+			};
+		}
+		return store->RemoveEntryIfMatches(user, expected);
 	}
 
 }  // namespace
+
+auto howdy::native::remove_internal::StoreDependencies(howdy::native::UserModelStore &store)
+    -> RemoveDependencies {
+	return {
+	    .context                            = &store,
+	    .list_user_model_entries            = ListRemovableUserModelEntriesFromStore,
+	    .remove_user_model_entry_if_matches = RemoveUserModelEntryFromStore,
+	};
+}
 
 auto howdy::native::remove_internal::RemoveMainWithDependencies(
     const howdy::native::CommandInvocation &invocation, const RemoveDependencies &dependencies)
@@ -48,8 +69,7 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 	const auto &id_text = invocation.positionals.front();
 
 	const auto models = dependencies.list_user_model_entries(dependencies.context, user);
-	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory ||
-	    models.status == howdy::native::UserModelStatus::kNoModel) {
+	if (howdy::native::Classify(models.status) == howdy::native::UserModelOutcome::kAbsent) {
 		std::cout << "No face models found. Please run:\n";
 		std::cout << "\n\thowdy add\n\n";
 		return kRemoveExitAbort;
@@ -111,10 +131,7 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 }
 
 auto RemoveMain(const howdy::native::CommandInvocation &invocation) -> int {
+	auto store = howdy::native::UserModelStore::Production();
 	return howdy::native::remove_internal::RemoveMainWithDependencies(
-	    invocation,
-	    howdy::native::remove_internal::RemoveDependencies{
-	        .list_user_model_entries            = RemoveCliUserModelEntriesDependency,
-	        .remove_user_model_entry_if_matches = RemoveUserModelEntryIfMatchesDependency,
-	    });
+	    invocation, howdy::native::remove_internal::StoreDependencies(store));
 }

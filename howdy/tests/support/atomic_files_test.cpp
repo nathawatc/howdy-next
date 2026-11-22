@@ -5,7 +5,9 @@
 #include "test_support.hpp"
 
 #include <filesystem>
+#include <functional>
 #include <optional>
+#include <string>
 #include <system_error>
 
 #include <fcntl.h>
@@ -162,6 +164,24 @@ auto main() -> int {
 		ok &= Expect(uncertain_install->path.empty(),
 		             "failed parent sync clears consumed staged path");
 	});
+
+	// A null or empty parent sync skips the sync: the install commits with uncertain durability.
+	const auto skip_sync = [&](const std::string &name, const auto &sync_parent) -> void {
+		const auto destination = temp_root / (name + "-install.onnx");
+		auto       staged      = howdy::native::PrepareStagedFile(destination, ".howdy-download-");
+		ok &= Expect(staged.has_value(), name + ": prepare staged file");
+		WithPresent(staged, [&] -> void {
+			ok &= Expect(howdy::native::WriteAllToFd(staged->fd.Get(), "model"),
+			             name + ": write staged content");
+			ok &= Expect(howdy::native::InstallStagedFile(*staged, destination, sync_parent) ==
+			                 howdy::native::AtomicFileCommitResult::kCommittedSyncFailed,
+			             name + ": skipped sync reports uncertain durability");
+			ok &= Expect(ReadFile(destination) == "model", name + ": install still commits");
+		});
+	};
+	skip_sync("nullptr-sync", nullptr);
+	skip_sync("null-pointer-sync", howdy::native::SyncParentDirectoryFn{nullptr});
+	skip_sync("empty-function-sync", std::function<bool(const std::filesystem::path &)>{});
 
 	const auto failed_install_destination = temp_root / "failed-install.onnx";
 	auto       failed_install =

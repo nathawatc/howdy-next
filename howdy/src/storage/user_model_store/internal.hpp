@@ -1,140 +1,91 @@
 #pragma once
 
-#include "../user_model_codec/internal.hpp"
-#include "storage/user_models.hpp"
-#include "support/atomic_files.hpp"
-#include "support/file_lock.hpp"
-#include "support/scoped_fd.hpp"
+// Store contracts shared by user_model_store.cpp, user_models.cpp, transaction.cpp, and
+// mutations.cpp: document loading and the Mutate transaction, which depend on the codec. Never
+// include this from readiness.cpp (see src/storage/AGENTS.md).
 
+#include "../user_model_codec/internal.hpp"
+#include "readiness/internal.hpp"
+#include "storage/user_model_status.hpp"
+#include "storage/user_model_store.hpp"
+#include "storage/user_model_types.hpp"
+
+#include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 
-#include <sys/types.h>
+namespace howdy::native::user_model_store_internal {
 
-namespace howdy::native {
+	[[nodiscard]] auto InspectRegularFileStatus(const std::filesystem::path &path,
+	                                            std::string *message) -> UserModelStatus;
 
-	// "Failed to inspect user model file: <path> (<errno text>)".
-	[[nodiscard]] auto UserModelInspectionFailedMessage(const std::filesystem::path &path,
-	                                                    int error_number) -> std::string;
-
-	class UserModelStoreTransaction {
-	public:
-		UserModelStoreTransaction(const UserModelStoreTransaction &)                     = delete;
-		auto operator=(const UserModelStoreTransaction &) -> UserModelStoreTransaction & = delete;
-
-		UserModelStoreTransaction(UserModelStoreTransaction &&) noexcept = default;
-		auto operator=(UserModelStoreTransaction &&) noexcept
-		    -> UserModelStoreTransaction & = default;
-		~UserModelStoreTransaction()       = default;
-
-		[[nodiscard]] auto WriteDocument(const user_model_codec::Document &document) const
-		    -> AtomicFileCommitResult;
-		[[nodiscard]] auto RemoveFile() const -> AtomicFileCommitResult;
-
-	private:
-		std::filesystem::path path_;
-		ScopedFileLock        namespace_lock_;
-		// The model file, held open to check that the path still names it, or not valid when no
-		// model existed and a first one is to be linked in. Not locked: the root-only
-		// namespace lock serializes writers, and a user holding a descriptor to the file from
-		// the auth helper could otherwise stall them with flock.
-		ScopedFd file_;
-
-		UserModelStoreTransaction(std::filesystem::path path, ScopedFileLock namespace_lock,
-		                          ScopedFd file);
-
-		[[nodiscard]] auto Path() const -> const std::filesystem::path &;
-		[[nodiscard]] auto Snapshot() const -> std::optional<UserModelFileSnapshot>;
-		[[nodiscard]] auto SnapshotMatches(const UserModelFileSnapshot &expected) const
-		    -> std::optional<bool>;
-
-		friend class UserModelStore;
-		friend auto ClearUserModelEntriesIfUnchanged(
-		    const std::string &user, const UserModelFileSnapshot &expected_snapshot,
-		    const file_security_internal::ValidationRoot &validation_root)
-		    -> UserModelMutationResult;
+	struct UserModelExpectations {
+		std::string backend;
+		std::string model;
+		bool        strict_shape = false;
 	};
 
-	struct UserModelStoreMutationResult {
-		std::optional<UserModelStoreTransaction> transaction;
-		user_model_codec::Document               document;
+	enum class MutationExistence : std::uint8_t {
+		kAllowMissing,
+		kRequireExisting,
 	};
 
-	struct UserModelStoreTransactionResult {
-		UserModelStatus                          status = UserModelStatus::kOk;
-		std::string                              error_message;
-		std::optional<UserModelStoreTransaction> transaction;
+	struct MutationOptions {
+		MutationExistence existence     = MutationExistence::kRequireExisting;
+		bool              load_document = true;
 	};
 
-	class UserModelStore {
-	public:
-		UserModelStore() = delete;
-
-		[[nodiscard]] static auto
-		BeginMutation(const std::string                            &user,
-		              const file_security_internal::ValidationRoot &validation_root = {})
-		    -> UserModelStoreMutationResult;
-		[[nodiscard]] static auto
-		LockExisting(const std::string                            &user,
-		             const file_security_internal::ValidationRoot &validation_root = {})
-		    -> UserModelStoreTransactionResult;
-
-	private:
-		struct UserModelExpectations {
-			std::string backend;
-			std::string model;
-			bool        strict_shape;
-		};
-
-		struct UserModelPathResult {
-			UserModelStatus       status = UserModelStatus::kOk;
-			std::string           error_message;
-			std::filesystem::path path;
-		};
-
-		[[nodiscard]] static auto
-		Resolve(const std::string &user, bool create_directory, std::optional<uid_t> owner_uid,
-		        const file_security_internal::ValidationRoot &validation_root)
-		    -> UserModelPathResult;
-		[[nodiscard]] static auto
-		LoadDocument(const std::string &user, const UserModelExpectations &expectations,
-		             std::optional<uid_t>                          owner_uid,
-		             const file_security_internal::ValidationRoot &validation_root)
-		    -> user_model_codec::Document;
-		[[nodiscard]] static auto
-		Inspect(const std::string                            &user,
-		        const file_security_internal::ValidationRoot &validation_root)
-		    -> UserModelInspectResult;
-		[[nodiscard]] static auto LoadDocumentFromPath(const std::filesystem::path &path,
-		                                               const UserModelExpectations &expectations,
-		                                               std::optional<uid_t>         owner_uid)
-		    -> user_model_codec::Document;
-		// Validates a descriptor that is already open, then reads its document. A nullopt
-		// `owner_uid` skips the owner check.
-		[[nodiscard]] static auto LoadDocumentFromFd(int fd, const std::filesystem::path &path,
-		                                             const UserModelExpectations &expectations,
-		                                             std::optional<uid_t>         owner_uid)
-		    -> user_model_codec::Document;
-		[[nodiscard]] static auto InspectRegularFileStatus(const std::filesystem::path &path,
-		                                                   std::string *message) -> UserModelStatus;
-
-		friend auto
-		ListUserModelEntries(const std::string &user, const std::string &expected_backend,
-		                     const std::string                            &expected_model,
-		                     const file_security_internal::ValidationRoot &validation_root)
-		    -> UserModelListResult;
-		friend auto
-		InspectUserModelFile(const std::string                            &user,
-		                     const file_security_internal::ValidationRoot &validation_root)
-		    -> UserModelInspectResult;
-		friend auto LoadUserModels(const std::string &user, const std::string &expected_backend,
-		                           std::optional<uid_t>                          owner_uid,
-		                           const file_security_internal::ValidationRoot &validation_root)
-		    -> UserModelLoadResult;
-		friend auto LoadUserModelsFromFd(int model_fd, const std::filesystem::path &display_path,
-		                                 const std::string &expected_backend, uid_t owner_uid)
-		    -> UserModelLoadResult;
+	enum class MutationAction : std::uint8_t {
+		kAbort,
+		kWrite,
+		kRemove,
 	};
 
-}  // namespace howdy::native
+	struct MutationDecision {
+		// A decision that names no outcome aborts as a failure, never as success.
+		MutationAction  action = MutationAction::kAbort;
+		UserModelStatus status = UserModelStatus::kParseError;
+		std::string     error_message;
+		std::string     failure_message;
+		std::string     sync_failed_message;
+		UserModelEntry  entry;
+	};
+
+	struct MutationContext {
+		user_model_codec::Document           document;
+		std::optional<UserModelFileSnapshot> snapshot;
+	};
+
+	using MutationDecider = std::function<MutationDecision(MutationContext &)>;
+
+	// Validates an already-open descriptor and decodes its document.
+	[[nodiscard]] auto LoadDocumentFromFd(int fd, const std::filesystem::path &path,
+	                                      const UserModelExpectations &expectations,
+	                                      uid_t owner_uid) -> user_model_codec::Document;
+
+	// Turns a loaded document into the flat encoding list compare matches against.
+	[[nodiscard]] auto FlattenLoadedModels(user_model_codec::Document &document)
+	    -> UserModelLoadResult;
+
+	// Runs the cohesive namespace-lock -> open -> revalidate -> decide -> commit/rollback
+	// transaction.
+	[[nodiscard]] auto Mutate(const UserModelStoreConfig &config, const std::string &user,
+	                          const MutationOptions &options, const MutationDecider &decide)
+	    -> UserModelMutationResult;
+
+	[[nodiscard]] auto AppendEntry(const UserModelStoreConfig &config, const std::string &user,
+	                               const NewUserModelEntry &new_entry) -> UserModelMutationResult;
+
+	[[nodiscard]] auto RemoveEntryIfMatches(const UserModelStoreConfig      &config,
+	                                        const std::string               &user,
+	                                        const UserModelEntryExpectation &expected)
+	    -> UserModelMutationResult;
+
+	[[nodiscard]] auto ClearEntriesIfUnchanged(const UserModelStoreConfig  &config,
+	                                           const std::string           &user,
+	                                           const UserModelFileSnapshot &expected_snapshot)
+	    -> UserModelMutationResult;
+
+}  // namespace howdy::native::user_model_store_internal

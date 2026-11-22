@@ -118,8 +118,9 @@ namespace howdy::test::add_cli {
 		};
 	}
 
-	inline auto RunAddWithDependencies(howdy::native::add_internal::AddDependencies dependencies,
-	                                   const howdy::native::CommandInvocation &invocation) -> int {
+	inline auto
+	RunAddWithDependencies(const howdy::native::add_internal::AddDependencies &dependencies,
+	                       const howdy::native::CommandInvocation             &invocation) -> int {
 		return howdy::native::add_internal::AddMainWithDependencies(invocation, dependencies);
 	}
 

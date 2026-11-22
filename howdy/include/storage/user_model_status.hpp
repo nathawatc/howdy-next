@@ -40,4 +40,45 @@ namespace howdy::native {
 		kModelChanged,
 	};
 
+	enum class UserModelOutcome : std::uint8_t {
+		kOk,
+		kAbsent,
+		kChanged,
+		kInsecure,
+		kFailedUncommitted,
+		kCommittedNotDurable,
+		kUncertain,
+	};
+
+	[[nodiscard]] constexpr auto Classify(UserModelStatus status) -> UserModelOutcome {
+		switch (status) {
+			case UserModelStatus::kOk:
+				return UserModelOutcome::kOk;
+			case UserModelStatus::kNoModel:
+			case UserModelStatus::kNoModelDirectory:
+				return UserModelOutcome::kAbsent;
+			case UserModelStatus::kModelChanged:
+				return UserModelOutcome::kChanged;
+			case UserModelStatus::kInsecurePath:
+				return UserModelOutcome::kInsecure;
+			case UserModelStatus::kDurabilityUncertain:
+				return UserModelOutcome::kCommittedNotDurable;
+			case UserModelStatus::kCommitStateUncertain:
+				return UserModelOutcome::kUncertain;
+			case UserModelStatus::kIncompatibleBackend:
+			case UserModelStatus::kIncompatibleModel:
+			case UserModelStatus::kParseError:
+			case UserModelStatus::kInvalidShape:
+			case UserModelStatus::kOversized:
+			case UserModelStatus::kInvalidUser:
+			case UserModelStatus::kLockFailed:
+			case UserModelStatus::kWriteFailed:
+			case UserModelStatus::kAtomicExchangeUnsupported:
+			case UserModelStatus::kDeleteFailed:
+			case UserModelStatus::kDirectoryCreateFailed:
+				return UserModelOutcome::kFailedUncommitted;
+		}
+		return UserModelOutcome::kUncertain;
+	}
+
 }  // namespace howdy::native

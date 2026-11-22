@@ -152,15 +152,15 @@ auto howdy::native::add_internal::AddMainWithDependencies(
 			return kAddExitAbort;
 	}
 
+	const howdy::native::NewUserModelEntry new_entry{
+	    .label     = label,
+	    .backend   = howdy::native::FaceModel::kBackendName,
+	    .metric    = enrollment_result.metric,
+	    .model     = howdy::native::FaceModel::kSfaceModel,
+	    .encodings = {std::move(enrollment_result.encoding)},
+	};
 	const auto append_result =
-	    dependencies.append_user_model(dependencies.context, args.user,
-		                               howdy::native::NewUserModelEntry{
-	                                       .label     = label,
-	                                       .backend   = howdy::native::FaceModel::kBackendName,
-	                                       .metric    = enrollment_result.metric,
-	                                       .model     = howdy::native::FaceModel::kSfaceModel,
-	                                       .encodings = {std::move(enrollment_result.encoding)},
-	                                   });
+	    dependencies.append_user_model(dependencies.context, args.user, new_entry);
 	if (append_result.status != howdy::native::UserModelStatus::kOk) {
 		std::cerr << append_result.error_message << "\n";
 		return kAddExitAbort;

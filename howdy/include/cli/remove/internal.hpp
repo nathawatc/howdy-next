@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/command_invocation.hpp"
+#include "storage/user_model_store.hpp"
 #include "storage/user_model_types.hpp"
 
 #include <string>
@@ -19,6 +20,10 @@ namespace howdy::native::remove_internal {
 		ListUserModelEntriesFn          list_user_model_entries            = nullptr;
 		RemoveUserModelEntryIfMatchesFn remove_user_model_entry_if_matches = nullptr;
 	};
+
+	// Binds every dependency to `store`, which must outlive the returned dependencies.
+	[[nodiscard]] auto StoreDependencies(howdy::native::UserModelStore &store)
+	    -> RemoveDependencies;
 
 	auto RemoveMainWithDependencies(const CommandInvocation  &invocation,
 	                                const RemoveDependencies &dependencies) -> int;

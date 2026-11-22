@@ -387,9 +387,12 @@ auto main() -> int {
 	ok &= expect_abort("world-writable config aborts", geteuid(), keep,
 	                   "Config file must not be group-writable");
 	ok &= Expect(chmod(config_file.c_str(), 0644) == 0, "restore config mode");
-	ok &= Expect(chmod(model_file.c_str(), 0666) == 0, "make user model world-writable");
+	ok &= Expect(chmod(model_file.c_str(), 0620) == 0, "make user model group-writable");
+	ok &= expect_abort("group-writable user model aborts", geteuid(), keep,
+	                   "User model file must not be group-writable");
+	ok &= Expect(chmod(model_file.c_str(), 0602) == 0, "make user model world-writable");
 	ok &= expect_abort("world-writable user model aborts", geteuid(), keep,
-	                   "Opened user model file failed security validation");
+	                   "User model file must not be world-writable");
 	ok &= Expect(chmod(model_file.c_str(), 0600) == 0, "restore user model mode");
 	ok &= Expect(howdy::test::WriteFile(model_file, "not json") &&
 	                 chmod(model_file.c_str(), 0600) == 0,

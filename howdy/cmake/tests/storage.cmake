@@ -25,12 +25,7 @@ howdy_add_native_test(
  tests/storage/user_models_failure_test.cpp
  tests/storage/user_models_verified_ops_test.cpp
 )
-target_link_libraries(
- howdy_user_models_test
- PRIVATE
-  howdy_user_models
-  howdy_user_model_readiness
-)
+target_link_libraries(howdy_user_models_test PRIVATE howdy_user_models)
 
 howdy_add_native_test(
  howdy_user_model_path_test
