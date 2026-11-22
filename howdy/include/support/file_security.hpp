@@ -343,27 +343,31 @@ namespace howdy::native {
 					};
 				}
 				const bool created = mkdirat(current_fd, comp.c_str(), mode) == 0;
-				if (!created && errno != EEXIST) {
-					return {
-					    {
-					        .ok            = false,
-					        .error_message = "Failed to create " + std::string(label) +
-							                 " component: " + comp_path.string(),
-					        .error_code    = errno,
-					    },
-					    {},
-					};
+				if (!created) {
+					const int create_error = errno;
+					if (create_error != EEXIST) {
+						return {
+						    {
+						        .ok            = false,
+						        .error_message = "Failed to create " + std::string(label) +
+								                 " component: " + comp_path.string(),
+						        .error_code    = create_error,
+						    },
+						    {},
+						};
+					}
 				}
 				next.Reset(openat(current_fd, comp.c_str(), k_dir_open_flags));
 				// Only chmod a directory we created; a raced EEXIST is validated below, not
 				// modified.
 				if (!next.Valid() || (created && fchmod(next.Get(), mode) != 0)) {
+					const int secure_error = errno;
 					return {
 					    {
 					        .ok            = false,
 					        .error_message = "Failed to secure " + std::string(label) +
 							                 " component: " + comp_path.string(),
-					        .error_code    = errno,
+					        .error_code    = secure_error,
 					    },
 					    {},
 					};
@@ -372,12 +376,13 @@ namespace howdy::native {
 
 			struct stat comp_st{};
 			if (fstat(next.Get(), &comp_st) != 0) {
+				const int stat_error = errno;
 				return {
 				    {
 				        .ok            = false,
 				        .error_message = "Failed to stat " + std::string(label) +
 						                 " component: " + comp_path.string(),
-				        .error_code    = errno,
+				        .error_code    = stat_error,
 				    },
 				    {},
 				};
@@ -409,19 +414,21 @@ namespace howdy::native {
 		ScopedFd current(
 		    open(resolved.root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
 		if (!current.Valid()) {
+			const int open_error = errno;
 			return {
 			    .ok            = false,
 			    .error_message = "Failed to open directory root: " + resolved.root.string(),
-			    .error_code    = errno,
+			    .error_code    = open_error,
 			};
 		}
 
 		struct stat root_st{};
 		if (fstat(current.Get(), &root_st) != 0) {
+			const int stat_error = errno;
 			return {
 			    .ok            = false,
 			    .error_message = "Failed to stat directory root: " + resolved.root.string(),
-			    .error_code    = errno,
+			    .error_code    = stat_error,
 			};
 		}
 		auto root_security = CheckSecurePathStat(root_st, SecurePathKind::kDirectory, resolved.root,
