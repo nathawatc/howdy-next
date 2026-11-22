@@ -23,6 +23,7 @@ howdy_add_native_test(
  tests/storage/user_models_fd_load_test.cpp
  tests/storage/user_models_mutation_test.cpp
  tests/storage/user_models_failure_test.cpp
+ tests/storage/user_models_verified_ops_test.cpp
 )
 target_link_libraries(
  howdy_user_models_test

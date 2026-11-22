@@ -61,15 +61,6 @@ namespace {
 		return pam_set_item(pamh, item_type, item);
 	}
 
-	auto NativePromptFailClosedDispatch(int /*num_msg*/, const struct pam_message ** /*msgm*/,
-	                                    struct pam_response **response, void * /*appdata_ptr*/)
-	    -> int {
-		if (response != nullptr) {
-			*response = nullptr;
-		}
-		return PAM_CONV_ERR;
-	}
-
 	auto OpenTtyFd(pam_handle_t *pamh) -> howdy::native::ScopedFd {
 		const void *tty_item = nullptr;
 		if (pam_get_item(pamh, PAM_TTY, &tty_item) != PAM_SUCCESS || tty_item == nullptr) {
@@ -360,7 +351,7 @@ auto NativePromptConversation::RestoreOriginal() noexcept -> howdy::pam::Convers
 
 	pam_syslog(pamh_, LOG_CRIT, "Failed to restore original PAM conversation: %d", restore_result);
 	static const struct pam_conv kFailClosedConv = {
-	    .conv        = NativePromptFailClosedDispatch,
+	    .conv        = howdy::pam::FailClosedConversationDispatch,
 	    .appdata_ptr = nullptr,
 	};
 	const int fail_closed_result =

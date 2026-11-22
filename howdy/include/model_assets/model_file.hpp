@@ -25,9 +25,10 @@ namespace howdy::native {
 		std::string       error_message;
 	};
 
-	[[nodiscard]] auto CheckOpencvModelReadinessWithLabel(
-	    const std::filesystem::path &path, std::string_view label,
-	    const std::optional<uid_t>                   &owner_uid,
-	    const file_security_internal::ValidationRoot &validation_root = {}) -> OpenCvModelReadiness;
+	[[nodiscard]] auto
+	CheckOpencvModelReadiness(const std::filesystem::path &path, std::string_view label,
+	                          const std::optional<uid_t>                   &owner_uid,
+	                          const file_security_internal::ValidationRoot &validation_root = {})
+	    -> OpenCvModelReadiness;
 
 }  // namespace howdy::native

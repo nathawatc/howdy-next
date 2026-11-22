@@ -3,7 +3,6 @@
 #include "config/config_schema.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_config.hpp"
-#include "config/test_hooks.hpp"
 #include "config_reader/internal.hpp"
 #include "config_validation/internal.hpp"
 #include "runtime_config_loader/internal.hpp"
@@ -13,13 +12,10 @@
 #include "support/file_security/validation_root.hpp"
 #include "support/scoped_fd.hpp"
 
-#include <cerrno>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <utility>
-
-#include <fcntl.h>
 
 #include <sys/types.h>
 
@@ -123,7 +119,7 @@ namespace howdy::native {
 				    config_path, "Failed to parse config: " + config_path.string() + " (error -1)");
 			}
 
-			const ConfigReader reader(config_path.string(), *content);
+			const ConfigReader reader(*content);
 			if (!reader.Ok()) {
 				return FailureResult<RuntimeConfigLoadStatus::kParseError>(
 				    config_path, "Failed to parse config: " + config_path.string() + " (error " +
@@ -151,29 +147,20 @@ namespace howdy::native {
 	                       const std::optional<uid_t>                    owner_uid,
 	                       const file_security_internal::ValidationRoot &validation_root)
 	    -> RuntimeConfigLoadResult {
-		const int opened_fd =
-		    open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
-		if (opened_fd < 0) {
-			const int open_error = errno;
+		const auto opened = OpenSecureConfigForRead(config_path, owner_uid, validation_root);
+		if (!opened.fd.Valid()) {
 			return FailureResult<RuntimeConfigLoadStatus::kPathError>(
 			    config_path,
 			    "Failed to inspect Config file: " + config_path.string() + " (" +
-			        howdy::native::SystemErrorMessage(open_error) + ")" +
-			        ConfigAccessErrorHint(open_error),
-			    open_error);
+			        howdy::native::SystemErrorMessage(opened.open_error) + ")" +
+			        ConfigAccessErrorHint(opened.open_error),
+			    opened.open_error);
 		}
-		const ScopedFd fd(opened_fd);
-		if (config_test_hooks::Current()) {
-			config_test_hooks::Current()();
-		}
-
-		const auto security =
-		    CheckSecureConfigFd(fd.Get(), config_path, owner_uid, validation_root);
-		if (!security.ok) {
+		if (!opened.security.ok) {
 			return FailureResult<RuntimeConfigLoadStatus::kPathError>(
-			    config_path, security.error_message, security.error_code);
+			    config_path, opened.security.error_message, opened.security.error_code);
 		}
-		return LoadCheckedRuntimeConfig(fd.Get(), config_path);
+		return LoadCheckedRuntimeConfig(opened.fd.Get(), config_path);
 	}
 
 	auto LoadRuntimeConfigFromFd(int config_fd, const std::filesystem::path &display_path,

@@ -62,5 +62,7 @@ namespace howdy::native::test_cli_internal {
 	auto RunPreviewSessionWithRetainedFrame(TestPreviewSession &session,
 	                                        cv::Mat           &&prefetched_gray_frame)
 	    -> TestPreviewResult = delete;
+	auto MapPreviewFrameFailure(const howdy::native::PreviewFrameResult &result)
+	    -> TestPreviewResult;
 
 }  // namespace howdy::native::test_cli_internal

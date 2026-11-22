@@ -17,7 +17,6 @@
 #include <signal.h>
 #include <spawn.h>
 #include <stdlib.h>
-#include <time.h>
 #include <unistd.h>
 
 #include <sys/poll.h>

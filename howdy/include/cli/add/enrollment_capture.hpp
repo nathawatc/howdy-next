@@ -6,10 +6,10 @@
 #include "vision/frame_validation.hpp"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
 
 namespace howdy::native {
 
@@ -79,10 +79,6 @@ namespace howdy::native {
 			gray = RotateFrame(gray, video_config, frame_count + 1);
 
 			const auto brightness = MeasureBrightness(gray);
-			if (brightness.hist_total == 0.0 || brightness.darkness >= kBrightnessPercentScale) {
-				result.black_frames++;
-				continue;
-			}
 			switch (
 			    ClassifyBrightness(brightness.hist_total, brightness.darkness, dark_threshold)) {
 				case BrightnessDecision::kBlackFrame:

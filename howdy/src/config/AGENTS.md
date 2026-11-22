@@ -13,12 +13,15 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `config_utils/file_ops.cpp`: locks, secure file I/O, staging/install, expected-content checks,
   content validation
 - `config_utils/key_file.cpp`: INI scalar/line parsing and comment-preserving replacement
-- `runtime_paths.cpp`: installed path selection; `HOWDY_CONFIG` and `HOWDY_USER_MODELS_DIR` apply
-  only while the real and effective UID and GID match (not setuid or setgid)
+- `runtime_paths.cpp`: installed path selection; `HOWDY_CONFIG`, `HOWDY_MODELS_DIR`,
+  `HOWDY_USER_MODELS_DIR`, and `HOWDY_LOG_PATH` apply only while the real and effective UID and GID
+  match (not setuid or setgid)
 
 Private cross-TU contracts stay in each component's `internal.hpp`. ConfigReader and strict float
 parsing live in `config_reader/internal.hpp`; semantic validation lives in
-`config_validation/internal.hpp`; typed parsing helpers live in `runtime_config_loader/internal.hpp`.
+`config_validation/internal.hpp`; typed parsing helpers live in
+`runtime_config_loader/internal.hpp`; the after-open, before-read race hook used by the secure
+config open/read paths lives in `include/config/test_hooks.hpp`.
 Config tests include these private contracts directly; do not expose INIReader through public headers.
 
 ## Invariants

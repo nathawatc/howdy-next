@@ -70,7 +70,7 @@ namespace howdy::native::howdy_cli_internal {
 				return true;
 			}
 			const bool known_command =
-			    FindCommand(*parsed.command) != nullptr || *parsed.command == "__complete";
+			    FindCommand(*parsed.command) != nullptr || *parsed.command == kCompleteCommandName;
 			return known_command &&
 			       (option.parses_after_command || option.id == GlobalOptionId::kHelp);
 		}

@@ -27,8 +27,8 @@ namespace {
 
 			libevdev_enable_event_type(raw_device_.get(), EV_KEY);
 			libevdev_enable_event_code(raw_device_.get(), EV_KEY, KEY_ENTER, nullptr);
-			uinput_fd_ = howdy::pam::detail::NormalizeInternalFd(
-			    howdy::pam::detail::ScopedFd(open("/dev/uinput", O_RDWR | O_NONBLOCK | O_CLOEXEC)));
+			uinput_fd_ = howdy::pam::detail::NormalizeInternalFd(howdy::pam::detail::ScopedFd(
+			    open(howdy::pam::kUinputDevicePath, O_RDWR | O_NONBLOCK | O_CLOEXEC)));
 			if (!uinput_fd_.Valid()) {
 				throw std::runtime_error("Failed to open uinput device");
 			}

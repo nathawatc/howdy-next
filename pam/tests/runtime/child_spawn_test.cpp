@@ -14,9 +14,9 @@
 #include <fcntl.h>
 #include <spawn.h>
 #include <stdlib.h>
-#include <time.h>
 #include <unistd.h>
 
+#include <sys/types.h>
 #include <sys/wait.h>
 
 // HOWDY_HAVE_PIDFD_SPAWN comes from the build (pam_runtime) when the C library has pidfd_spawn;

@@ -1,7 +1,11 @@
 #pragma once
 
+#include "compare/engine.hpp"
 #include "config/runtime_config.hpp"
 #include "test_support.hpp"
+#include "vision/face_matching.hpp"
+
+#include <utility>
 
 namespace howdy::test::compare_engine {
 
@@ -27,6 +31,11 @@ namespace howdy::test::compare_engine {
 		    .device_fps           = 30,
 		    .rotate               = rotate,
 		};
+	}
+
+	inline auto MakeFrameOnlyCompareEngine(howdy::native::VideoConfig config)
+	    -> howdy::native::CompareEngine {
+		return {std::move(config), {}, howdy::native::PreparedFaceMatcher{}};
 	}
 
 }  // namespace howdy::test::compare_engine

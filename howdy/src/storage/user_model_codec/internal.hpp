@@ -1,5 +1,6 @@
 #pragma once
 
+#include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 
 #include <cstddef>
@@ -7,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <yyjson.h>
@@ -61,10 +63,26 @@ namespace howdy::native::user_model_codec {
 
 namespace howdy::native::user_model_codec_internal {
 
+	constexpr const char *kModelIdField      = "id";
+	constexpr const char *kModelTimeField    = "time";
+	constexpr const char *kModelLabelField   = "label";
+	constexpr const char *kModelDataField    = "data";
+	constexpr const char *kModelBackendField = "backend";
+	constexpr const char *kModelMetricField  = "metric";
+	constexpr const char *kModelNameField    = "model";
+
 	constexpr std::string_view kStoredEncodingLimitMessage =
 	    "Stored face encoding exceeds safety limit";
 	constexpr std::string_view kStoredEncodingInvalidMessage =
 	    "Stored face encoding contains an invalid value";
+
+	[[nodiscard]] inline auto UserModelListFailure(UserModelStatus status, std::string message)
+	    -> UserModelListResult {
+		return UserModelListResult{
+		    .status        = status,
+		    .error_message = std::move(message),
+		};
+	}
 
 	struct __attribute__((visibility("hidden"))) DecodedDocumentJson {
 		UserModelListResult result;

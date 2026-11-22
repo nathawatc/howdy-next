@@ -40,12 +40,4 @@ namespace howdy::native {
 		kModelChanged,
 	};
 
-	// True when a mutation that returned `status` may have changed the stored models: it
-	// succeeded, or its commit state or durability is uncertain.
-	[[nodiscard]] constexpr auto UserModelMutationMayHaveCommitted(UserModelStatus status) noexcept
-	    -> bool {
-		return status == UserModelStatus::kOk || status == UserModelStatus::kDurabilityUncertain ||
-		       status == UserModelStatus::kCommitStateUncertain;
-	}
-
 }  // namespace howdy::native

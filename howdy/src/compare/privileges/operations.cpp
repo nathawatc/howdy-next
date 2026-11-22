@@ -14,7 +14,6 @@
 #include <unistd.h>
 
 #include <sys/fsuid.h>
-#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 
@@ -31,13 +30,6 @@ namespace {
 	auto SystemGetpwnamR([[maybe_unused]] void *context, const char *name, passwd *pwd,
 	                     char *buffer, std::size_t buffer_size, passwd **result) -> int {
 		return getpwnam_r(name, pwd, buffer, buffer_size, result);
-	}
-
-	auto SystemPrctl([[maybe_unused]] void *context, int operation,
-	                 howdy::native::PrctlArgument argument2, howdy::native::PrctlArgument argument3,
-	                 howdy::native::PrctlArgument argument4, howdy::native::PrctlArgument argument5)
-	    -> int {
-		return prctl(operation, argument2, argument3, argument4, argument5);
 	}
 
 	auto SystemGetgroups([[maybe_unused]] void *context, int size, gid_t *groups) -> int {
@@ -97,7 +89,7 @@ namespace howdy::native::compare_privileges_internal {
 		return {
 		    .context       = nullptr,
 		    .getpwnam_r    = SystemGetpwnamR,
-		    .prctl         = SystemPrctl,
+		    .prctl         = howdy::native::SystemPrctl,
 		    .getgroups     = SystemGetgroups,
 		    .setgroups     = SystemSetgroups,
 		    .setresgid     = SystemSetresgid,

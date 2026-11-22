@@ -1,20 +1,20 @@
 #include "model_assets/model_file.hpp"
 
+#include "support/ascii.hpp"
 #include "support/eintr.hpp"
 #include "support/error_message.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "support/scoped_fd.hpp"
 
-#include <algorithm>
 #include <array>
-#include <cctype>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -48,16 +48,12 @@ namespace howdy::native {
 				return {.status = PlaceholderStatus::kReadError, .error_number = error_number};
 			}
 
-			std::string prefix(buffer.data(), static_cast<std::size_t>(bytes_read));
-			std::ranges::transform(prefix, prefix.begin(),
-			                       [](const unsigned char character) -> char {
-				                       return static_cast<char>(std::tolower(character));
-			                       });
-			const auto content_start = prefix.find_first_not_of(" \t\r\n");
-			const auto content       = content_start == std::string::npos
-			                               ? std::string_view{}
-			                               : std::string_view(prefix).substr(content_start);
-			if (content.starts_with("version https://git-lfs.github.com/spec/v1") ||
+			const std::string_view prefix(buffer.data(), static_cast<std::size_t>(bytes_read));
+			const auto             content_start = prefix.find_first_not_of(" \t\r\n");
+			const auto             content       = content_start == std::string_view::npos
+			                                           ? std::string_view{}
+			                                           : prefix.substr(content_start);
+			if (AsciiStartsWithIgnoreCase(content, "version https://git-lfs.github.com/spec/v1") ||
 			    content.starts_with('<')) {
 				return {.status = PlaceholderStatus::kPlaceholder};
 			}
@@ -66,10 +62,10 @@ namespace howdy::native {
 
 	}  // namespace
 
-	auto CheckOpencvModelReadinessWithLabel(
-	    const std::filesystem::path &path, const std::string_view label,
-	    const std::optional<uid_t>                   &owner_uid,
-	    const file_security_internal::ValidationRoot &validation_root) -> OpenCvModelReadiness {
+	auto CheckOpencvModelReadiness(const std::filesystem::path &path, const std::string_view label,
+	                               const std::optional<uid_t>                   &owner_uid,
+	                               const file_security_internal::ValidationRoot &validation_root)
+	    -> OpenCvModelReadiness {
 		const auto parent = path.parent_path();
 		if (parent.empty()) {
 			return {

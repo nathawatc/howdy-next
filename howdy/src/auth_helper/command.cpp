@@ -86,55 +86,60 @@ namespace howdy::native::auth_helper::command {
 		return succeeded;
 	}
 
-	auto OpenForUser(const std::string &user) -> int {
-		namespace message = howdy::native::runtime_descriptor_message;
-		if (geteuid() != 0) {
-			return FailAndLog("howdy-auth-helper must be installed setuid root");
-		}
-		if (!howdy::native::IsValidModelUserName(user)) {
-			return FailAndLog(std::string(howdy::native::kInvalidUserNameMessage));
-		}
-		const auto entry = howdy::native::LookupPasswdByUid(getuid());
-		if (!entry.has_value()) {
-			return FailAndLog("Failed to resolve calling user");
-		}
-		if (entry->name.empty() || user != entry->name) {
-			return FailAndLog("howdy-auth-helper can only open runtime files for the calling user");
-		}
-		if (!ValidSeqpacketSocket(message::kHelperSocketFd)) {
-			return FailAndLog(
-			    "howdy-auth-helper requires an inherited descriptor socket on descriptor 3");
+	namespace {
+
+		auto OpenForUser(const std::string &user) -> int {
+			namespace message = howdy::native::runtime_descriptor_message;
+			if (geteuid() != 0) {
+				return FailAndLog("howdy-auth-helper must be installed setuid root");
+			}
+			if (!howdy::native::IsValidModelUserName(user)) {
+				return FailAndLog(std::string(howdy::native::kInvalidUserNameMessage));
+			}
+			const auto entry = howdy::native::LookupPasswdByUid(getuid());
+			if (!entry.has_value()) {
+				return FailAndLog("Failed to resolve calling user");
+			}
+			if (entry->name.empty() || user != entry->name) {
+				return FailAndLog(
+				    "howdy-auth-helper can only open runtime files for the calling user");
+			}
+			if (!ValidSeqpacketSocket(message::kHelperSocketFd)) {
+				return FailAndLog(
+				    "howdy-auth-helper requires an inherited descriptor socket on descriptor 3");
+			}
+
+			const bool sent = RunWithQuietDiagnostics([&] -> bool {
+				// The setuid helper ignores HOWDY_CONFIG and HOWDY_USER_MODELS_DIR for an
+				// unprivileged caller (runtime_paths.cpp), so these are the installed locations.
+				const auto opened =
+				    OpenRuntimeDescriptors(user, {
+				                                     .config          = ResolveConfigPath(),
+				                                     .user_models_dir = ResolveUserModelsDir(),
+				                                     .owner_uid       = 0,
+				                                 });
+				if (!opened.ok) {
+					std::cerr << opened.error_message << "\n";
+					return false;
+				}
+				if (!opened.model_message.empty()) {
+					std::cerr << opened.model_message << "\n";
+				}
+				if (!message::SendMessage(message::kHelperSocketFd,
+				                          {
+				                              .model_state = opened.model_state,
+				                              .config_fd   = opened.config.Get(),
+				                              .model_fd    = opened.model.Get(),
+				                          })) {
+					std::cerr << "Failed to send the runtime descriptors\n";
+					return false;
+				}
+				return true;
+			});
+			return sent ? 0 : 1;
 		}
 
-		const bool sent = RunWithQuietDiagnostics([&] -> bool {
-			// The setuid helper ignores HOWDY_CONFIG and HOWDY_USER_MODELS_DIR for an
-			// unprivileged caller (runtime_paths.cpp), so these are the installed locations.
-			const auto opened =
-			    OpenRuntimeDescriptors(user, {
-			                                     .config          = ResolveConfigPath(),
-			                                     .user_models_dir = ResolveUserModelsDir(),
-			                                     .owner_uid       = 0,
-			                                 });
-			if (!opened.ok) {
-				std::cerr << opened.error_message << "\n";
-				return false;
-			}
-			if (!opened.model_message.empty()) {
-				std::cerr << opened.model_message << "\n";
-			}
-			if (!message::SendMessage(message::kHelperSocketFd,
-			                          {
-			                              .model_state = opened.model_state,
-			                              .config_fd   = opened.config.Get(),
-			                              .model_fd    = opened.model.Get(),
-			                          })) {
-				std::cerr << "Failed to send the runtime descriptors\n";
-				return false;
-			}
-			return true;
-		});
-		return sent ? 0 : 1;
-	}
+	}  // namespace
 
 	auto Run(int argc, char **argv) -> int {
 		const auto arguments =
@@ -147,7 +152,9 @@ namespace howdy::native::auth_helper::command {
 				return 0;
 			}
 		}
-		if (arguments.size() == 3 && std::string_view(arguments.subspan(1, 1).front()) == "open") {
+		if (arguments.size() == 3 &&
+		    std::string_view(arguments.subspan(1, 1).front()) ==
+		        howdy::native::runtime_descriptor_message::kOpenSubcommand) {
 			return OpenForUser(arguments.subspan(2, 1).front());
 		}
 		Usage(program);

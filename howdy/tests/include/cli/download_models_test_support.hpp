@@ -73,7 +73,6 @@ namespace howdy::test::download_models {
 	auto RunFirstDownloadAttempt(const DownloadPaths &paths, int *exit_code) -> bool;
 
 	auto RunDownloadModelsEntrypointTests() -> bool;
-	auto RunAtomicFilesTests() -> bool;
 	auto RunDownloadModelsIntegrityTests() -> bool;
 	auto RunDownloadModelsManifestTests() -> bool;
 	auto RunDownloadModelsProxyTests() -> bool;

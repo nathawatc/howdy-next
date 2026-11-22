@@ -3,6 +3,7 @@
 #include "support/file_security/validation_root.hpp"
 #include "support/invoking_user.hpp"
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -11,6 +12,8 @@
 #include <sys/types.h>
 
 namespace howdy::native::config_internal {
+
+	inline constexpr std::array<const char *, 3> kFallbackEditors = {"micro", "nano", "vi"};
 
 	struct TempConfigCopy {
 		std::filesystem::path path;

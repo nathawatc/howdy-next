@@ -70,13 +70,13 @@ namespace howdy::test {
 		                                        "[video]\n"
 		                                        "dark_threshold = 55\n";
 		std::string       install_error;
-		const auto        before_oversized_replace = ReadConfigTestFile(replace_path);
+		const auto        before_oversized_replace = ReadFile(replace_path);
 		ok &= Expect(!howdy::native::ReplaceConfigContentAtomically(
 		                 replace_path, context.config_over_limit, &install_error, false, false,
 		                 nullptr, howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace_config_content_atomically rejects oversized content");
 		ok &= Expect(install_error == "Updated config exceeds maximum size" &&
-		                 ReadConfigTestFile(replace_path) == before_oversized_replace,
+		                 ReadFile(replace_path) == before_oversized_replace,
 		             "oversized replacement leaves existing config unchanged");
 		const auto missing_path = context.temp_root / "missing-replace-config.ini";
 		ok &= Expect(!howdy::native::ReplaceConfigContentAtomically(
@@ -88,7 +88,7 @@ namespace howdy::test {
 		                 replace_path, replacement_content, &install_error, true, true, nullptr,
 		                 howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace_config_content_atomically installs valid content with lock");
-		ok &= Expect(ReadConfigTestFile(replace_path) == replacement_content,
+		ok &= Expect(ReadFile(replace_path) == replacement_content,
 		             "replace_config_content_atomically writes expected content");
 		struct stat replace_stat{};
 		ok &= Expect(stat(replace_path.c_str(), &replace_stat) == 0, "stat replaced config");
@@ -109,7 +109,7 @@ namespace howdy::test {
 			           "Config was installed, but its directory could not be synced; verify state "
 			           "before retrying",
 			       "replace config parent-sync failure reports committed state");
-		ok &= Expect(ReadConfigTestFile(replace_path) == uncertain_replacement,
+		ok &= Expect(ReadFile(replace_path) == uncertain_replacement,
 		             "replace config parent-sync failure leaves committed content visible");
 		ok &= Expect(CountStagedConfigs(context.temp_root) == 0,
 		             "replace config parent-sync failure leaves no staged file");
@@ -122,20 +122,20 @@ namespace howdy::test {
 		                 nullptr, {context.temp_root}),
 		             "replace config reports null parent-sync callback as nondurable");
 		ok &= Expect(install_error.contains("could not be synced") &&
-		                 ReadConfigTestFile(replace_path) == uncertain_replacement,
+		                 ReadFile(replace_path) == uncertain_replacement,
 		             "null parent-sync callback leaves committed content visible");
 		ok &= Expect(howdy::native::ReplaceConfigContentAtomically(
 		                 replace_path, replacement_content, &install_error, false, false, nullptr,
 		                 howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace config recovers after null parent-sync callback");
 
-		const auto before_invalid_replace = ReadConfigTestFile(replace_path);
+		const auto before_invalid_replace = ReadFile(replace_path);
 		const auto staged_before          = CountStagedConfigs(context.temp_root);
 		ok &= Expect(!howdy::native::ReplaceConfigContentAtomically(
 		                 replace_path, "[video]\ntimeout = 0\n", &install_error, true, true,
 		                 nullptr, howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace_config_content_atomically rejects invalid content with lock");
-		ok &= Expect(ReadConfigTestFile(replace_path) == before_invalid_replace,
+		ok &= Expect(ReadFile(replace_path) == before_invalid_replace,
 		             "invalid replacement leaves old config unchanged");
 		ok &= Expect(CountStagedConfigs(context.temp_root) == staged_before,
 		             "invalid replacement leaves no staged config");
@@ -149,7 +149,7 @@ namespace howdy::test {
 		                 replace_path, recovery_content, &install_error, true, false, nullptr,
 		                 howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace_config_content_atomically releases lock and can bypass validation");
-		ok &= Expect(ReadConfigTestFile(replace_path) == recovery_content,
+		ok &= Expect(ReadFile(replace_path) == recovery_content,
 		             "runtime-validation bypass installs content");
 
 		const auto &stale_expected_content = recovery_content;
@@ -161,7 +161,7 @@ namespace howdy::test {
 		                 &stale_expected_content, howdy::native::SyncParentDirectory,
 		                 {context.temp_root}),
 		             "replace_config_content_atomically rejects stale expected content");
-		ok &= Expect(ReadConfigTestFile(replace_path) == valid_content,
+		ok &= Expect(ReadFile(replace_path) == valid_content,
 		             "stale expected content leaves current config unchanged");
 
 		ok &= Expect(WriteConfigTestFile(replace_path, context.config_over_limit),
@@ -173,7 +173,7 @@ namespace howdy::test {
 		             "stale comparison rejects oversized current config");
 		ok &= Expect(install_error == "Failed to read config file",
 		             "oversized stale comparison reports config read failure");
-		ok &= Expect(ReadConfigTestFile(replace_path) == context.config_over_limit,
+		ok &= Expect(ReadFile(replace_path) == context.config_over_limit,
 		             "oversized stale comparison performs no install");
 		ok &= Expect(WriteConfigTestFile(replace_path, valid_content),
 		             "restore replace config after oversized stale comparison");

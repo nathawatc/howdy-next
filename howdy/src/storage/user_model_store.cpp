@@ -19,8 +19,8 @@
 #include "user_model_store/internal.hpp"
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <filesystem>
 #include <optional>
 #include <string>

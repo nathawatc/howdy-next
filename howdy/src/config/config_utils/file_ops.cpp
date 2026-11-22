@@ -2,7 +2,6 @@
 #include "../config_validation/internal.hpp"
 #include "config/config_limits.hpp"
 #include "config/config_utils.hpp"
-#include "config/test_hooks.hpp"
 #include "internal.hpp"
 #include "support/atomic_files.hpp"
 #include "support/eintr.hpp"
@@ -28,13 +27,6 @@ namespace howdy::native::config_utils_internal {
 
 		constexpr auto kConfigTempPrefix = ".howdy-config-";
 
-		auto FailWith(std::string *error_message, const std::string &message) -> bool {
-			if (error_message != nullptr) {
-				*error_message = message;
-			}
-			return false;
-		}
-
 	}  // namespace
 
 	auto AcquireConfigLock(ScopedFileLock &guard, const std::filesystem::path &config_path)
@@ -55,20 +47,15 @@ namespace howdy::native::config_utils_internal {
 	                            const std::string &expected, std::string *error_message,
 	                            const file_security_internal::ValidationRoot &validation_root)
 	    -> bool {
-		ScopedFd const input_fd(
-		    open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
-		if (input_fd.Get() < 0) {
+		const auto opened =
+		    OpenSecureConfigForRead(config_path, DefaultSecureOwnerUid(), validation_root);
+		if (!opened.fd.Valid()) {
 			return FailWith(error_message, kConfigFileOpenFailureMessage);
 		}
-		if (config_test_hooks::Current()) {
-			config_test_hooks::Current()();
+		if (!opened.security.ok) {
+			return FailWith(error_message, opened.security.error_message);
 		}
-		const auto security = CheckSecureConfigFd(input_fd.Get(), config_path,
-		                                          DefaultSecureOwnerUid(), validation_root);
-		if (!security.ok) {
-			return FailWith(error_message, security.error_message);
-		}
-		const auto current_content = ReadConfigFromFd(input_fd.Get());
+		const auto current_content = ReadConfigFromFd(opened.fd.Get());
 		if (!current_content.has_value()) {
 			return FailWith(error_message, kConfigFileReadFailureMessage);
 		}
@@ -100,25 +87,17 @@ namespace howdy::native {
 
 	auto ValidateConfigContent(const std::string &content, std::string *error_message) -> bool {
 		if (content.size() > kMaxConfigFileSize) {
-			if (error_message != nullptr) {
-				*error_message = config_utils_internal::kUpdatedConfigTooLargeMessage;
-			}
-			return false;
+			return config_utils_internal::FailWith(
+			    error_message, config_utils_internal::kUpdatedConfigTooLargeMessage);
 		}
 
-		ConfigReader const config("<memory>", content);
+		ConfigReader const config(content);
 		if (!config.Ok()) {
-			if (error_message != nullptr) {
-				*error_message = kUpdatedConfigInvalidMessage;
-			}
-			return false;
+			return config_utils_internal::FailWith(error_message, kUpdatedConfigInvalidMessage);
 		}
 
 		if (const auto validation = ValidateRuntimeConfig(config)) {
-			if (error_message != nullptr) {
-				*error_message = *validation;
-			}
-			return false;
+			return config_utils_internal::FailWith(error_message, *validation);
 		}
 
 		return true;

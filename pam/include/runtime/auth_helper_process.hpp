@@ -1,28 +1,16 @@
 #pragma once
 
+#include "runtime/child_process.hpp"
 #include "runtime/runtime_session.hpp"
 
 #include <chrono>
-#include <span>
 #include <string_view>
 
 #include <spawn.h>
 
-#include <sys/types.h>
-
 namespace howdy::pam::auth_helper_process {
 
-	struct SpawnRequest {
-		void  *context   = nullptr;
-		pid_t *child_pid = nullptr;
-		// Set to the child's pidfd when the spawn took one with the child (pidfd_spawn); left at
-		// -1 otherwise, and the caller takes it after the spawn.
-		int                              *child_pidfd = nullptr;
-		const char                       *path        = nullptr;
-		const posix_spawn_file_actions_t *actions     = nullptr;
-		std::span<char *const>            argv;
-		std::span<char *const>            envp;
-	};
+	using SpawnRequest = runtime::SpawnRequest;
 
 	using LogObserver = void (*)(void *context, std::string_view message);
 

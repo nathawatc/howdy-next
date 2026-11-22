@@ -1,6 +1,7 @@
 #include "cli/remove.hpp"
 
 #include "app/command_invocation.hpp"
+#include "cli/confirmation_prompt.hpp"
 #include "cli/remove/internal.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
@@ -90,11 +91,7 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 
 	if (!invocation.assume_yes) {
 		std::cout << "Model \"" << found_label << "\" will be removed for " << user << ".\n";
-		std::cout << "Continue? [y/N]: ";
-		std::string answer;
-		std::getline(std::cin, answer);
-		if (answer != "y" && answer != "Y") {
-			std::cout << "\nNo confirmation received; aborting.\n";
+		if (!howdy::native::cli_internal::ConfirmInteractiveAction()) {
 			return kRemoveExitAbort;
 		}
 		std::cout << "\n";

@@ -4,23 +4,19 @@
 #include "compare/capture_session.hpp"
 #include "compare/engine.hpp"
 #include "compare/entrypoint/dependencies.hpp"
-#include "compare/entrypoint/internal.hpp"
 #include "compare/logic.hpp"
 #include "compare/privileges.hpp"
 #include "compare/processing.hpp"
 #include "compare/sandbox.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
+#include "entrypoint/internal.hpp"
 #include "protocol/compare_descriptors.hpp"
 #include "protocol/compare_exit.hpp"
-#include "protocol/compare_verdict.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
-#include "support/bit_flags.hpp"
 #include "support/cpu_topology.hpp"
-#include "support/eintr.hpp"
-#include "support/error_message.hpp"
 #include "support/scoped_fd.hpp"
 #include "vision/face_inference.hpp"
 #include "vision/face_model.hpp"
@@ -30,103 +26,23 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <exception>
 #include <functional>
 #include <iostream>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <variant>
-
-#include <fcntl.h>
-#include <unistd.h>
 
 #include <opencv2/core/exception.hpp>
 #include <opencv2/core/utility.hpp>
 
-#include <sys/socket.h>
-#include <sys/stat.h>
 #include <sys/types.h>
 
 namespace {
 
+	namespace entrypoint_private = howdy::native::compare_entrypoint_private;
 	using howdy::native::CompareExit;
-
-	auto SandboxResourceName(howdy::native::CompareSandboxResource resource) -> const char * {
-		switch (resource) {
-			case howdy::native::CompareSandboxResource::kCpu:
-				return "CPU";
-			case howdy::native::CompareSandboxResource::kOpenFiles:
-				return "file-descriptor";
-			case howdy::native::CompareSandboxResource::kCore:
-				return "core-dump";
-			case howdy::native::CompareSandboxResource::kAddressSpace:
-				return "address-space";
-			case howdy::native::CompareSandboxResource::kNone:
-				return "unknown";
-		}
-		return "unknown";
-	}
-
-	void EmitStderrWithErrno(std::string_view message, int error_number) {
-		std::cerr << message;
-		if (error_number != 0) {
-			std::cerr << ": " << howdy::native::SystemErrorMessage(error_number);
-		}
-		std::cerr << "\n";
-	}
-
-	void ReportSandboxFailure(const howdy::native::CompareSandboxResult &result) {
-		switch (result.status) {
-			case howdy::native::CompareSandboxStatus::kOk:
-				return;
-			case howdy::native::CompareSandboxStatus::kNoNewPrivilegesFailure:
-				EmitStderrWithErrno("Failed to enable no_new_privs sandboxing",
-				                    result.error_number);
-				return;
-			case howdy::native::CompareSandboxStatus::kLimitInspectionFailure:
-				EmitStderrWithErrno(std::string("Failed to inspect ") +
-				                        SandboxResourceName(result.resource) + " sandbox limit",
-				                    result.error_number);
-				return;
-			case howdy::native::CompareSandboxStatus::kLimitBelowMinimum:
-				std::cerr << "Inherited " << SandboxResourceName(result.resource)
-				          << " limit is below Howdy's minimum sandbox policy\n";
-				return;
-			case howdy::native::CompareSandboxStatus::kLimitApplicationFailure:
-				EmitStderrWithErrno(std::string("Failed to apply ") +
-				                        SandboxResourceName(result.resource) + " sandbox limit",
-				                    result.error_number);
-				return;
-			case howdy::native::CompareSandboxStatus::kInvalidDependencies:
-				EmitStderrWithErrno("Invalid compare sandbox dependencies", result.error_number);
-				return;
-		}
-	}
-
-	void ReportSeccompFailure(const howdy::native::CompareSeccompResult &result) {
-		switch (result.status) {
-			case howdy::native::CompareSeccompStatus::kOk:
-				return;
-			case howdy::native::CompareSeccompStatus::kUnsupported:
-				EmitStderrWithErrno("Seccomp filter sandboxing is not supported by the kernel",
-				                    result.error_number);
-				return;
-			case howdy::native::CompareSeccompStatus::kFilterConstructionFailure:
-				EmitStderrWithErrno("Failed to construct compare seccomp filter",
-				                    result.error_number);
-				return;
-			case howdy::native::CompareSeccompStatus::kInstallationFailure:
-				EmitStderrWithErrno("Failed to install compare seccomp filter",
-				                    result.error_number);
-				return;
-			case howdy::native::CompareSeccompStatus::kInvalidDependencies:
-				EmitStderrWithErrno("Invalid compare seccomp dependencies", result.error_number);
-				return;
-		}
-	}
 
 	struct CompareProductionContext {
 		std::reference_wrapper<howdy::native::CompareCaptureSession> capture_session;
@@ -204,7 +120,7 @@ namespace {
 		if (!context.face_model.has_value()) {
 			return false;
 		}
-		return howdy::native::compare_entrypoint_internal::WarmModel(*context.face_model);
+		return context.face_model->WarmUpRecognizer();
 	}
 
 	auto HandleCaptureResult(CompareProductionContext                       &context,
@@ -329,7 +245,7 @@ namespace {
 
 		const auto seccomp_result = ApplySeccomp(context);
 		if (seccomp_result.status != howdy::native::CompareSeccompStatus::kOk) {
-			ReportSeccompFailure(seccomp_result);
+			entrypoint_private::ReportSeccompFailure(seccomp_result);
 			// Only a kernel without seccomp is tolerated; a filter that failed to build or
 			// install must not leave the scan running unsandboxed.
 			if (seccomp_result.status != howdy::native::CompareSeccompStatus::kUnsupported) {
@@ -369,138 +285,9 @@ namespace {
 		}
 	}
 
-	// The verdict socket as found at startup, so the report can check that the descriptor still
-	// names it and never writes into a file that took the number meanwhile.
-	struct VerdictSocket {
-		bool  announced = false;
-		dev_t device    = 0;
-		ino_t inode     = 0;
-	};
-
-	// The verdict socket PAM handed compare (protocol/compare_verdict.hpp), if any: the
-	// environment announces it and the descriptor is an AF_UNIX SOCK_SEQPACKET socket open for
-	// reading and writing. Checked before compare opens anything, so the descriptor cannot be one
-	// of compare's own files.
-	auto FindVerdictSocket() noexcept -> VerdictSocket {
-		using howdy::native::compare_verdict::kFd;
-		const char *const descriptor =
-		    std::getenv(howdy::native::compare_verdict::kEnvironmentName);
-		if (descriptor == nullptr ||
-		    std::string_view(descriptor) != howdy::native::compare_verdict::kEnvironmentValue) {
-			return {};
-		}
-		struct stat status{};
-		const int   flags = fcntl(kFd, F_GETFL);
-		if (flags < 0 ||
-		    howdy::native::MaskedBits(flags, O_ACCMODE) !=
-		        howdy::native::BitRepresentation(O_RDWR) ||
-		    fstat(kFd, &status) != 0 || !S_ISSOCK(status.st_mode)) {
-			return {};
-		}
-		int       domain = -1;
-		int       type   = -1;
-		socklen_t length = sizeof(domain);
-		if (getsockopt(kFd, SOL_SOCKET, SO_DOMAIN, &domain, &length) != 0 || domain != AF_UNIX) {
-			return {};
-		}
-		length = sizeof(type);
-		if (getsockopt(kFd, SOL_SOCKET, SO_TYPE, &type, &length) != 0 || type != SOCK_SEQPACKET) {
-			return {};
-		}
-		return {.announced = true, .device = status.st_dev, .inode = status.st_ino};
-	}
-
-	// Also reports the exit code on the verdict socket, so PAM still learns it if the application
-	// reaps compare first. Best effort: a failed write leaves PAM with only the exit status, which
-	// fails closed when it is gone.
-	auto ReportVerdict(const VerdictSocket &socket, int exit_code) noexcept -> int {
-		struct stat status{};
-		if (socket.announced && fstat(howdy::native::compare_verdict::kFd, &status) == 0 &&
-		    S_ISSOCK(status.st_mode) && status.st_dev == socket.device &&
-		    status.st_ino == socket.inode) {
-			const auto verdict = static_cast<unsigned char>(exit_code);
-			(void)howdy::native::RetryOnEintr([&] -> ssize_t {
-				return write(howdy::native::compare_verdict::kFd, &verdict, sizeof(verdict));
-			});
-		}
-		return exit_code;
-	}
-
-	// The config and model descriptors PAM passed (protocol/compare_descriptors.hpp). They are
-	// the only source compare reads them from; anything missing or unusable fails closed.
-	struct RuntimeDescriptors {
-		enum class Mode : std::uint8_t {
-			kReady,
-			kNotAnnounced,
-			kNotOpen,
-			kNoVerdict,
-		};
-
-		Mode                    mode = Mode::kNotAnnounced;
-		howdy::native::ScopedFd config;
-		howdy::native::ScopedFd model;
-	};
-
-	// Takes the descriptors the environment announces, before compare opens anything, so neither
-	// number can belong to one of compare's own files. Each descriptor announced with its exact
-	// value is compare's from here on and is closed on every path; type, owner, mode and link
-	// checks are left to the loaders.
-	auto TakeRuntimeDescriptors(bool verdict_announced) noexcept -> RuntimeDescriptors {
-		namespace descriptors = howdy::native::compare_descriptors;
-		const auto announced  = [](const char *name, std::string_view expected) -> bool {
-			const char *const value = std::getenv(name);
-			return value != nullptr && std::string_view(value) == expected;
-		};
-		const auto take = [](int fd, howdy::native::ScopedFd *owner) -> bool {
-			if (fcntl(fd, F_GETFD) < 0) {
-				return false;
-			}
-			owner->Reset(fd);
-			return true;
-		};
-		RuntimeDescriptors result;
-		const bool         config_announced =
-		    announced(descriptors::kConfigEnvironmentName, descriptors::kConfigEnvironmentValue);
-		const bool model_announced =
-		    announced(descriptors::kModelEnvironmentName, descriptors::kModelEnvironmentValue);
-		const bool config_open = config_announced && take(descriptors::kConfigFd, &result.config);
-		const bool model_open  = model_announced && take(descriptors::kModelFd, &result.model);
-		if (!config_announced || !model_announced) {
-			result.mode = RuntimeDescriptors::Mode::kNotAnnounced;
-		} else if (!config_open || !model_open) {
-			result.mode = RuntimeDescriptors::Mode::kNotOpen;
-		} else if (!verdict_announced) {
-			result.mode = RuntimeDescriptors::Mode::kNoVerdict;
-		} else {
-			result.mode = RuntimeDescriptors::Mode::kReady;
-		}
-		return result;
-	}
-
-	// Why the descriptors cannot be used, or nullopt when compare may go on.
-	auto RuntimeDescriptorsError(const RuntimeDescriptors &descriptors)
-	    -> std::optional<std::string> {
-		namespace protocol = howdy::native::compare_descriptors;
-		using Mode         = RuntimeDescriptors::Mode;
-		switch (descriptors.mode) {
-			case Mode::kReady:
-				return std::nullopt;
-			case Mode::kNotAnnounced:
-				return std::string(
-				           "Compare needs its config and model descriptors, announced as ") +
-				       protocol::kConfigEnvironmentEntry + " and " +
-				       protocol::kModelEnvironmentEntry;
-			case Mode::kNotOpen:
-				return std::string("An announced compare descriptor is not open");
-			case Mode::kNoVerdict:
-				return std::string("Compare descriptors require the verdict socket");
-		}
-		return std::string("Invalid compare descriptors");
-	}
-
 	// Loads the runtime config from its descriptor and closes it.
-	auto LoadCompareConfig(RuntimeDescriptors &descriptors, const uid_t owner_uid)
-	    -> howdy::native::RuntimeConfigLoadResult {
+	auto LoadCompareConfig(entrypoint_private::RuntimeDescriptors &descriptors,
+	                       const uid_t owner_uid) -> howdy::native::RuntimeConfigLoadResult {
 		auto result = howdy::native::LoadRuntimeConfigFromFd(
 		    descriptors.config.Get(),
 		    std::string("config descriptor ") +
@@ -511,8 +298,8 @@ namespace {
 	}
 
 	// Loads the user's models from their descriptor and closes it.
-	auto LoadCompareModels(RuntimeDescriptors &descriptors, const uid_t owner_uid)
-	    -> howdy::native::UserModelLoadResult {
+	auto LoadCompareModels(entrypoint_private::RuntimeDescriptors &descriptors,
+	                       const uid_t owner_uid) -> howdy::native::UserModelLoadResult {
 		auto result = howdy::native::LoadUserModelsFromFd(
 		    descriptors.model.Get(),
 		    std::string("user model descriptor ") +
@@ -524,7 +311,7 @@ namespace {
 
 	auto RunCompareEntrypointBody(int argc, char **argv, const uid_t trusted_owner_uid,
 	                              const howdy::native::CompareEntrypointDependencies *dependencies,
-	                              RuntimeDescriptors &descriptors) -> int {
+	                              entrypoint_private::RuntimeDescriptors &descriptors) -> int {
 		try {
 			const auto start_time   = std::chrono::steady_clock::now();
 			const auto parse_result = howdy::native::ParseCompareArgs(argc, argv);
@@ -538,7 +325,7 @@ namespace {
 				}
 				return static_cast<int>(parse_result.exit_code);
 			}
-			if (const auto error = RuntimeDescriptorsError(descriptors)) {
+			if (const auto error = entrypoint_private::RuntimeDescriptorsError(descriptors)) {
 				std::cerr << *error << "\n";
 				return static_cast<int>(CompareExit::kAbort);
 			}
@@ -552,7 +339,7 @@ namespace {
 
 			const auto sandbox_result = howdy::native::ApplyCompareSandbox(config.video.timeout);
 			if (sandbox_result.status != howdy::native::CompareSandboxStatus::kOk) {
-				ReportSandboxFailure(sandbox_result);
+				entrypoint_private::ReportSandboxFailure(sandbox_result);
 				return static_cast<int>(CompareExit::kAbort);
 			}
 
@@ -574,7 +361,7 @@ namespace {
 			}
 
 			if (!howdy::native::ConfigureFaceModelEnvironment()) {
-				std::cerr << "OpenCV New DNN graph engine could not be configured\n";
+				std::cerr << howdy::native::kOpenCvDnnEngineConfigErrorMessage << "\n";
 				return static_cast<int>(CompareExit::kAbort);
 			}
 
@@ -647,9 +434,10 @@ namespace {
 	auto RunCompareEntrypointImpl(int argc, char **argv, const uid_t trusted_owner_uid,
 	                              const howdy::native::CompareEntrypointDependencies *dependencies)
 	    -> int {
-		const VerdictSocket socket      = FindVerdictSocket();
-		RuntimeDescriptors  descriptors = TakeRuntimeDescriptors(socket.announced);
-		const int           exit_code =
+		const entrypoint_private::VerdictSocket socket = entrypoint_private::FindVerdictSocket();
+		entrypoint_private::RuntimeDescriptors  descriptors =
+		    entrypoint_private::TakeRuntimeDescriptors(socket.announced);
+		const int exit_code =
 		    RunCompareEntrypointBody(argc, argv, trusted_owner_uid, dependencies, descriptors);
 		// A body that returned early leaves them open; close them before the verdict.
 		descriptors.config.Reset();
@@ -659,7 +447,7 @@ namespace {
 		std::cout.flush();
 		std::cerr.flush();
 		(void)std::fflush(nullptr);
-		return ReportVerdict(socket, exit_code);
+		return entrypoint_private::ReportVerdict(socket, exit_code);
 	}
 
 }  // namespace

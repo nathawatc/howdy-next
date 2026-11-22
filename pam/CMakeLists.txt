@@ -22,7 +22,9 @@ add_library(
  src/runtime/auth_helper_process/io.cpp
  src/runtime/auth_helper_process/spawn.cpp
  src/runtime/child_process.cpp
+ src/runtime/child_process/internal.hpp
  src/runtime/compare_process.cpp
+ src/runtime/compare_process/spawn.cpp
  src/runtime/environment.cpp
  src/runtime/lid_probe.cpp
  src/runtime/runtime_session.cpp
@@ -143,7 +145,6 @@ howdy_install(
 )
 
 if(BUILD_TESTING)
-  include(CheckCXXSourceCompiles)
   cmake_push_check_state(RESET)
   set(CMAKE_REQUIRED_LIBRARIES PAM::PAM)
   check_cxx_source_compiles(

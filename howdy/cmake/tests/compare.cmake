@@ -62,16 +62,6 @@ target_link_libraries(
 )
 
 howdy_add_native_test(
- howdy_frame_processing_test
- native-frame-processing
- tests/vision/frame_processing_test.cpp
-)
-target_link_libraries(
- howdy_frame_processing_test
- PRIVATE howdy_frame_processing howdy_compare_logic howdy_opencv
-)
-
-howdy_add_native_test(
  howdy_compare_engine_test
  native-compare-engine
  tests/compare/compare_engine_test.cpp
@@ -122,5 +112,6 @@ howdy_add_native_test(
  tests/compare/compare_sandbox_test.cpp
  tests/compare/compare_sandbox_limit_test.cpp
  tests/compare/compare_sandbox_seccomp_test.cpp
+ tests/compare/compare_sandbox_seccomp_exec_test.cpp
 )
 target_link_libraries(howdy_compare_sandbox_test PRIVATE howdy_compare_sandbox)

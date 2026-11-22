@@ -22,6 +22,7 @@ howdy_add_native_test(
  howdy_face_model_test
  native-face-model
  tests/vision/face_model_test.cpp
+ tests/vision/face_model_environment_test.cpp
 )
 target_link_libraries(
  howdy_face_model_test
@@ -38,13 +39,13 @@ howdy_add_native_test(
 target_link_libraries(howdy_video_capture_test PRIVATE howdy_vision_core)
 
 howdy_add_native_test(
- howdy_enrollment_capture_test
- native-enrollment-capture
- tests/cli/enrollment_capture_test.cpp
+ howdy_frame_processing_test
+ native-frame-processing
+ tests/vision/frame_processing_test.cpp
 )
 target_link_libraries(
- howdy_enrollment_capture_test
- PRIVATE howdy_frame_processing howdy_compare_logic howdy_opencv
+ howdy_frame_processing_test
+ PRIVATE howdy_frame_processing howdy_opencv
 )
 
 howdy_add_native_test(

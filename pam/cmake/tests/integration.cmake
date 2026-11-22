@@ -56,40 +56,31 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
     pam_installed_path_validator
     pam_installed_state_verifier
   )
-    add_test(
-   NAME installed-pam-setuid-e2e
-   COMMAND
-    bash
-    "${pam_integration_dir}/installed_pam_setuid_e2e.sh"
-    "$<TARGET_FILE:pam_installed_path_validator>"
-    "$<TARGET_FILE:pam_installed_state_verifier>"
-    "${PROJECT_BINARY_DIR}"
-    "${CMAKE_INSTALL_PREFIX}"
-    "${HOWDY_PAM_DIR}"
-    "${HOWDY_HELPER_DIR}"
-    "${HOWDY_CONFIG_DIR}"
-    "${HOWDY_USER_MODELS_DIR}"
-    "$<TARGET_FILE:pam_installed_e2e_driver>"
-    "$<TARGET_FILE:pam_installed_runtime_e2e_driver>"
-    "$<TARGET_FILE:pam_installed_compare_e2e_probe>"
-  )
-    add_test(
-   NAME installed-pam-setuid-install-environment
-   COMMAND
-    pam_installed_install_environment_test
-    "${pam_integration_dir}/installed_pam_setuid_e2e.sh"
-    "$<TARGET_FILE:pam_installed_path_validator>"
-    "$<TARGET_FILE:pam_installed_state_verifier>"
-    "${PROJECT_BINARY_DIR}"
-    "${CMAKE_INSTALL_PREFIX}"
-    "${HOWDY_PAM_DIR}"
-    "${HOWDY_HELPER_DIR}"
-    "${HOWDY_CONFIG_DIR}"
-    "${HOWDY_USER_MODELS_DIR}"
-    "$<TARGET_FILE:pam_installed_e2e_driver>"
-    "$<TARGET_FILE:pam_installed_runtime_e2e_driver>"
-    "$<TARGET_FILE:pam_installed_compare_e2e_probe>"
-  )
+    # Each argument stays quoted so an empty directory keeps its position.
+    function(pam_add_installed_e2e_test test_name runner)
+      add_test(
+        NAME ${test_name}
+        COMMAND
+          "${runner}"
+          "${pam_integration_dir}/installed_pam_setuid_e2e.sh"
+          "$<TARGET_FILE:pam_installed_path_validator>"
+          "$<TARGET_FILE:pam_installed_state_verifier>"
+          "${PROJECT_BINARY_DIR}"
+          "${CMAKE_INSTALL_PREFIX}"
+          "${HOWDY_PAM_DIR}"
+          "${HOWDY_HELPER_DIR}"
+          "${HOWDY_CONFIG_DIR}"
+          "${HOWDY_USER_MODELS_DIR}"
+          "$<TARGET_FILE:pam_installed_e2e_driver>"
+          "$<TARGET_FILE:pam_installed_runtime_e2e_driver>"
+          "$<TARGET_FILE:pam_installed_compare_e2e_probe>"
+      )
+    endfunction()
+    pam_add_installed_e2e_test(installed-pam-setuid-e2e bash)
+    pam_add_installed_e2e_test(
+      installed-pam-setuid-install-environment
+      pam_installed_install_environment_test
+    )
   else()
     add_test(
    NAME installed-pam-setuid-e2e

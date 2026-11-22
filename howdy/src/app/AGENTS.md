@@ -8,6 +8,7 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `howdy/production.cpp`: explicit production user/privilege adapters and concrete command binding
 - `howdy/cli.cpp`: argv parsing, validation, help, usage errors
 - `howdy/completion.cpp`: hidden completion protocol
+- `howdy_entrypoint.cpp`: runtime entrypoint wiring (`MainWithOverrides` / `Main`)
 - `command_catalog.cpp`: command/global-option data and lookup façade
 - `command_catalog/validation.cpp`: catalog structural validation
 - `src/bin/howdy_main.cpp`: process entrypoint only
@@ -20,7 +21,6 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
   executables, registries, DI containers, or abstract interface frameworks.
 - Keep catalog data and lookup APIs in `command_catalog.cpp`; validation belongs in
   `command_catalog/validation.cpp`.
-- `command_catalog/internal.hpp` is private cross-TU plumbing, not a public/test seam.
 - Keep CLI syntax policy in app dispatch/CLI parsing, not duplicated inside unrelated commands.
 - Preserve help/status behavior: help succeeds; usage errors use status 2; runtime failures keep
   command-specific diagnostics/status.

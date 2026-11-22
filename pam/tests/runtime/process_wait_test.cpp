@@ -1,5 +1,4 @@
 #include "../../src/runtime/auth_helper_process/internal.hpp"
-#include "module/auth_flow_test_groups.hpp"
 #include "protocol/compare_exit.hpp"
 #include "protocol/compare_verdict.hpp"
 #include "runtime/child_process.hpp"
@@ -18,12 +17,14 @@
 #include <cstdlib>
 #include <limits>
 #include <string>
+#include <utility>
 
 #include <fcntl.h>
 #include <signal.h>  // IWYU pragma: keep
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -157,14 +158,64 @@ namespace {
 		return ok;
 	}
 
+	// Starts a blocked grandchild and reaps its parent, leaving a live process that is not our
+	// child. `alive_fd` reaches end of file once that process dies.
+	auto SpawnUnrelatedProcess(howdy::native::ScopedFd &alive_fd) -> pid_t {
+		std::array<int, 2> alive_pipe = {-1, -1};
+		std::array<int, 2> pid_pipe   = {-1, -1};
+		if (pipe2(alive_pipe.data(), O_CLOEXEC) != 0) {
+			return -1;
+		}
+		howdy::native::ScopedFd alive_read(alive_pipe.at(0));
+		howdy::native::ScopedFd alive_write(alive_pipe.at(1));
+		if (pipe2(pid_pipe.data(), O_CLOEXEC) != 0) {
+			return -1;
+		}
+		howdy::native::ScopedFd pid_read(pid_pipe.at(0));
+		howdy::native::ScopedFd pid_write(pid_pipe.at(1));
+
+		const pid_t parent = fork();
+		if (parent == 0) {
+			const pid_t grandchild = fork();
+			if (grandchild == 0) {
+				// Holds the write end of the alive pipe until it dies.
+				while (true) {
+					pause();
+				}
+			}
+			const ssize_t written = write(pid_write.Get(), &grandchild, sizeof(grandchild));
+			_exit(grandchild > 0 && std::cmp_equal(written, sizeof(grandchild)) ? EXIT_SUCCESS
+			                                                                    : EXIT_FAILURE);
+		}
+		alive_write.Reset();
+		pid_write.Reset();
+		if (parent < 0) {
+			return -1;
+		}
+
+		pid_t         grandchild = -1;
+		const ssize_t read_size  = howdy::native::RetryOnEintr([&] -> ssize_t {
+			return read(pid_read.Get(), &grandchild, sizeof(grandchild));
+		});
+		const bool    reaped     = howdy::test::process::ReapTestChild(parent, nullptr);
+		if (!std::cmp_equal(read_size, sizeof(grandchild)) || grandchild <= 0) {
+			return -1;
+		}
+		if (!reaped) {
+			(void)kill(grandchild, SIGKILL);
+			return -1;
+		}
+		alive_fd = std::move(alive_read);
+		return grandchild;
+	}
+
 	// The helper paths share the same rule: a helper the application reaped is reported as reaped
 	// elsewhere, never as success, and the terminate path reaps one that is still running.
 	auto ExpectHelperTrackedThroughPidfd() -> bool {
 		using howdy::pam::auth_helper_process::internal::HelperWaitResult;
 		using howdy::pam::auth_helper_process::internal::TerminateAndReapHelperProcess;
 		using howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil;
-		const auto abort_code = static_cast<int>(howdy::native::CompareExit::kAbort);
-		bool       ok         = true;
+		bool ok = true;
 
 		const pid_t reaped_child = SpawnExitingChild(0);
 		ok &= Expect(reaped_child > 0, "spawns helper that the application reaps");
@@ -174,15 +225,26 @@ namespace {
 				             return waitpid(reaped_child, &status, 0);
 			             }) == reaped_child,
 			             "application reaps the helper first");
-			const int terminated = TerminateAndReapHelperProcess(reaped_child, -1);
-			ok &= Expect(WIFEXITED(terminated) && WEXITSTATUS(terminated) == abort_code,
-			             "terminating a helper reaped elsewhere returns abort");
+			TerminateAndReapHelperProcess(reaped_child, -1);
 			int        wait_status = 0;
 			const auto waited      = WaitForHelperProcessUntil(
 			    reaped_child, std::chrono::steady_clock::now() + std::chrono::seconds(1),
 			    &wait_status, -1);
 			ok &= Expect(waited == HelperWaitResult::kReapedElsewhere,
 			             "waiting on a helper reaped elsewhere reports that, not success");
+		}
+
+		// A live process that is not our child holds the PID, as after the application reaps
+		// the helper and the PID is reused: terminating must leave it untouched.
+		howdy::native::ScopedFd alive_fd;
+		const pid_t             reused_pid = SpawnUnrelatedProcess(alive_fd);
+		ok &= Expect(reused_pid > 0, "spawns live process that is not our child");
+		if (reused_pid > 0) {
+			TerminateAndReapHelperProcess(reused_pid, -1);
+			pollfd alive = {.fd = alive_fd.Get(), .events = POLLIN, .revents = 0};
+			ok &= Expect(poll(&alive, 1, 100) == 0,
+			             "terminating a helper never signals a reused PID");
+			(void)kill(reused_pid, SIGKILL);
 		}
 
 		const pid_t stuck_child = SpawnSigtermIgnoringChild();
@@ -201,12 +263,11 @@ namespace {
 		ok &= Expect(polite_child > 0, "spawns helper that exits on SIGTERM");
 		if (polite_child > 0) {
 			const howdy::native::ScopedFd pidfd(howdy::pam::runtime::OpenChildPidfd(polite_child));
-			errno              = EINTR;
-			const auto start   = std::chrono::steady_clock::now();
-			const int  status  = TerminateAndReapHelperProcess(polite_child, pidfd.Get());
+			errno            = EINTR;
+			const auto start = std::chrono::steady_clock::now();
+			TerminateAndReapHelperProcess(polite_child, pidfd.Get());
 			const auto elapsed = std::chrono::steady_clock::now() - start;
-			ok &= Expect(WIFSIGNALED(status) && WTERMSIG(status) == SIGTERM,
-			             "helper terminated by SIGTERM is reaped with its status");
+			ok &= Expect(ChildReaped(polite_child), "helper terminated by SIGTERM is reaped");
 			ok &= Expect(elapsed < std::chrono::milliseconds(300),
 			             "helper grace wait ends when the helper exits");
 		}
@@ -476,14 +537,6 @@ namespace {
 		                 &helper_failure_status, -1) ==
 		                 howdy::pam::auth_helper_process::internal::HelperWaitResult::kTimedOut,
 		             "helper gone elsewhere after its deadline counts as a timeout");
-		ok &= Expect(
-		    howdy::pam::auth_helper_process::internal::ReapedElsewhereResult(
-		        std::chrono::steady_clock::now() - std::chrono::milliseconds(1)) ==
-		            howdy::pam::auth_helper_process::internal::HelperWaitResult::kTimedOut &&
-		        howdy::pam::auth_helper_process::internal::ReapedElsewhereResult(
-		            std::chrono::steady_clock::now() + std::chrono::seconds(5)) ==
-		            howdy::pam::auth_helper_process::internal::HelperWaitResult::kReapedElsewhere,
-		    "reaped-elsewhere result honours the deadline");
 
 		// Any other wait failure is an error, not a helper gone elsewhere: a descriptor that is
 		// not a pidfd makes the pidfd wait fail with EBADF while the child still runs.
@@ -557,6 +610,6 @@ namespace {
 
 }  // namespace
 
-auto RunProcessWaitTests() -> bool {
-	return ExpectProcessWaiting();
+auto main() -> int {
+	return ExpectProcessWaiting() ? 0 : 1;
 }

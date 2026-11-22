@@ -1,7 +1,7 @@
 #include "internal.hpp"
+#include "support/ascii.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -21,14 +21,6 @@ namespace howdy::native::config_utils_internal {
 	}
 
 	namespace {
-
-		auto IniIdentifierEqual(std::string_view left, std::string_view right) -> bool {
-			return left.size() == right.size() &&
-			       std::ranges::equal(
-			           left, right, [](unsigned char left_char, unsigned char right_char) -> bool {
-				           return std::tolower(left_char) == std::tolower(right_char);
-			           });
-		}
 
 		auto SectionName(std::string_view line) -> std::optional<std::string_view> {
 			constexpr std::string_view utf8_bom = "\xEF\xBB\xBF";
@@ -108,15 +100,15 @@ namespace howdy::native::config_utils_internal {
 			const auto name = AssignmentName(stripped);
 			if (name.has_value()) {
 				has_previous_name = true;
-				if (!IniIdentifierEqual(current_section, replacement.section) ||
-				    !IniIdentifierEqual(*name, replacement.key)) {
+				if (!AsciiEqualIgnoreCase(current_section, replacement.section) ||
+				    !AsciiEqualIgnoreCase(*name, replacement.key)) {
 					continue;
 				}
 			} else {
 				const auto name_end = stripped.find_first_of(" \t");
-				if (!IniIdentifierEqual(current_section, replacement.section) ||
+				if (!AsciiEqualIgnoreCase(current_section, replacement.section) ||
 				    name_end == std::string_view::npos ||
-				    !IniIdentifierEqual(stripped.substr(0, name_end), replacement.key)) {
+				    !AsciiEqualIgnoreCase(stripped.substr(0, name_end), replacement.key)) {
 					continue;
 				}
 				has_previous_name = true;

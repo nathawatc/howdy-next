@@ -20,13 +20,26 @@
 #include <sys/poll.h>
 #include <sys/syslog.h>
 
-namespace howdy::pam::auth_helper_process::internal {
+namespace {
 
+	using howdy::pam::auth_helper_process::Operations;
+	using howdy::pam::auth_helper_process::internal::CloseOwnedFd;
+	using howdy::pam::auth_helper_process::internal::DeadlinePollTimeout;
+	using howdy::pam::auth_helper_process::internal::HelperDeadline;
+	using howdy::pam::auth_helper_process::internal::HelperSpawn;
+	using howdy::pam::auth_helper_process::internal::HelperSpawnCleanup;
+	using howdy::pam::auth_helper_process::internal::HelperWaitResult;
+	using howdy::pam::auth_helper_process::internal::LogAuthHelperFailure;
+	using howdy::pam::auth_helper_process::internal::LogAuthHelperMessage;
+
+	constexpr auto kAuthHelperTimeout = std::chrono::seconds(10);
+
+	// Polls the helper's socket until its one message and then end of file arrive.
 	auto ReceiveHelperResult(int socket_fd, HelperDeadline deadline, const Operations &operations,
-	                         RuntimeDescriptorSet *descriptors) -> bool {
+	                         howdy::pam::RuntimeDescriptorSet *descriptors) -> bool {
 		namespace message = howdy::native::runtime_descriptor_message;
-		RuntimeDescriptorSet received;
-		bool                 have_message = false;
+		howdy::pam::RuntimeDescriptorSet received;
+		bool                             have_message = false;
 		while (true) {
 			pollfd    socket{.fd = socket_fd, .events = POLLIN, .revents = 0};
 			const int ready = poll(&socket, 1, DeadlinePollTimeout(deadline));
@@ -80,18 +93,6 @@ namespace howdy::pam::auth_helper_process::internal {
 			}
 		}
 	}
-
-}  // namespace howdy::pam::auth_helper_process::internal
-
-namespace {
-
-	using howdy::pam::auth_helper_process::Operations;
-	using howdy::pam::auth_helper_process::internal::CloseOwnedFd;
-	using howdy::pam::auth_helper_process::internal::HelperDeadline;
-	using howdy::pam::auth_helper_process::internal::HelperSpawn;
-	using howdy::pam::auth_helper_process::internal::HelperSpawnCleanup;
-	using howdy::pam::auth_helper_process::internal::HelperWaitResult;
-	using howdy::pam::auth_helper_process::internal::LogAuthHelperMessage;
 
 	auto DescribeWaitStatus(int status) -> std::string {
 		if (WIFEXITED(status)) {
@@ -151,8 +152,7 @@ namespace {
 			return false;
 		}
 		howdy::pam::RuntimeDescriptorSet received;
-		const bool ok = howdy::pam::auth_helper_process::internal::ReceiveHelperResult(
-		    spawn.socket.Parent(), deadline, operations, &received);
+		const bool ok = ReceiveHelperResult(spawn.socket.Parent(), deadline, operations, &received);
 		CloseOwnedFd(operations, spawn.socket.Parent());
 		if (!ok) {
 			return false;  // the cleanup stops and reaps a helper that is still ours
@@ -179,8 +179,7 @@ namespace howdy::pam::auth_helper_process {
 	auto OpenRuntimeDescriptors(std::string_view username, RuntimeDescriptorSet *descriptors,
 	                            const Operations &operations) -> bool {
 		return OpenRuntimeDescriptors(username, descriptors, operations,
-		                              std::chrono::steady_clock::now() +
-		                                  internal::kAuthHelperTimeout);
+		                              std::chrono::steady_clock::now() + kAuthHelperTimeout);
 	}
 
 	auto OpenRuntimeDescriptors(std::string_view username, RuntimeDescriptorSet *descriptors)

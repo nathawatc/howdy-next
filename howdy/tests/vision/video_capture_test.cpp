@@ -88,8 +88,7 @@ namespace {
 
 		bool ok = true;
 		ok &= Expect(!result, label + " is rejected");
-		ok &= Expect(capture.Error() == howdy::native::CaptureError::kReadFailed,
-		             label + " sets read-failed error");
+		ok &= Expect(!capture.ErrorMessage().empty(), label + " sets read-failed error message");
 		ok &= Expect(context->Calls() == 1, label + " reads one test frame");
 		ok &= Expect(GrayIsSentinel(gray), label + " leaves gray output unchanged");
 		return ok;
@@ -127,8 +126,7 @@ namespace {
 		cv::Mat    gray;
 		const bool read_ok = capture.Read(raw, &gray);
 		bool       ok      = true;
-		ok &= Expect(read_ok && capture.Error() == howdy::native::CaptureError::kNone,
-		             label + " read succeeds");
+		ok &= Expect(read_ok && capture.ErrorMessage().empty(), label + " read succeeds");
 		ok &= Expect(read_ok && raw.type() == source.type() && raw.size() == source.size() &&
 		                 cv::norm(raw, source, cv::NORM_INF) == 0.0,
 		             label + " preserves raw color frame");
@@ -147,8 +145,7 @@ namespace {
 		cv::Mat    gray    = GraySentinel();
 		const bool read_ok = capture.Read(raw, &gray);
 		bool       ok      = true;
-		ok &= Expect(!read_ok && capture.Error() == howdy::native::CaptureError::kReadFailed,
-		             label + " fails closed");
+		ok &= Expect(!read_ok, label + " fails closed");
 		const bool expected_diagnostic =
 		    behavior == ReadContext::Behavior::kFailure
 		        ? capture.ErrorMessage() == howdy::native::kCameraReadFailureMessage
@@ -167,8 +164,6 @@ namespace {
 		const bool result = capture.Open();
 		bool       ok     = true;
 		ok &= Expect(!result, "unconfigured camera is rejected");
-		ok &= Expect(capture.Error() == howdy::native::CaptureError::kMissingDevice,
-		             "unconfigured camera sets missing-device error");
 		ok &= Expect(capture.ErrorMessage() == "Camera is not configured; set video.device_path",
 		             "unconfigured camera error is concise and names config setting");
 		return ok;

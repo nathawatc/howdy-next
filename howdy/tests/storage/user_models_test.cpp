@@ -617,6 +617,7 @@ auto main() -> int {
 	    howdy::test::user_models::TestUserModelDescriptorLoading(),
 	    howdy::test::user_models::TestUserModelMutationStart(),
 	    howdy::test::user_models::TestUserModelMutationFailures(),
+	    howdy::test::user_models::TestUserModelVerifiedOperations(),
 	};
 	const bool ok = std::ranges::all_of(results, [](bool value) -> bool {
 		return value;

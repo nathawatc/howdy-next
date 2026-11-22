@@ -1,4 +1,5 @@
 #include "integration/process.hpp"
+#include "test_support.hpp"
 
 #include <algorithm>
 #include <array>
@@ -20,11 +21,7 @@
 
 namespace {
 
-	auto Require(bool condition, const std::string &message) -> void {
-		if (!condition) {
-			throw std::runtime_error(message);
-		}
-	}
+	using howdy::test::Require;
 
 	class Session {
 	public:

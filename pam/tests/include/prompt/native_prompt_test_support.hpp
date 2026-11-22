@@ -6,13 +6,16 @@
 #include "test_support.hpp"
 
 #include <array>
+#include <cerrno>
+#include <cstddef>
 #include <filesystem>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include <fcntl.h>
 #include <poll.h>
-#include <stdlib.h>
+#include <termios.h>
 #include <unistd.h>
 
 namespace howdy::test {
@@ -35,14 +38,11 @@ namespace howdy::test {
 		}
 
 		auto Create(const char *target) -> const char * {
-			std::error_code error;
-			auto            path_template =
-			    (std::filesystem::temp_directory_path(error) / "howdy-pam-tty-link-XXXXXX")
-			        .string();
-			if (error || mkdtemp(path_template.data()) == nullptr) {
+			const auto created = howdy::test::CreateTempDirectory("howdy-pam-tty-link-");
+			if (!created.has_value()) {
 				return nullptr;
 			}
-			directory_ = path_template;
+			directory_ = created->string();
 			link_      = directory_ + "/tty";
 			if (symlink(target, link_.c_str()) != 0) {
 				link_.clear();
@@ -241,4 +241,93 @@ inline auto CreateConversation(NativePromptConversationTestAccess::Descriptors d
                                NativePromptConversationTestAccess::Operations  operations = {})
     -> std::unique_ptr<NativePromptConversation> {
 	return NativePromptConversationTestAccess::Create(std::move(descriptors), operations);
+}
+
+struct InputOperationContext {
+	NativePromptConversation *conversation        = nullptr;
+	int                       poll_eintr_count    = 0;
+	int                       read_eintr_count    = 0;
+	int                       read_zero_count     = 0;
+	int                       read_eagain_count   = 0;
+	int                       restore_eintr_count = 0;
+	bool                      abort_on_poll       = false;
+	bool                      abort_on_read       = false;
+	bool                      throw_on_poll       = false;
+	bool                      restore_failure     = false;
+};
+
+inline auto InjectedPoll(void *context, struct pollfd *fds, nfds_t count, int timeout) -> int {
+	auto &operations = *static_cast<InputOperationContext *>(context);
+	if (operations.throw_on_poll) {
+		throw std::runtime_error("simulated poll exception");
+	}
+	if (operations.poll_eintr_count > 0) {
+		--operations.poll_eintr_count;
+		if (operations.abort_on_poll) {
+			operations.conversation->RequestAbort();
+		}
+		errno = EINTR;
+		return -1;
+	}
+	return poll(fds, count, timeout);
+}
+
+inline auto InjectedRead(void *context, int fd, void *buffer, std::size_t count) -> ssize_t {
+	auto &operations = *static_cast<InputOperationContext *>(context);
+	if (operations.read_eintr_count > 0) {
+		--operations.read_eintr_count;
+		if (operations.abort_on_read) {
+			operations.conversation->RequestAbort();
+		}
+		errno = EINTR;
+		return -1;
+	}
+	if (operations.read_eagain_count > 0) {
+		--operations.read_eagain_count;
+		if (operations.abort_on_read) {
+			operations.conversation->RequestAbort();
+		}
+		errno = EAGAIN;
+		return -1;
+	}
+	if (operations.read_zero_count > 0) {
+		--operations.read_zero_count;
+		return 0;
+	}
+	return read(fd, buffer, count);
+}
+
+inline auto InjectedRestore(void *context, int fd, const struct termios *termios) -> int {
+	auto &operations = *static_cast<InputOperationContext *>(context);
+	if (operations.restore_eintr_count > 0) {
+		--operations.restore_eintr_count;
+		errno = EINTR;
+		return -1;
+	}
+	if (operations.restore_failure) {
+		errno = EIO;
+		return -1;
+	}
+	return tcsetattr(fd, TCSANOW, termios);
+}
+
+inline void NativePromptInputInjectedPostMessage(void * /*context*/) {}
+
+inline auto CreateInputConversation(NativePromptConversationTestAccess::Descriptors descriptors,
+                                    InputOperationContext *operations = nullptr)
+    -> std::unique_ptr<NativePromptConversation> {
+	auto conversation = CreateConversation(
+	    std::move(descriptors), operations == nullptr
+	                                ? NativePromptConversationTestAccess::Operations{}
+	                                : NativePromptConversationTestAccess::Operations{
+	                                      .context          = operations,
+	                                      .poll_prompt      = InjectedPoll,
+	                                      .read_prompt      = InjectedRead,
+	                                      .restore_terminal = InjectedRestore,
+	                                      .post_message     = NativePromptInputInjectedPostMessage,
+	                                  });
+	if (operations != nullptr) {
+		operations->conversation = conversation.get();
+	}
+	return conversation;
 }

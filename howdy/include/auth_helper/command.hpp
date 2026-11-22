@@ -15,9 +15,6 @@ namespace howdy::native::auth_helper::command {
 	__attribute__((visibility("hidden"))) auto RunWithQuietDiagnostics(
 	    const std::function<bool()>                 &operation,
 	    const std::function<void(std::string_view)> &log = SyslogDiagnosticLines) -> bool;
-	// The `open` subcommand: sends the calling user's runtime config and model descriptors as the
-	// one message of protocol/runtime_descriptor_message.hpp on descriptor 3.
-	__attribute__((visibility("hidden"))) auto OpenForUser(const std::string &user) -> int;
 	__attribute__((visibility("hidden"))) auto Run(int argc, char **argv) -> int;
 
 }  // namespace howdy::native::auth_helper::command

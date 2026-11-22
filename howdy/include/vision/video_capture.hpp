@@ -2,7 +2,6 @@
 
 #include "config/runtime_config.hpp"
 
-#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -10,13 +9,6 @@
 
 namespace howdy::native {
 	inline constexpr auto kCameraReadFailureMessage = "Could not capture a camera frame";
-
-	enum class CaptureError : std::uint8_t {
-		kNone,
-		kMissingDevice,
-		kOpenFailed,
-		kReadFailed,
-	};
 
 	struct CaptureSettings {
 		std::string device_path;
@@ -37,13 +29,11 @@ namespace howdy::native {
 
 		auto Open(bool perform_warm_up = true) -> bool;
 		auto WarmUp() -> bool;
-		auto Grab() -> bool;
 		auto Read(cv::Mat &frame, cv::Mat *gray_frame = nullptr) -> bool;
 		void Release();
 
 		auto Set(int property, double value) -> bool;
 
-		[[nodiscard]] auto Error() const -> CaptureError;
 		[[nodiscard]] auto ErrorMessage() const -> const std::string &;
 
 	private:
@@ -60,14 +50,13 @@ namespace howdy::native {
 
 		VideoCapture(CaptureSettings settings, std::shared_ptr<FrameReader> frame_reader);
 
-		void SetError(CaptureError error, std::string message);
+		auto Grab() -> bool;
 
 		friend class VideoCaptureTestAccess;
 
 		CaptureSettings              settings_;
 		cv::VideoCapture             capture_;
 		std::shared_ptr<FrameReader> frame_reader_;
-		CaptureError                 error_ = CaptureError::kNone;
 		std::string                  error_message_;
 	};
 

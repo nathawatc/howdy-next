@@ -47,10 +47,4 @@ namespace howdy::native {
 		return MaskedBits(value, masks...) != 0;
 	}
 
-	template <BitValue Value, BitValue... Masks>
-	[[nodiscard]] constexpr auto HasAllBits(Value value, Masks... masks) -> bool {
-		const auto expected = CombineBits(masks...);
-		return MaskedBits(value, masks...) == expected;
-	}
-
 }  // namespace howdy::native

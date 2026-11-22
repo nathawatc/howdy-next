@@ -145,7 +145,9 @@ add_library(howdy_user_model_codec STATIC
 howdy_configure_native_target(howdy_user_model_codec)
 target_link_libraries(howdy_user_model_codec PRIVATE PkgConfig::YYJSON)
 
-add_library(howdy_face_model STATIC src/vision/face_model.cpp)
+add_library(
+ howdy_face_model STATIC src/vision/face_model.cpp src/vision/face_model/environment.cpp
+)
 howdy_configure_native_target(howdy_face_model)
 target_link_libraries(
  howdy_face_model
@@ -182,7 +184,6 @@ target_link_libraries(
   howdy_runtime_config
  PRIVATE
   howdy_frame_processing
-  howdy_compare_logic
 )
 
 add_library(
@@ -205,7 +206,11 @@ add_library(
 )
 howdy_configure_native_target(howdy_compare_privileges)
 
-add_library(howdy_compare_sandbox STATIC src/compare/sandbox.cpp)
+add_library(
+ howdy_compare_sandbox STATIC
+ src/compare/sandbox.cpp
+ src/compare/sandbox/seccomp.cpp
+)
 howdy_configure_native_target(howdy_compare_sandbox)
 
 add_library(howdy_compare_processing STATIC src/compare/processing.cpp)
@@ -216,7 +221,9 @@ target_link_libraries(howdy_compare_processing PUBLIC howdy_opencv PRIVATE
 add_library(
  howdy_compare_entrypoint STATIC
  src/compare/entrypoint.cpp
- src/compare/entrypoint/internal.cpp
+ src/compare/entrypoint/descriptors.cpp
+ src/compare/entrypoint/internal.hpp
+ src/compare/entrypoint/reporting.cpp
 )
 howdy_configure_native_target(howdy_compare_entrypoint)
 target_link_libraries(
@@ -230,7 +237,6 @@ target_link_libraries(
   howdy_compare_capture_session
   howdy_face_model
   howdy_user_models
-  howdy_runtime_paths
   howdy_compare_engine
   howdy_compare_logic
 )
@@ -297,7 +303,7 @@ add_library(
  src/app/howdy/cli/internal.hpp
  src/app/howdy/completion.cpp
  src/app/howdy/completion/internal.hpp
- src/app/howdy/entrypoint.cpp
+ src/app/howdy_entrypoint.cpp
 )
 howdy_configure_native_target(howdy_cli_core)
 target_link_libraries(
@@ -315,6 +321,9 @@ add_library(
  src/cli/clear.cpp
  src/cli/config.cpp
  src/cli/config/edit_session.cpp
+ src/cli/config/editor_process.cpp
+ src/cli/config/internal.hpp
+ src/cli/confirmation_prompt.cpp
  src/cli/disable.cpp
  src/cli/download_models.cpp
  src/cli/list.cpp
@@ -323,6 +332,7 @@ add_library(
  src/cli/snapshot.cpp
  src/cli/snapshot/workflow.cpp
  src/cli/test.cpp
+ src/cli/test/workflow.cpp
 )
 howdy_configure_native_target(howdy_cli)
 target_link_libraries(

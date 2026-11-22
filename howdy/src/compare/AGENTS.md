@@ -4,14 +4,17 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Ownership
 
+- `args.*`: compare argv parsing and validation
 - `capture_session.*`: camera lifecycle, timeout clock, frame statistics, exposure restore
 - `engine.*`: preprocessing, validation, detection/embedding adapters, match selection
-- `sandbox.*`: sandbox policy
+- `logic.*`: compare threshold and best-match scoring policy
+- `sandbox.cpp`, `sandbox/seccomp.cpp`: sandbox policy (rlimit, `PR_SET_NO_NEW_PRIVS`, seccomp-BPF)
 - `processing.*`: shared processing helpers
-- `entrypoint.cpp`: composition, arguments, config/model load, output/report policy, exit mapping,
-  runtime-descriptor intake (`protocol/compare_descriptors.hpp`), and the verdict byte PAM reads
-  when the application reaped compare (`protocol/compare_verdict.hpp`); `src/bin/compare.cpp`
-  exits with `_exit` right after it
+- `entrypoint.cpp` (`entrypoint/{descriptors,reporting}.cpp`, `entrypoint/internal.hpp`):
+  composition, arguments, config/model load, output/report policy, exit mapping, runtime-descriptor
+  intake (`protocol/compare_descriptors.hpp`), and the verdict byte PAM reads when the application
+  reaped compare (`protocol/compare_verdict.hpp`); `src/bin/compare.cpp` exits with `_exit` right
+  after it
 - `src/bin/compare.cpp`: thin production wrapper that pins compare trust roots to UID 0
 
 Privilege dropping is one security-sensitive subsystem:

@@ -52,3 +52,28 @@ target_link_libraries(
  pam_runtime_session_test
  PRIVATE pam_runtime pam_explicit_config_path
 )
+
+howdy_add_pam_test(
+ pam_process_wait_test
+ pam-process-wait
+ tests/runtime/process_wait_test.cpp
+)
+target_link_libraries(pam_process_wait_test PRIVATE pam_runtime)
+
+howdy_add_pam_test(
+ pam_compare_process_runtime_test
+ pam-compare-process-runtime
+ tests/runtime/compare_process_runtime_test.cpp
+)
+target_link_libraries(pam_compare_process_runtime_test PRIVATE pam_runtime)
+target_link_options(
+ pam_compare_process_runtime_test
+ PRIVATE
+  "LINKER:--wrap=pidfd_open"
+  "LINKER:--wrap=ppoll"
+  "LINKER:--wrap=__ppoll_chk"
+  "LINKER:--wrap=kill"
+  "LINKER:--wrap=waitpid"
+  "LINKER:--wrap=pidfd_send_signal"
+  "LINKER:--wrap=waitid"
+)

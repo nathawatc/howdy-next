@@ -79,57 +79,6 @@ namespace {
 		return static_cast<uid_t>(0);
 	}
 
-	auto CalculateSha256FileDescriptor(const int fd) -> std::optional<std::string> {
-		if (lseek(fd, 0, SEEK_SET) < 0) {
-			return std::nullopt;
-		}
-
-		EVP_MD_CTX *context = EVP_MD_CTX_new();
-		if (context == nullptr) {
-			return std::nullopt;
-		}
-		if (EVP_DigestInit_ex(context, EVP_sha256(), nullptr) != 1) {
-			EVP_MD_CTX_free(context);
-			return std::nullopt;
-		}
-
-		std::array<unsigned char, 8192> buffer{};
-		while (true) {
-			const auto bytes_read = read(fd, buffer.data(), buffer.size());
-			if (bytes_read == 0) {
-				break;
-			}
-			if (bytes_read < 0) {
-				if (errno == EINTR) {
-					continue;
-				}
-				EVP_MD_CTX_free(context);
-				return std::nullopt;
-			}
-			if (EVP_DigestUpdate(context, buffer.data(), static_cast<std::size_t>(bytes_read)) !=
-			    1) {
-				EVP_MD_CTX_free(context);
-				return std::nullopt;
-			}
-		}
-
-		std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
-		unsigned int                               digest_length = 0;
-		const bool                                 digest_ok =
-		    EVP_DigestFinal_ex(context, digest.data(), &digest_length) == 1 && digest_length == 32U;
-		EVP_MD_CTX_free(context);
-		if (!digest_ok) {
-			return std::nullopt;
-		}
-
-		std::ostringstream output;
-		output << std::hex << std::setfill('0');
-		for (const unsigned char byte : std::span(digest).first(digest_length)) {
-			output << std::setw(2) << static_cast<unsigned int>(byte);
-		}
-		return output.str();
-	}
-
 }  // namespace
 
 auto howdy::native::download_models_internal::ConfigureTransferPolicy(
@@ -163,7 +112,53 @@ auto howdy::native::download_models_internal::ConfigureTransferPolicy(
 
 auto howdy::native::download_models_internal::Sha256FileDescriptor(const int fd)
     -> std::optional<std::string> {
-	return CalculateSha256FileDescriptor(fd);
+	if (lseek(fd, 0, SEEK_SET) < 0) {
+		return std::nullopt;
+	}
+
+	EVP_MD_CTX *context = EVP_MD_CTX_new();
+	if (context == nullptr) {
+		return std::nullopt;
+	}
+	if (EVP_DigestInit_ex(context, EVP_sha256(), nullptr) != 1) {
+		EVP_MD_CTX_free(context);
+		return std::nullopt;
+	}
+
+	std::array<unsigned char, 8192> buffer{};
+	while (true) {
+		const auto bytes_read = read(fd, buffer.data(), buffer.size());
+		if (bytes_read == 0) {
+			break;
+		}
+		if (bytes_read < 0) {
+			if (errno == EINTR) {
+				continue;
+			}
+			EVP_MD_CTX_free(context);
+			return std::nullopt;
+		}
+		if (EVP_DigestUpdate(context, buffer.data(), static_cast<std::size_t>(bytes_read)) != 1) {
+			EVP_MD_CTX_free(context);
+			return std::nullopt;
+		}
+	}
+
+	std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
+	unsigned int                               digest_length = 0;
+	const bool                                 digest_ok =
+	    EVP_DigestFinal_ex(context, digest.data(), &digest_length) == 1 && digest_length == 32U;
+	EVP_MD_CTX_free(context);
+	if (!digest_ok) {
+		return std::nullopt;
+	}
+
+	std::ostringstream output;
+	output << std::hex << std::setfill('0');
+	for (const unsigned char byte : std::span(digest).first(digest_length)) {
+		output << std::setw(2) << static_cast<unsigned int>(byte);
+	}
+	return output.str();
 }
 
 auto howdy::native::download_models_internal::DownloadModelsWriteCallback(void  *contents,
@@ -361,7 +356,7 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 	}
 	for (const auto &model : dependencies.models) {
 		const auto destination = models_dir / model.filename;
-		const auto readiness   = howdy::native::CheckOpencvModelReadinessWithLabel(
+		const auto readiness   = howdy::native::CheckOpencvModelReadiness(
 		    destination, "Model file", owner_uid, dependencies.validation_root);
 		if (readiness.status == howdy::native::OpenCvModelStatus::kInsecure) {
 			curl_global_cleanup();

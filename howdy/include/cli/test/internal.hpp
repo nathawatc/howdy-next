@@ -7,14 +7,7 @@
 #include <string>
 #include <string_view>
 
-#include <opencv2/core.hpp>
-
-namespace howdy::native {
-	struct PreviewFrameResult;
-}  // namespace howdy::native
-
 namespace howdy::native::test_cli_internal {
-	class TestPreviewRenderer;
 
 	enum class TestPreviewStatus : std::uint8_t {
 		kOk,
@@ -69,8 +62,6 @@ namespace howdy::native::test_cli_internal {
 
 	auto TestMainWithDependencies(const CommandInvocation &invocation,
 	                              const TestDependencies  &dependencies) -> int;
-	auto MapPreviewFrameFailure(const howdy::native::PreviewFrameResult &result)
-	    -> TestPreviewResult;
 	auto RunPreviewPreflight(const howdy::native::RuntimeConfig &config, const std::string &user,
 	                         const TestPreviewPreflightDependencies &dependencies,
 	                         const std::string &device_path) -> TestPreviewResult;

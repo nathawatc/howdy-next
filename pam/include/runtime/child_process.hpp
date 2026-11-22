@@ -1,13 +1,17 @@
 #pragma once
 
+// clang-format off
+// Declare pid_t from <sys/types.h> before <chrono>/<spawn.h> can declare it in <time.h>/<sched.h>.
+#include <sys/types.h>
+// clang-format on
+
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <span>
 
 #include <spawn.h>
-
-#include <sys/types.h>
 
 namespace howdy::pam::runtime {
 
@@ -98,6 +102,18 @@ namespace howdy::pam::runtime {
 	// touched; any other error leaves the child ours, and it is stopped and reaped by PID.
 	__attribute__((visibility("hidden"))) void StopChildWithoutPidfd(pid_t child_pid,
 	                                                                 int   open_error) noexcept;
+
+	struct SpawnRequest {
+		void  *context   = nullptr;
+		pid_t *child_pid = nullptr;
+		// Set to the child's pidfd when the spawn took one with the child (pidfd_spawn); left at
+		// -1 otherwise, and the caller takes it after the spawn.
+		int                              *child_pidfd = nullptr;
+		const char                       *path        = nullptr;
+		const posix_spawn_file_actions_t *actions     = nullptr;
+		std::span<char *const>            argv;
+		std::span<char *const>            envp;
+	};
 
 	struct SpawnArguments {
 		const char                       *path    = nullptr;

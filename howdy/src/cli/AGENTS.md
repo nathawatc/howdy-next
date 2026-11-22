@@ -11,13 +11,17 @@ implementation belongs under `src/cli/<command>/`; shared/test-facing seams belo
 Current multi-file commands:
 
 - `add.cpp`: production adapters and `AddMain()`; `add/workflow.cpp`: injected command policy
-- `config.cpp`: command façade; `config/edit_session.cpp`: editor/install workflow
+- `config.cpp`: command façade; `config/edit_session.cpp`: editor/install workflow;
+  `config/editor_process.cpp`: editor process launch and invoking-user drop
 - `snapshot.cpp`: production capture/encoding adapters; `snapshot/workflow.cpp`: validation and
   secure writer policy
-- `test.cpp`: command/composition; `test/preview_session.cpp` and `test/preview_renderer.cpp`:
-  reusable preview behavior
+- `test.cpp`: command/composition; `test/workflow.cpp`: preflight and diagnostic workflow;
+  `test/preview_session.cpp` and `test/preview_renderer.cpp`: reusable preview behavior
 
 Other commands remain single-file components unless a real boundary appears.
+
+`confirmation_prompt.cpp` / `include/cli/confirmation_prompt.hpp` is the one non-command component:
+the interactive `[y/N]` confirmation shared by `clear` and `remove`.
 
 ## Behavior
 
@@ -38,5 +42,6 @@ Other commands remain single-file components unless a real boundary appears.
 Dependency-injection contracts under `include/cli/<command>/internal.hpp` are shared/test-facing by
 design. Keep test-only helpers under `tests/include/cli/`.
 
-Inspect `howdy/CMakeLists.txt` before changing a suite; add, config, download-models, snapshot, and
-preview tests span multiple translation units.
+Inspect `howdy/CMakeLists.txt` and `howdy/cmake/tests/*.cmake` before changing a suite; add, config,
+and download-models tests span multiple translation units, while snapshot has a single-TU CLI
+test and a two-TU writer test.

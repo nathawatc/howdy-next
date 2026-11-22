@@ -17,7 +17,7 @@ namespace howdy::native {
 	inline constexpr std::size_t kMaxModelUserNameBytes = 255 - kUserModelFileSuffix.size();
 
 	inline auto IsValidModelUserName(const std::string_view user) -> bool {
-		if (user.empty() || user == "." || user == ".." || user.size() > kMaxModelUserNameBytes) {
+		if (user.empty() || user.size() > kMaxModelUserNameBytes) {
 			return false;
 		}
 

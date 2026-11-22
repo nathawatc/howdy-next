@@ -168,8 +168,8 @@ protected source config and model paths to remain root-controlled.
 .PP
 PAM consumers that run authentication as the regular user use the installed
 .B howdy-auth-helper
-setuid helper to prepare temporary root-controlled runtime copies of the
-protected config and enrolled model before recognition.
+setuid helper to open read-only file descriptors for the protected config and
+enrolled model and pass them back over a private Unix socket before recognition.
 .PP
 .B abort_if_ssh
 is a convenience, not a security boundary. It detects SSH only through the

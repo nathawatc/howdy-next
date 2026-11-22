@@ -173,64 +173,22 @@ namespace howdy::docs {
 			return std::nullopt;
 		}
 
-		auto FormatBooleanValues(const native::config_schema::Option &option) -> std::string {
-			std::string       result           = "Values: ";
-			const auto       *val              = std::get_if<bool>(&option.fallback);
-			const auto *const default_spelling = (val != nullptr && *val) ? "true" : "false";
-			for (std::size_t index = 0;
-			     index < native::config_schema::kAcceptedBooleanSpellings.size(); ++index) {
-				if (index > 0) {
+		auto FormatRoffValueList(std::string_view prefix, std::span<const std::string_view> values,
+		                         std::string_view default_value) -> std::string {
+			std::string result(prefix);
+			bool        first = true;
+			for (const auto value : values) {
+				if (!first) {
 					result += ", ";
 				}
-				const auto spelling = native::config_schema::kAcceptedBooleanSpellings.at(index);
-				if (spelling == default_spelling) {
+				if (value == default_value) {
 					result += "\\fB";
-					result += EscapeRoff(spelling);
+					result += EscapeRoff(value);
 					result += "\\fR";
 				} else {
-					result += EscapeRoff(spelling);
+					result += EscapeRoff(value);
 				}
-			}
-			result += '.';
-			return result;
-		}
-
-		auto FormatChoices(std::span<const std::string_view> choices,
-		                   std::string_view                  default_choice) -> std::string {
-			std::string choices_str  = "Choices: ";
-			bool        first_choice = true;
-			for (const auto choice : choices) {
-				if (!first_choice) {
-					choices_str += ", ";
-				}
-				if (choice == default_choice) {
-					choices_str += "\\fB";
-					choices_str += EscapeRoff(choice);
-					choices_str += "\\fR";
-				} else {
-					choices_str += EscapeRoff(choice);
-				}
-				first_choice = false;
-			}
-			choices_str += '.';
-			return choices_str;
-		}
-
-		auto FormatDevicePaths(std::string_view default_path) -> std::string {
-			std::string result = "Accepted: ";
-			for (std::size_t index = 0; index < native::kAcceptedCaptureDevicePatterns.size();
-			     ++index) {
-				if (index > 0) {
-					result += ", ";
-				}
-				const auto pattern = native::kAcceptedCaptureDevicePatterns.at(index);
-				if (pattern == default_path) {
-					result += "\\fB";
-					result += EscapeRoff(pattern);
-					result += "\\fR";
-				} else {
-					result += EscapeRoff(pattern);
-				}
+				first = false;
 			}
 			result += '.';
 			return result;
@@ -309,18 +267,22 @@ namespace howdy::docs {
 
 		auto FormatAcceptedRule(const native::config_schema::Option &option) -> std::string {
 			if (option.type == native::config_schema::ValueType::kBoolean) {
-				return FormatBooleanValues(option);
+				const auto       *val              = std::get_if<bool>(&option.fallback);
+				const auto *const default_spelling = (val != nullptr && *val) ? "true" : "false";
+				return FormatRoffValueList(
+				    "Values: ", native::config_schema::kAcceptedBooleanSpellings, default_spelling);
 			}
 			const auto *str_fallback = std::get_if<std::string_view>(&option.fallback);
 			const auto  fallback_str = str_fallback != nullptr ? *str_fallback : "";
 			if (option.special_rule == native::config_schema::SpecialRule::kDevicePath) {
-				return FormatDevicePaths(fallback_str);
+				return FormatRoffValueList("Accepted: ", native::kAcceptedCaptureDevicePatterns,
+				                           fallback_str);
 			}
 			if (option.special_rule == native::config_schema::SpecialRule::kSfaceThreshold) {
 				return FormatSfaceThresholdRange();
 			}
 			if (!option.choices.empty()) {
-				return FormatChoices(option.choices, fallback_str);
+				return FormatRoffValueList("Choices: ", option.choices, fallback_str);
 			}
 			return FormatNumericRange(option);
 		}

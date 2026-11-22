@@ -3,6 +3,8 @@
 #include "support/scoped_fd.hpp"
 
 #include <cmath>
+#include <csignal>
+#include <cstddef>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -11,6 +13,7 @@
 #include <iostream>
 #include <iterator>
 #include <optional>
+#include <stdexcept>
 #include <streambuf>
 #include <string>
 #include <string_view>
@@ -18,8 +21,8 @@
 #include <utility>
 
 #include <stdlib.h>
-#include <unistd.h>
 
+#include <sys/resource.h>
 #include <sys/stat.h>
 
 namespace howdy::test {
@@ -33,6 +36,16 @@ namespace howdy::test {
 			std::cerr << "FAIL: " << message << '\n';
 		}
 		return condition;
+	}
+
+	inline void Require(bool condition, std::string_view message) {
+		if (!condition) {
+			throw std::runtime_error(std::string(message));
+		}
+	}
+
+	inline auto FailParentSync(const std::filesystem::path & /*path*/) -> bool {
+		return false;
 	}
 
 	using ScopedFd = howdy::native::ScopedFd;
@@ -115,7 +128,69 @@ namespace howdy::test {
 		std::streambuf *old_second_ = nullptr;
 	};
 
-	using ScopedStreamBuffer = StreamRedirect;
+	class FileSizeLimitGuard {
+	public:
+		FileSizeLimitGuard(const FileSizeLimitGuard &)                     = delete;
+		auto operator=(const FileSizeLimitGuard &) -> FileSizeLimitGuard & = delete;
+		FileSizeLimitGuard(FileSizeLimitGuard &&)                          = delete;
+		auto operator=(FileSizeLimitGuard &&) -> FileSizeLimitGuard &      = delete;
+		using SignalHandler                                                = void (*)(int);
+
+		FileSizeLimitGuard()
+		    : have_original_(getrlimit(RLIMIT_FSIZE, &original_) == 0) {
+			if (have_original_) {
+				previous_sigxfsz_ = std::signal(SIGXFSZ, SIG_IGN);
+				signal_changed_   = previous_sigxfsz_ != SIG_ERR;
+			}
+		}
+
+		[[nodiscard]] auto Available() const -> bool {
+			return have_original_;
+		}
+
+		[[nodiscard]] auto Ready() const -> bool {
+			return Available() && signal_changed_;
+		}
+
+		auto SetZero() -> bool {
+			if (!Ready()) {
+				return false;
+			}
+
+			auto zero_limit     = original_;
+			zero_limit.rlim_cur = 0;
+			if (setrlimit(RLIMIT_FSIZE, &zero_limit) != 0) {
+				return false;
+			}
+
+			limit_changed_ = true;
+			return true;
+		}
+
+		auto Restore() -> bool {
+			bool ok = true;
+			if (limit_changed_) {
+				ok             = setrlimit(RLIMIT_FSIZE, &original_) == 0;
+				limit_changed_ = false;
+			}
+			if (signal_changed_) {
+				ok              = std::signal(SIGXFSZ, previous_sigxfsz_) != SIG_ERR && ok;
+				signal_changed_ = false;
+			}
+			return ok;
+		}
+
+		~FileSizeLimitGuard() {
+			(void)Restore();
+		}
+
+	private:
+		rlimit        original_{};
+		bool          have_original_    = false;
+		bool          limit_changed_    = false;
+		SignalHandler previous_sigxfsz_ = SIG_DFL;
+		bool          signal_changed_   = false;
+	};
 
 	class ScopedEnvironmentVariable {
 	public:

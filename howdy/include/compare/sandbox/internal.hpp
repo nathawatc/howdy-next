@@ -31,9 +31,7 @@ namespace howdy::native::compare_sandbox_internal {
 	using RlimitResource = decltype(RLIMIT_CPU);
 	using GetrlimitFn    = int (*)(void *context, RlimitResource resource, rlimit *limit);
 	using SetrlimitFn    = int (*)(void *context, RlimitResource resource, const rlimit *limit);
-	using PrctlFn        = int (*)(void *context, int operation, PrctlArgument argument2,
-	                               PrctlArgument argument3, PrctlArgument argument4,
-	                               PrctlArgument argument5);
+	using PrctlFn        = howdy::native::PrctlFn;
 	using SeccompFn      = int (*)(void *context, unsigned int operation, unsigned int flags,
 	                               void *args);
 

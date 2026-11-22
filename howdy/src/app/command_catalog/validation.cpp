@@ -1,5 +1,4 @@
 #include "app/command_catalog.hpp"
-#include "internal.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace howdy::native::command_catalog_internal {
+namespace howdy::native {
 
 	namespace {
 
@@ -194,68 +193,64 @@ namespace howdy::native::command_catalog_internal {
 			return std::nullopt;
 		}
 
+		auto ValidateCommands(std::span<const CommandDescriptor> commands, bool require_complete)
+		    -> std::optional<std::string> {
+			if (commands.empty()) {
+				return "command catalog is empty";
+			}
+			std::array<bool, static_cast<std::size_t>(CommandId::kCount)> seen_ids{};
+			std::size_t                                                   index = 0;
+			for (const auto &command : commands) {
+				if (const auto error =
+				        ValidateCommandDescriptor(command, commands.first(index), seen_ids)) {
+					return error;
+				}
+				++index;
+			}
+			if (require_complete) {
+				for (std::size_t id = 0; id < seen_ids.size(); ++id) {
+					if (!seen_ids.at(id)) {
+						return MissingIdMessage("command", id);
+					}
+				}
+			}
+			return std::nullopt;
+		}
+
+		auto ValidateGlobalOptions(std::span<const GlobalOptionDescriptor> options,
+		                           bool require_complete) -> std::optional<std::string> {
+			if (options.empty()) {
+				return "global-option catalog is empty";
+			}
+			std::array<bool, static_cast<std::size_t>(GlobalOptionId::kCount)> seen_ids{};
+			std::size_t                                                        index = 0;
+			for (const auto &option : options) {
+				if (const auto error =
+				        ValidateGlobalOptionDescriptor(option, options.first(index), seen_ids)) {
+					return error;
+				}
+				++index;
+			}
+			if (require_complete) {
+				for (std::size_t id = 0; id < seen_ids.size(); ++id) {
+					if (!seen_ids.at(id)) {
+						return MissingIdMessage("global option", id);
+					}
+				}
+			}
+			return std::nullopt;
+		}
+
 	}  // namespace
-
-	auto ValidateCommands(std::span<const CommandDescriptor> commands, bool require_complete)
-	    -> std::optional<std::string> {
-		if (commands.empty()) {
-			return "command catalog is empty";
-		}
-		std::array<bool, static_cast<std::size_t>(CommandId::kCount)> seen_ids{};
-		std::size_t                                                   index = 0;
-		for (const auto &command : commands) {
-			if (const auto error =
-			        ValidateCommandDescriptor(command, commands.first(index), seen_ids)) {
-				return error;
-			}
-			++index;
-		}
-		if (require_complete) {
-			for (std::size_t id = 0; id < seen_ids.size(); ++id) {
-				if (!seen_ids.at(id)) {
-					return MissingIdMessage("command", id);
-				}
-			}
-		}
-		return std::nullopt;
-	}
-
-	auto ValidateGlobalOptions(std::span<const GlobalOptionDescriptor> options,
-	                           bool require_complete) -> std::optional<std::string> {
-		if (options.empty()) {
-			return "global-option catalog is empty";
-		}
-		std::array<bool, static_cast<std::size_t>(GlobalOptionId::kCount)> seen_ids{};
-		std::size_t                                                        index = 0;
-		for (const auto &option : options) {
-			if (const auto error =
-			        ValidateGlobalOptionDescriptor(option, options.first(index), seen_ids)) {
-				return error;
-			}
-			++index;
-		}
-		if (require_complete) {
-			for (std::size_t id = 0; id < seen_ids.size(); ++id) {
-				if (!seen_ids.at(id)) {
-					return MissingIdMessage("global option", id);
-				}
-			}
-		}
-		return std::nullopt;
-	}
-
-}  // namespace howdy::native::command_catalog_internal
-
-namespace howdy::native {
 
 	auto ValidateCommandCatalog(std::span<const CommandDescriptor> commands, bool require_complete)
 	    -> std::optional<std::string> {
-		return command_catalog_internal::ValidateCommands(commands, require_complete);
+		return ValidateCommands(commands, require_complete);
 	}
 
 	auto ValidateGlobalOptionCatalog(std::span<const GlobalOptionDescriptor> options,
 	                                 bool require_complete) -> std::optional<std::string> {
-		return command_catalog_internal::ValidateGlobalOptions(options, require_complete);
+		return ValidateGlobalOptions(options, require_complete);
 	}
 
 }  // namespace howdy::native

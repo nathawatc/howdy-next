@@ -74,6 +74,8 @@ if(GETTEXT_XGETTEXT_EXECUTABLE)
   "${GETTEXT_XGETTEXT_EXECUTABLE}"
   "--directory=${CMAKE_CURRENT_SOURCE_DIR}/.."
   "--files-from=${CMAKE_CURRENT_SOURCE_DIR}/POTFILES"
+  --language=C++
+  --keyword
   --keyword=Translate:1
   "--output=${HOWDY_POT_FILE}"
  DEPENDS
