@@ -405,6 +405,26 @@ auto main() -> int {
 	    howdy::native::file_security_internal::ValidationRoot{link_root});
 	ok &= Expect(!ec && !link_result.ok, "CreateSecureDirectoryTree rejects symlink boundary root");
 
+	const auto missing_root        = temp_root / "missing-boundary-root";
+	const auto missing_root_result = howdy::native::CreateSecureDirectoryTree(
+	    missing_root / "child", "Missing root directory", 0750, 0700, geteuid(),
+	    howdy::native::file_security_internal::ValidationRoot{missing_root});
+	ok &= Expect(!missing_root_result.ok && missing_root_result.error_code == ENOENT,
+	             "CreateSecureDirectoryTree preserves ENOENT when boundary root cannot be opened");
+
+	if (geteuid() != 0) {
+		const auto readonly_parent = temp_root / "readonly-create-parent";
+		fs::create_directory(readonly_parent, ec);
+		ok &= Expect(!ec && chmod(readonly_parent.c_str(), 0500) == 0,
+		             "create read-only parent for mkdirat errno check");
+		const auto mkdir_result = howdy::native::CreateSecureDirectoryTree(
+		    readonly_parent / "child", "Readonly child directory", 0750, 0700, geteuid(),
+		    create_boundary);
+		ok &= Expect(!mkdir_result.ok && mkdir_result.error_code == EACCES,
+		             "CreateSecureDirectoryTree preserves EACCES when mkdirat fails");
+		ok &= Expect(chmod(readonly_parent.c_str(), 0700) == 0, "restore read-only parent mode");
+	}
+
 	fs::remove_all(temp_root, ec);
 
 	return ok ? 0 : 1;

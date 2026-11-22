@@ -5,6 +5,7 @@
 #include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/auth_helper_process.hpp"
 #include "storage/user_model_path.hpp"
+#include "storage/user_model_store.hpp"
 #include "support/bit_flags.hpp"
 #include "support/file_security.hpp"
 
@@ -31,9 +32,12 @@ namespace {
 		(void)context;
 		auto opened = howdy::native::auth_helper::OpenRuntimeDescriptors(
 		    std::string(username), {
-		                               .config          = paths.config_path,
-		                               .user_models_dir = paths.user_models_dir,
-		                               .owner_uid       = 0,
+		                               .config           = paths.config_path,
+		                               .user_models      = howdy::native::UserModelStore({
+		                                   .models_dir = paths.user_models_dir,
+		                                   .owner_uid  = 0,
+		                               }),
+		                               .config_owner_uid = 0,
 		                           });
 		if (!opened.ok) {
 			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: %s", opened.error_message.c_str());

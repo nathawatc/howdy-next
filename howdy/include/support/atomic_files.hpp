@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -218,11 +219,17 @@ namespace howdy::native {
 		return StagedFile{.fd = std::move(fd), .path = temp_path};
 	}
 
+	// `sync_parent` and `atomic_rename` may be function pointers or callables that carry their own
+	// context, such as a store's test hooks. A null or empty `sync_parent` (nullptr, a null
+	// function pointer, or an empty std::function) skips the sync and reports
+	// kCommittedSyncFailed. Both are taken by value so a plain function name decays to a pointer.
+	template <typename SyncParent = SyncParentDirectoryFn, typename Rename = AtomicRenameFn>
 	inline auto InstallStagedFile(
 	    StagedFile &staged, const std::filesystem::path &destination,
-	    SyncParentDirectoryFn   sync_parent    = SyncParentDirectory,
+	    // NOLINTNEXTLINE(performance-unnecessary-value-param): by value so functions decay.
+	    SyncParent              sync_parent    = SyncParentDirectory,
 	    AtomicFileInstallPolicy install_policy = AtomicFileInstallPolicy::kReplaceExisting,
-	    AtomicRenameFn          atomic_rename  = AtomicRename) -> AtomicFileCommitResult {
+	    Rename                  atomic_rename  = AtomicRename) -> AtomicFileCommitResult {
 		if (staged.path.empty()) {
 			staged.fd.Reset();
 			return AtomicFileCommitResult::kNotCommitted;
@@ -257,7 +264,14 @@ namespace howdy::native {
 				return FailedAtomicRenameCommitResult(rename_result);
 			}
 		}
-		const bool parent_synced = sync_parent != nullptr && sync_parent(destination);
+		bool parent_synced = false;
+		if constexpr (std::is_null_pointer_v<SyncParent>) {
+			parent_synced = false;
+		} else if constexpr (std::is_constructible_v<bool, const SyncParent &>) {
+			parent_synced = static_cast<bool>(sync_parent) && sync_parent(destination);
+		} else {
+			parent_synced = sync_parent(destination);
+		}
 		staged.path.clear();
 		return parent_synced ? AtomicFileCommitResult::kCommitted
 		                     : AtomicFileCommitResult::kCommittedSyncFailed;

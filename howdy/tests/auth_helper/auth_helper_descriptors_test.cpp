@@ -1,6 +1,7 @@
 #include "auth_helper/auth_helper_test_groups.hpp"
 #include "auth_helper/runtime_descriptors.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
+#include "storage/user_model_store.hpp"
 #include "support/bit_flags.hpp"
 #include "test_support.hpp"
 
@@ -12,6 +13,7 @@
 #include <unistd.h>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace {
 
@@ -57,10 +59,14 @@ auto RunAuthHelperDescriptorTests(const fs::path &temp_root) -> bool {
 	             "write descriptor opener model");
 
 	const RuntimeDescriptorSources sources{
-	    .config          = config,
-	    .user_models_dir = root / "models",
-	    .owner_uid       = geteuid(),
-	    .validation_root = {.path = root},
+	    .config                 = config,
+	    .user_models            = howdy::native::UserModelStore({
+	        .models_dir      = root / "models",
+	        .owner_uid       = geteuid(),
+	        .validation_root = {.path = root},
+	    }),
+	    .config_owner_uid       = geteuid(),
+	    .config_validation_root = {.path = root},
 	};
 	const auto open_for = [&](const std::string &user) -> OpenedRuntimeDescriptors {
 		return OpenRuntimeDescriptors(user, sources);
@@ -119,6 +125,19 @@ auto RunAuthHelperDescriptorTests(const fs::path &temp_root) -> bool {
 		             "opener reports an empty model as invalid storage, by name");
 	}
 
+	{
+		auto other_model_owner        = sources;
+		other_model_owner.user_models = howdy::native::UserModelStore({
+		    .models_dir      = root / "models",
+		    .owner_uid       = static_cast<uid_t>(geteuid() + 1),
+		    .validation_root = {.path = root},
+		});
+		const auto opened             = OpenRuntimeDescriptors("alice", other_model_owner);
+		ok &= Expect(opened.ok && opened.model_state == ModelState::kInvalidStorage &&
+		                 !opened.model.Valid() && opened.model_message.contains("owned by UID"),
+		             "opener rejects a model with another owner");
+	}
+
 	fs::remove_all(root / "models", ec);
 	{
 		const auto opened = open_for("alice");
@@ -127,9 +146,9 @@ auto RunAuthHelperDescriptorTests(const fs::path &temp_root) -> bool {
 	}
 
 	{
-		auto other_owner      = sources;
-		other_owner.owner_uid = geteuid() + 1;
-		const auto opened     = OpenRuntimeDescriptors("alice", other_owner);
+		auto other_owner             = sources;
+		other_owner.config_owner_uid = geteuid() + 1;
+		const auto opened            = OpenRuntimeDescriptors("alice", other_owner);
 		ok &= Expect(!opened.ok && !opened.config.Valid() &&
 		                 opened.error_message.contains("owned by UID"),
 		             "opener rejects a config with another owner");

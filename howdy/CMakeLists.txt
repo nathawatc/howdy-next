@@ -92,9 +92,6 @@ target_link_libraries(
  PRIVATE howdy_config howdy_runtime_paths PkgConfig::INIREADER
 )
 
-add_library(howdy_user_model_readiness STATIC src/storage/user_model_readiness.cpp)
-howdy_configure_native_target(howdy_user_model_readiness)
-
 add_library(howdy_model_file STATIC src/model_assets/model_file.cpp)
 howdy_configure_native_target(howdy_model_file)
 
@@ -155,17 +152,30 @@ target_link_libraries(
  PRIVATE howdy_runtime_paths howdy_model_file howdy_vision_core
 )
 
+# Readiness, the store constructor, and the runtime descriptor open, without the codec or the
+# writers: root PAM links only this through howdy_runtime_descriptors.
+add_library(
+ howdy_user_model_readiness
+ STATIC
+ src/storage/user_model_store/readiness.cpp
+ src/storage/user_model_store/readiness/internal.hpp
+)
+howdy_configure_native_target(howdy_user_model_readiness)
+
 add_library(
  howdy_user_models
  STATIC
  src/storage/user_model_store.cpp
  src/storage/user_model_store/internal.hpp
+ src/storage/user_model_store/mutations.cpp
+ src/storage/user_model_store/transaction.cpp
  src/storage/user_models.cpp
 )
 howdy_configure_native_target(howdy_user_models)
 target_link_libraries(
  howdy_user_models
- PRIVATE howdy_runtime_paths howdy_user_model_readiness howdy_user_model_codec
+ PUBLIC howdy_user_model_readiness
+ PRIVATE howdy_runtime_paths howdy_user_model_codec
 )
 
 add_library(howdy_compare_args STATIC src/compare/args.cpp)
@@ -264,8 +274,7 @@ add_library(howdy_runtime_descriptors STATIC src/auth_helper/runtime_descriptors
 howdy_configure_native_target(howdy_runtime_descriptors)
 target_link_libraries(
  howdy_runtime_descriptors
- PUBLIC howdy_runtime_descriptor_message
- PRIVATE howdy_user_model_readiness
+ PUBLIC howdy_runtime_descriptor_message howdy_user_model_readiness
 )
 
 add_library(howdy_auth_helper_core STATIC src/auth_helper/command.cpp)

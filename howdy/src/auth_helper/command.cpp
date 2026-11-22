@@ -3,6 +3,7 @@
 #include "auth_helper/runtime_descriptors.hpp"
 #include "config/runtime_paths.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
+#include "storage/user_model_store.hpp"
 #include "support/passwd_lookup.hpp"
 #include "support/scoped_stream_capture.hpp"
 #include "support/user_names.hpp"
@@ -114,9 +115,12 @@ namespace howdy::native::auth_helper::command {
 				// unprivileged caller (runtime_paths.cpp), so these are the installed locations.
 				const auto opened =
 				    OpenRuntimeDescriptors(user, {
-				                                     .config          = ResolveConfigPath(),
-				                                     .user_models_dir = ResolveUserModelsDir(),
-				                                     .owner_uid       = 0,
+				                                     .config      = ResolveConfigPath(),
+				                                     .user_models = howdy::native::UserModelStore({
+				                                         .models_dir = ResolveUserModelsDir(),
+				                                         .owner_uid  = 0,
+				                                     }),
+				                                     .config_owner_uid = 0,
 				                                 });
 				if (!opened.ok) {
 					std::cerr << opened.error_message << "\n";

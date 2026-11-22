@@ -2,8 +2,8 @@
 #include "module/auth_flow.hpp"
 #include "pam_test_support.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
-#include "storage/user_model_readiness.hpp"
 #include "storage/user_model_status.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <array>
 #include <chrono>
@@ -98,18 +98,26 @@ namespace howdy::test::auth_flow {
 		return kDescriptorFile.Path();
 	}
 
+	struct FlowReadiness {
+		howdy::native::UserModelStatus status = howdy::native::UserModelStatus::kNoModel;
+		std::string                    error_message;
+	};
+
 	// The opener's model state for a readiness result.
-	inline auto FlowModelState(const howdy::native::UserModelReadinessResult &readiness)
+	inline auto FlowModelState(const FlowReadiness &readiness)
 	    -> howdy::native::runtime_descriptor_message::ModelState {
+		using howdy::native::Classify;
+		using howdy::native::UserModelOutcome;
+		using howdy::native::UserModelStatus;
 		using howdy::native::runtime_descriptor_message::ModelState;
-		switch (readiness.status) {
-			case howdy::native::UserModelStatus::kOk:
+		if (readiness.status == UserModelStatus::kInvalidUser) {
+			return ModelState::kInvalidUser;
+		}
+		switch (Classify(readiness.status)) {
+			case UserModelOutcome::kOk:
 				return ModelState::kReady;
-			case howdy::native::UserModelStatus::kNoModel:
-			case howdy::native::UserModelStatus::kNoModelDirectory:
+			case UserModelOutcome::kAbsent:
 				return ModelState::kMissing;
-			case howdy::native::UserModelStatus::kInvalidUser:
-				return ModelState::kInvalidUser;
 			default:
 				return ModelState::kInvalidStorage;
 		}
@@ -143,7 +151,7 @@ namespace howdy::test::auth_flow {
 		    .status = howdy::pam::runtime::LidProbeStatus::kOk,
 		    .state  = howdy::pam::runtime::LidState::kOpen,
 		};
-		howdy::native::UserModelReadinessResult readiness{
+		FlowReadiness readiness{
 		    .status = howdy::native::UserModelStatus::kOk,
 		};
 		int ssh_calls   = 0;

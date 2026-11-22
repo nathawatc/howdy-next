@@ -1,8 +1,8 @@
 #pragma once
 
 #include "app/command_invocation.hpp"
+#include "storage/user_model_store.hpp"
 #include "storage/user_model_types.hpp"
-#include "support/file_security/validation_root.hpp"
 
 #include <string>
 
@@ -21,10 +21,10 @@ namespace howdy::native::clear_internal {
 		ClearUserModelEntriesIfUnchangedFn clear_user_model_entries_if_unchanged = nullptr;
 	};
 
+	// Binds every dependency to `store`, which must outlive the returned dependencies.
+	[[nodiscard]] auto StoreDependencies(howdy::native::UserModelStore &store) -> ClearDependencies;
+
 	auto ClearMainWithDependencies(const CommandInvocation &invocation,
 	                               const ClearDependencies &dependencies) -> int;
-
-	auto ClearMainWithValidationRoot(const CommandInvocation               &invocation,
-	                                 file_security_internal::ValidationRoot validation_root) -> int;
 
 }  // namespace howdy::native::clear_internal

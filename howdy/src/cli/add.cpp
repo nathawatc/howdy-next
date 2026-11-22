@@ -6,8 +6,8 @@
 #include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_store.hpp"
 #include "storage/user_model_types.hpp"
-#include "storage/user_models.hpp"
 #include "support/capture_exposure.hpp"
 #include "vision/face_detection.hpp"
 #include "vision/face_encoding.hpp"
@@ -26,6 +26,7 @@ namespace {
 	constexpr int kMaxFrames = 60;
 
 	struct AddProductionContext {
+		howdy::native::UserModelStore           store;
 		std::optional<howdy::native::FaceModel> face_model;
 	};
 
@@ -35,22 +36,28 @@ namespace {
 		return howdy::native::LoadRuntimeConfig();
 	}
 
-	auto AppendUserModelEntryDependency(void *context, const std::string &user,
-	                                    const howdy::native::NewUserModelEntry &entry)
-	    -> howdy::native::UserModelMutationResult {
-		(void)context;
-		return howdy::native::AppendUserModelEntry(user, entry);
-	}
-
 	auto IsExistingModelIncompatibleStatus(howdy::native::UserModelStatus status) -> bool {
 		return status == howdy::native::UserModelStatus::kIncompatibleBackend ||
 		       status == howdy::native::UserModelStatus::kIncompatibleModel;
 	}
 
 	auto IsExistingModelAllowedStatus(howdy::native::UserModelStatus status) -> bool {
-		return status == howdy::native::UserModelStatus::kOk ||
-		       status == howdy::native::UserModelStatus::kNoModel ||
-		       status == howdy::native::UserModelStatus::kNoModelDirectory;
+		const auto outcome = howdy::native::Classify(status);
+		return outcome == howdy::native::UserModelOutcome::kOk ||
+		       outcome == howdy::native::UserModelOutcome::kAbsent;
+	}
+
+	auto AppendUserModelEntryDependency(void *context, const std::string &user,
+	                                    const howdy::native::NewUserModelEntry &entry)
+	    -> howdy::native::UserModelMutationResult {
+		const auto *production_context = static_cast<AddProductionContext *>(context);
+		if (production_context == nullptr) {
+			return howdy::native::UserModelMutationResult{
+			    .status        = howdy::native::UserModelStatus::kWriteFailed,
+			    .error_message = "User model store is not initialized",
+			};
+		}
+		return production_context->store.AppendEntry(user, entry);
 	}
 
 	auto PreflightEnrollmentDependency(void *context, const std::string &user,
@@ -72,7 +79,7 @@ namespace {
 			};
 		}
 
-		const auto entries = howdy::native::ListUserModelEntries(
+		const auto entries = production_context->store.ListEntries(
 		    user, howdy::native::FaceModel::kBackendName, howdy::native::FaceModel::kSfaceModel);
 		if (IsExistingModelIncompatibleStatus(entries.status)) {
 			return howdy::native::add_internal::AddPreflightResult{
@@ -176,7 +183,7 @@ namespace {
 }  // namespace
 
 auto AddMain(const howdy::native::CommandInvocation &invocation) -> int {
-	AddProductionContext context;
+	AddProductionContext context{.store = howdy::native::UserModelStore::Production()};
 	return howdy::native::add_internal::AddMainWithDependencies(
 	    invocation, howdy::native::add_internal::AddDependencies{
 	                    .context              = &context,

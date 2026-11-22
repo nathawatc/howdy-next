@@ -1,6 +1,7 @@
 #include "app/command_invocation.hpp"
 #include "cli/clear/internal.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_store.hpp"
 #include "storage/user_model_types.hpp"
 #include "test_support.hpp"
 
@@ -15,6 +16,7 @@
 #include <vector>
 
 #include <stdlib.h>
+#include <unistd.h>
 
 namespace {
 
@@ -284,16 +286,20 @@ namespace {
 		std::error_code                       ec;
 		fs::create_directories(models_dir, ec);
 		ok &= Expect(!ec, "create integration models dir");
-		const howdy::test::ScopedEnvironmentVariable models_env("HOWDY_USER_MODELS_DIR",
-		                                                        models_dir.string());
+		howdy::native::UserModelStore store({
+		    .models_dir      = models_dir,
+		    .owner_uid       = geteuid(),
+		    .validation_root = {.path = temp_root},
+		});
 
 		auto const run_boundary_aware_clear = [&] -> int {
 			std::istringstream const input_stream;
 			std::ostringstream const output_stream;
 			StreamRedirect const     redirect(std::cin, input_stream.rdbuf(), std::cout,
 			                                  output_stream.rdbuf());
-			return howdy::native::clear_internal::ClearMainWithValidationRoot(
-			    {.resolved_user = "alice", .assume_yes = true}, {temp_root});
+			return howdy::native::clear_internal::ClearMainWithDependencies(
+			    {.resolved_user = "alice", .assume_yes = true},
+			    howdy::native::clear_internal::StoreDependencies(store));
 		};
 
 		ok &= Expect(WriteFile(model_path, "not-json"), "write malformed model JSON");

@@ -4,9 +4,8 @@
 #include "cli/clear/internal.hpp"
 #include "cli/confirmation_prompt.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_store.hpp"
 #include "storage/user_model_types.hpp"
-#include "storage/user_models.hpp"
-#include "support/file_security/validation_root.hpp"
 
 #include <iostream>
 #include <string>
@@ -17,22 +16,41 @@ namespace {
 	constexpr int  kClearExitAbort           = 1;
 	constexpr auto kNoFaceModelsFoundMessage = "No face models found.";
 
-	auto InspectUserModelFileDependency(void *context, const std::string &user)
+	auto InspectUserModelFileFromStore(void *context, const std::string &user)
 	    -> howdy::native::UserModelInspectResult {
-		return howdy::native::InspectUserModelFile(
-		    user, *static_cast<howdy::native::file_security_internal::ValidationRoot *>(context));
+		const auto *store = static_cast<const howdy::native::UserModelStore *>(context);
+		if (store == nullptr) {
+			return {
+			    .status        = howdy::native::UserModelStatus::kParseError,
+			    .error_message = "User model store is not initialized",
+			};
+		}
+		return store->InspectFile(user);
 	}
 
-	auto ClearUserModelEntriesIfUnchangedDependency(
-	    void *context, const std::string &user,
-	    const howdy::native::UserModelFileSnapshot &expected_snapshot)
+	auto ClearUserModelEntriesFromStore(void *context, const std::string &user,
+	                                    const howdy::native::UserModelFileSnapshot &expected)
 	    -> howdy::native::UserModelMutationResult {
-		return howdy::native::ClearUserModelEntriesIfUnchanged(
-		    user, expected_snapshot,
-		    *static_cast<howdy::native::file_security_internal::ValidationRoot *>(context));
+		const auto *store = static_cast<const howdy::native::UserModelStore *>(context);
+		if (store == nullptr) {
+			return {
+			    .status        = howdy::native::UserModelStatus::kWriteFailed,
+			    .error_message = "User model store is not initialized",
+			};
+		}
+		return store->ClearEntriesIfUnchanged(user, expected);
 	}
 
 }  // namespace
+
+auto howdy::native::clear_internal::StoreDependencies(howdy::native::UserModelStore &store)
+    -> ClearDependencies {
+	return {
+	    .context                               = &store,
+	    .inspect_user_model_file               = InspectUserModelFileFromStore,
+	    .clear_user_model_entries_if_unchanged = ClearUserModelEntriesFromStore,
+	};
+}
 
 auto howdy::native::clear_internal::ClearMainWithDependencies(
     const howdy::native::CommandInvocation &invocation, const ClearDependencies &dependencies)
@@ -47,8 +65,7 @@ auto howdy::native::clear_internal::ClearMainWithDependencies(
 	}
 	const auto &user       = *invocation.resolved_user;
 	const auto  inspection = dependencies.inspect_user_model_file(dependencies.context, user);
-	if (inspection.status == howdy::native::UserModelStatus::kNoModelDirectory ||
-	    inspection.status == howdy::native::UserModelStatus::kNoModel) {
+	if (howdy::native::Classify(inspection.status) == howdy::native::UserModelOutcome::kAbsent) {
 		std::cout << kNoFaceModelsFoundMessage << '\n';
 		return kClearExitOk;
 	}
@@ -70,8 +87,9 @@ auto howdy::native::clear_internal::ClearMainWithDependencies(
 
 	const auto clear_result = dependencies.clear_user_model_entries_if_unchanged(
 	    dependencies.context, user, *inspection.snapshot);
-	if (clear_result.status == howdy::native::UserModelStatus::kNoModelDirectory ||
-	    clear_result.status == howdy::native::UserModelStatus::kNoModel) {
+	// The store reports a model gone since the inspection as changed; an absent result can
+	// only come from another adapter at this seam, and still means nothing is left to clear.
+	if (howdy::native::Classify(clear_result.status) == howdy::native::UserModelOutcome::kAbsent) {
 		std::cout << kNoFaceModelsFoundMessage << '\n';
 		return kClearExitOk;
 	}
@@ -84,18 +102,8 @@ auto howdy::native::clear_internal::ClearMainWithDependencies(
 	                                                                  : kClearExitAbort;
 }
 
-auto howdy::native::clear_internal::ClearMainWithValidationRoot(
-    const howdy::native::CommandInvocation &invocation,
-    file_security_internal::ValidationRoot  validation_root) -> int {
-	return howdy::native::clear_internal::ClearMainWithDependencies(
-	    invocation,
-	    {
-	        .context                               = &validation_root,
-	        .inspect_user_model_file               = InspectUserModelFileDependency,
-	        .clear_user_model_entries_if_unchanged = ClearUserModelEntriesIfUnchangedDependency,
-	    });
-}
-
 auto ClearMain(const howdy::native::CommandInvocation &invocation) -> int {
-	return howdy::native::clear_internal::ClearMainWithValidationRoot(invocation, {});
+	auto store = howdy::native::UserModelStore::Production();
+	return howdy::native::clear_internal::ClearMainWithDependencies(
+	    invocation, howdy::native::clear_internal::StoreDependencies(store));
 }
