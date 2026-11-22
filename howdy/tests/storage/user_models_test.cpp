@@ -145,6 +145,16 @@ namespace howdy::test::user_models {
 			                 result.stored.models.at(2).label == "second",
 			             "second model metadata preserved");
 		}
+		{
+			const auto accepted =
+			    howdy::native::LoadUserModels("alice", backend, geteuid(), {temp_root});
+			ok &= Expect(accepted.status == howdy::native::UserModelStatus::kOk,
+			             "explicit matching owner accepts model");
+			const auto rejected = howdy::native::LoadUserModels(
+			    "alice", backend, static_cast<uid_t>(geteuid() + 1), {temp_root});
+			ok &= Expect(rejected.status == howdy::native::UserModelStatus::kInsecurePath,
+			             "explicit mismatched owner rejects model");
+		}
 
 		ok &= Expect(
 		    WriteFile(

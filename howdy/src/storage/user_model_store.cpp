@@ -731,7 +731,8 @@ namespace howdy::native {
 	}
 
 	auto UserModelStore::LoadDocumentFromPath(const std::filesystem::path &path,
-	                                          const UserModelExpectations &expectations)
+	                                          const UserModelExpectations &expectations,
+	                                          std::optional<uid_t>         owner_uid)
 	    -> user_model_codec::Document {
 		ScopedFd const input(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
 		if (input.Get() < 0) {
@@ -746,7 +747,7 @@ namespace howdy::native {
 			        WithErrno("Failed to open user model file: " + path.string(), error_number)),
 			};
 		}
-		return LoadDocumentFromFd(input.Get(), path, expectations, DefaultSecureOwnerUid());
+		return LoadDocumentFromFd(input.Get(), path, expectations, owner_uid);
 	}
 
 	auto UserModelStore::LoadDocument(const std::string                            &user,
@@ -759,7 +760,7 @@ namespace howdy::native {
 			return user_model_codec::Document(
 			    StoreListFailure(path_result.status, path_result.error_message));
 		}
-		return LoadDocumentFromPath(path_result.path, expectations);
+		return LoadDocumentFromPath(path_result.path, expectations, owner_uid);
 	}
 
 	auto UserModelStore::Inspect(const std::string                            &user,

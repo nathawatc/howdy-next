@@ -107,7 +107,8 @@ namespace howdy::native {
 		        const file_security_internal::ValidationRoot &validation_root)
 		    -> UserModelInspectResult;
 		[[nodiscard]] static auto LoadDocumentFromPath(const std::filesystem::path &path,
-		                                               const UserModelExpectations &expectations)
+		                                               const UserModelExpectations &expectations,
+		                                               std::optional<uid_t>         owner_uid)
 		    -> user_model_codec::Document;
 		// Validates a descriptor that is already open, then reads its document. A nullopt
 		// `owner_uid` skips the owner check.
