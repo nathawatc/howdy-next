@@ -1,7 +1,8 @@
 #pragma once
 
+#include "support/ascii.hpp"
+
 #include <algorithm>
-#include <cctype>
 #include <cstddef>
 #include <string_view>
 
@@ -16,7 +17,7 @@ namespace howdy::native {
 	// The longest user name whose model file name still fits in NAME_MAX (255 bytes).
 	inline constexpr std::size_t kMaxModelUserNameBytes = 255 - kUserModelFileSuffix.size();
 
-	inline auto IsValidModelUserName(const std::string_view user) -> bool {
+	[[nodiscard]] constexpr auto IsValidModelUserName(const std::string_view user) -> bool {
 		if (user.empty() || user.size() > kMaxModelUserNameBytes) {
 			return false;
 		}
@@ -26,8 +27,7 @@ namespace howdy::native {
 		}
 
 		return std::ranges::all_of(user, [](const char raw) -> bool {
-			const auto ch = static_cast<unsigned char>(raw);
-			return raw != '/' && raw != '\\' && std::isspace(ch) == 0 && std::iscntrl(ch) == 0;
+			return raw != '/' && raw != '\\' && !IsAsciiSpace(raw) && !IsAsciiControl(raw);
 		});
 	}
 
