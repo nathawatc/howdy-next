@@ -270,6 +270,8 @@ namespace {
 				}
 				terminal_status = abort_status;
 			}
+			// Also after a refused signal: compare may still end on its own within the grace, and
+			// one that is never reaped stays a zombie in the PAM application.
 			const auto grace =
 			    PollCompareUntil(child_pidfd, -1, Clock::now() + kCompareTerminationGrace);
 			if (grace == WaitOutcome::kExited) {
@@ -347,10 +349,9 @@ namespace howdy::pam::compare_process {
 		                             cancellation_context, cancellation_requested, cancellation_fd);
 	}
 
-	auto Wait(void *context, pid_t child_pid, int child_pidfd, int verdict_fd,
+	auto Wait([[maybe_unused]] void *context, pid_t child_pid, int child_pidfd, int verdict_fd,
 	          std::chrono::steady_clock::time_point deadline, void *cancellation_context,
 	          CompareCancellationRequestedFn cancellation_requested, int cancellation_fd) -> int {
-		(void)context;
 		return WaitUntil(child_pid, child_pidfd, verdict_fd, deadline, cancellation_context,
 		                 cancellation_requested, cancellation_fd);
 	}

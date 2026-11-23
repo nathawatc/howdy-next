@@ -45,9 +45,10 @@ namespace howdy::pam {
 
 	class RuntimeSessionOperations {
 	public:
-		static auto Create(void *context, OpenRuntimeInProcessFn open_in_process,
-		                   OpenRuntimeThroughHelperFn open_through_helper,
-		                   LoadRuntimeConfigFn load_runtime_config, EffectiveUidFn effective_uid)
+		[[nodiscard]] static auto Create(void *context, OpenRuntimeInProcessFn open_in_process,
+		                                 OpenRuntimeThroughHelperFn open_through_helper,
+		                                 LoadRuntimeConfigFn        load_runtime_config,
+		                                 EffectiveUidFn             effective_uid)
 		    -> std::optional<RuntimeSessionOperations> {
 			if (open_in_process == nullptr || open_through_helper == nullptr ||
 			    load_runtime_config == nullptr || effective_uid == nullptr) {
@@ -134,7 +135,7 @@ namespace howdy::pam {
 
 		~RuntimeSession();
 
-		auto LoadForUser(std::string_view username) -> RuntimeSessionLoadResult;
+		[[nodiscard]] auto LoadForUser(std::string_view username) -> RuntimeSessionLoadResult;
 
 		[[nodiscard]] auto ModelState() const
 		    -> howdy::native::runtime_descriptor_message::ModelState;
@@ -151,6 +152,6 @@ namespace howdy::pam {
 		bool                     load_started_ = false;
 	};
 
-	auto ProductionRuntimeSessionOperations() -> RuntimeSessionOperations;
+	[[nodiscard]] auto ProductionRuntimeSessionOperations() -> RuntimeSessionOperations;
 
 }  // namespace howdy::pam

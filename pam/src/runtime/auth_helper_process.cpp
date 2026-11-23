@@ -11,6 +11,7 @@
 
 #include <cerrno>
 #include <chrono>
+#include <format>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -96,12 +97,12 @@ namespace {
 
 	auto DescribeWaitStatus(int status) -> std::string {
 		if (WIFEXITED(status)) {
-			return "exit status " + std::to_string(WEXITSTATUS(status));
+			return std::format("exit status {}", WEXITSTATUS(status));
 		}
 		if (WIFSIGNALED(status)) {
-			return "signal " + std::to_string(WTERMSIG(status));
+			return std::format("signal {}", WTERMSIG(status));
 		}
-		return "wait status " + std::to_string(status);
+		return std::format("wait status {}", status);
 	}
 
 	// The result is already decided by the message; the exit status is only reaped and logged.
@@ -173,6 +174,15 @@ namespace howdy::pam::auth_helper_process {
 	auto OpenRuntimeDescriptors(std::string_view username, RuntimeDescriptorSet *descriptors,
 	                            const Operations                     &operations,
 	                            std::chrono::steady_clock::time_point deadline) -> bool {
+		if (username.empty() || descriptors == nullptr || operations.socketpair == nullptr ||
+		    operations.duplicate_fd == nullptr || operations.actions_init == nullptr ||
+		    operations.actions_addopen == nullptr || operations.actions_adddup2 == nullptr ||
+		    operations.actions_addclosefrom == nullptr || operations.actions_destroy == nullptr ||
+		    operations.spawn == nullptr || operations.close == nullptr) {
+			LogAuthHelperMessage(operations, LOG_ERR,
+			                     "Howdy auth helper open request is incomplete");
+			return false;
+		}
 		return ::OpenRuntimeDescriptorsUntil(username, descriptors, operations, deadline);
 	}
 

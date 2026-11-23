@@ -3,6 +3,7 @@
 #include "support/error_message.hpp"
 
 #include <cerrno>
+#include <format>
 #include <fstream>
 #include <span>
 #include <string>
@@ -42,13 +43,12 @@ namespace howdy::pam::runtime {
 		};
 
 		auto GlobErrorMessage(int return_value, int error_number) -> std::string {
-			std::string message = "Failed to read files from glob: " + std::to_string(return_value);
 			if (error_number != 0) {
-				message += "; Underlying error: ";
-				message += howdy::native::SystemErrorMessage(error_number);
-				message += " (" + std::to_string(error_number) + ")";
+				return std::format("Failed to read files from glob: {}; Underlying error: {} ({})",
+				                   return_value, howdy::native::SystemErrorMessage(error_number),
+				                   error_number);
 			}
-			return message;
+			return std::format("Failed to read files from glob: {}", return_value);
 		}
 
 		auto FileErrorMessage(const char *path) -> std::string {

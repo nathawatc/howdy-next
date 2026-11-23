@@ -2,6 +2,7 @@
 #	define _GNU_SOURCE
 #endif
 
+#include "../child_process/internal.hpp"
 #include "internal.hpp"
 #include "runtime/child_process.hpp"
 
@@ -10,7 +11,6 @@
 #include <chrono>
 
 #include <signal.h>
-#include <stdlib.h>
 
 #include <sys/poll.h>
 #include <sys/syslog.h>
@@ -19,11 +19,7 @@
 namespace howdy::pam::auth_helper_process::internal {
 
 	auto DeadlinePollTimeout(HelperDeadline deadline) -> int {
-		const auto remaining = deadline - std::chrono::steady_clock::now();
-		if (remaining <= HelperDeadline::duration::zero()) {
-			return 0;
-		}
-		return static_cast<int>(std::chrono::ceil<std::chrono::milliseconds>(remaining).count());
+		return howdy::pam::runtime::internal::PollTimeoutMs(deadline);
 	}
 
 	namespace {

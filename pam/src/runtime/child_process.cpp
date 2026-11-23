@@ -4,16 +4,18 @@
 
 #include "runtime/child_process.hpp"
 
+#include "child_process/internal.hpp"
 #include "support/bit_flags.hpp"
 #include "support/eintr.hpp"
 #include "support/process_status.hpp"
+#include "support/scoped_fd.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <optional>
 
-#include <fcntl.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdlib.h>
@@ -78,13 +80,11 @@ namespace {
 	// opened the probe proves nothing, and the posix_spawn fallback could not take its pidfd
 	// either, so pidfd_spawn is still tried: the check after it stops the child on a failure.
 	auto PidfdGetpidMayWork() noexcept -> bool {
-		const int self = pidfd_open(getpid(), 0);
-		if (self < 0) {
+		const howdy::native::ScopedFd self(pidfd_open(getpid(), 0));
+		if (!self.Valid()) {
 			return true;
 		}
-		const bool works = pidfd_getpid(self) == getpid();
-		(void)close(self);
-		return works;
+		return pidfd_getpid(self.Get()) == getpid();
 	}
 #endif
 
@@ -93,34 +93,32 @@ namespace {
 namespace howdy::pam::runtime {
 
 	auto OpenChildPidfd(pid_t child_pid) noexcept -> int {
-		int pidfd = pidfd_open(child_pid, 0);
-		if (pidfd >= 0 && pidfd <= STDERR_FILENO) {
-			// Keep the long-lived descriptor clear of stdio.
-			const int moved = fcntl(pidfd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
-			// A descriptor limit at or below the target makes this EINVAL, which callers would
-			// read as a child already gone (PidfdErrorMeansChildGone); report the limit instead.
-			const int error = errno == EINVAL ? EMFILE : errno;
-			(void)close(pidfd);
-			errno = error;
-			pidfd = moved;
+		howdy::native::ScopedFd pidfd(pidfd_open(child_pid, 0));
+		if (!pidfd.Valid()) {
+			return -1;
 		}
-		if (pidfd < 0) {
+		if (!internal::RaiseFdAbove(&pidfd, STDERR_FILENO + 1)) {
+			// Retain errno set by RaiseFdAbove (EMFILE instead of EINVAL on RLIMIT_NOFILE)
+			// across ScopedFd close before failing.
+			const int error = errno;
+			pidfd.Reset();
+			errno = error;
 			return -1;
 		}
 		// If the PID was reaped and reused before the open, the pidfd may name a process that is
 		// not our child; a pidfd wait reports that as ECHILD. Linux 5.3 has no P_PIDFD (EINVAL),
 		// so there the PID is checked instead, which still rules out a process that is not a
 		// child of this one.
-		auto peek = PeekChild(P_PIDFD, static_cast<id_t>(pidfd));
+		auto peek = PeekChild(P_PIDFD, static_cast<id_t>(pidfd.Get()));
 		if (peek == ChildPeek::kUnavailable && errno == EINVAL) {
 			peek = PeekChild(P_PID, static_cast<id_t>(child_pid));
 		}
 		if (peek == ChildPeek::kNotOurs) {
-			(void)close(pidfd);
+			pidfd.Reset();
 			errno = ECHILD;
 			return -1;
 		}
-		return pidfd;
+		return pidfd.Release();
 	}
 
 	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
@@ -235,18 +233,23 @@ namespace howdy::pam::runtime {
 	}
 
 	auto TrackedChild::AwaitExit(std::chrono::milliseconds timeout) noexcept -> bool {
-		using Clock           = std::chrono::steady_clock;
-		const auto deadline   = Clock::now() + timeout;
+		if (timeout <= std::chrono::milliseconds::zero()) {
+			return false;
+		}
+		using Clock    = std::chrono::steady_clock;
+		const auto now = Clock::now();
+		const auto max_timeout_ms =
+		    std::chrono::duration_cast<std::chrono::milliseconds>(Clock::time_point::max() - now);
+		const auto deadline = timeout >= max_timeout_ms ? Clock::time_point::max() : now + timeout;
 		bool       poll_pidfd = pidfd_ >= 0;
 		while (!reaped_elsewhere_) {
-			const auto remaining =
-			    std::chrono::ceil<std::chrono::milliseconds>(deadline - Clock::now()).count();
-			if (remaining <= 0) {
+			const int remaining_ms = internal::PollTimeoutMs(deadline);
+			if (remaining_ms <= 0) {
 				return false;
 			}
 			if (poll_pidfd) {
 				pollfd    descriptor{.fd = pidfd_, .events = POLLIN, .revents = 0};
-				const int result = poll(&descriptor, 1, static_cast<int>(remaining));
+				const int result = poll(&descriptor, 1, remaining_ms);
 				if (result > 0 && howdy::native::HasAnyBits(descriptor.revents, POLLIN, POLLHUP)) {
 					return true;  // exited
 				}
@@ -274,9 +277,7 @@ namespace howdy::pam::runtime {
 					break;  // an unavailable peek just waits out the timeout
 			}
 			constexpr int pid_poll_interval_ms = 10;
-			(void)poll(nullptr, 0,
-			           remaining < pid_poll_interval_ms ? static_cast<int>(remaining)
-			                                            : pid_poll_interval_ms);
+			(void)poll(nullptr, 0, std::min(remaining_ms, pid_poll_interval_ms));
 		}
 		return false;
 	}
@@ -321,6 +322,9 @@ namespace howdy::pam::runtime {
 	// pidfd_spawn and pidfd_getpid (glibc 2.39); without it only the posix_spawn path is built.
 	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 	auto SpawnChild(pid_t *pid, int *pidfd, const SpawnArguments &arguments) noexcept -> int {
+		if (pid == nullptr || pidfd == nullptr || arguments.path == nullptr) {
+			return EINVAL;
+		}
 		*pid   = -1;
 		*pidfd = -1;
 #ifdef HOWDY_HAVE_PIDFD_SPAWN
@@ -330,16 +334,17 @@ namespace howdy::pam::runtime {
 			return posix_spawn(pid, arguments.path, arguments.actions, nullptr, arguments.argv,
 			                   arguments.envp);
 		}
-		int       spawned_pidfd = -1;
-		const int result = pidfd_spawn(&spawned_pidfd, arguments.path, arguments.actions, nullptr,
-		                               arguments.argv, arguments.envp);
+		int       raw_pidfd = -1;
+		const int result    = pidfd_spawn(&raw_pidfd, arguments.path, arguments.actions, nullptr,
+		                                  arguments.argv, arguments.envp);
 		if (result != ENOSYS) {
 			if (result != 0) {
 				return result;
 			}
+			howdy::native::ScopedFd spawned_pidfd(raw_pidfd);
 			// -1 (ESRCH) when the child already exited and the PAM application reaped it; the
 			// pidfd still names it.
-			const pid_t child_pid = pidfd_getpid(spawned_pidfd);
+			const pid_t child_pid = pidfd_getpid(spawned_pidfd.Get());
 			if (child_pid < 0 && errno != ESRCH) {
 				// The probe above passed, so this is unexpected (the descriptor limit reached, or
 				// /proc changed, meanwhile).
@@ -352,28 +357,20 @@ namespace howdy::pam::runtime {
 				// application to reap. If the pidfd signal itself fails (a filter on the
 				// application), nothing else can name the child safely: it runs until its own
 				// timeout, and the spawn still fails.
-				(void)pidfd_send_signal(spawned_pidfd, SIGKILL, nullptr, 0);
-				TrackedChild child(-1, spawned_pidfd);
+				(void)pidfd_send_signal(spawned_pidfd.Get(), SIGKILL, nullptr, 0);
+				TrackedChild child(-1, spawned_pidfd.Get());
 				(void)KillAndReap(child);
-				(void)close(spawned_pidfd);
 				return getpid_error;
 			}
-			if (spawned_pidfd <= STDERR_FILENO) {
-				// Keep the long-lived descriptor clear of stdio, as OpenChildPidfd does.
-				const int moved = fcntl(spawned_pidfd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
-				if (moved < 0) {
-					const int move_error = errno;
-					// The child is ours and still named by this pidfd: stop it before letting go.
-					TrackedChild child(child_pid, spawned_pidfd);
-					(void)KillAndReap(child);
-					(void)close(spawned_pidfd);
-					return move_error;
-				}
-				(void)close(spawned_pidfd);
-				spawned_pidfd = moved;
+			if (!internal::RaiseFdAbove(&spawned_pidfd, STDERR_FILENO + 1)) {
+				const int move_error = errno;
+				// The child is ours and still named by this pidfd: stop it before letting go.
+				TrackedChild child(child_pid, spawned_pidfd.Get());
+				(void)KillAndReap(child);
+				return move_error;
 			}
 			*pid   = child_pid;
-			*pidfd = spawned_pidfd;
+			*pidfd = spawned_pidfd.Release();
 			return 0;
 		}
 #endif

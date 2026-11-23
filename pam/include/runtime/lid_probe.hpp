@@ -23,7 +23,7 @@ namespace howdy::pam::runtime {
 		std::string    error_message;
 	};
 
-	auto ReadLidState() -> LidStateResult;
-	auto ReadLidStateFromPattern(std::string_view pattern) -> LidStateResult;
+	[[nodiscard]] auto ReadLidState() -> LidStateResult;
+	[[nodiscard]] auto ReadLidStateFromPattern(std::string_view pattern) -> LidStateResult;
 
 }  // namespace howdy::pam::runtime

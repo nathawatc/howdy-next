@@ -489,8 +489,24 @@ namespace {
 		return ok;
 	}
 
+	auto ExpectDeadlinePollTimeoutBounds() -> bool {
+		using howdy::pam::auth_helper_process::internal::DeadlinePollTimeout;
+		using howdy::pam::auth_helper_process::internal::HelperDeadline;
+		const auto now         = std::chrono::steady_clock::now();
+		const int  bounded_pos = DeadlinePollTimeout(now + std::chrono::milliseconds(50));
+		return Expect(DeadlinePollTimeout(HelperDeadline::min()) == 0,
+		              "minimum deadline clamps poll timeout to zero") &&
+		       Expect(DeadlinePollTimeout(now - std::chrono::milliseconds(1)) == 0,
+		              "past deadline clamps poll timeout to zero") &&
+		       Expect(DeadlinePollTimeout(HelperDeadline::max()) == std::numeric_limits<int>::max(),
+		              "distant future deadline saturates poll timeout at INT_MAX") &&
+		       Expect(bounded_pos > 0 && bounded_pos <= 100,
+		              "near-term deadline stays positive within millisecond range");
+	}
+
 	auto ExpectProcessWaiting() -> bool {
-		bool        ok                = true;
+		bool ok = true;
+		ok &= ExpectDeadlinePollTimeoutBounds();
 		const pid_t compare_child_pid = SpawnExitingChild(7);
 		ok &= Expect(compare_child_pid > 0, "spawns compare child");
 		if (compare_child_pid > 0) {
