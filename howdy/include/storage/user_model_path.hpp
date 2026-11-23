@@ -9,8 +9,8 @@
 
 namespace howdy::native {
 
-	inline auto ResolveUserModelPath(const std::filesystem::path &base_dir,
-	                                 const std::string_view       user)
+	[[nodiscard]] inline auto ResolveUserModelPath(const std::filesystem::path &base_dir,
+	                                               const std::string_view       user)
 	    -> std::optional<std::filesystem::path> {
 		if (!IsValidModelUserName(user)) {
 			return std::nullopt;

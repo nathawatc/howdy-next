@@ -5,6 +5,7 @@
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "support/fd_io.hpp"
+#include "support/file_security.hpp"
 #include "support/scoped_fd.hpp"
 #include "user_model_codec/internal.hpp"
 #include "user_model_store/internal.hpp"
@@ -15,7 +16,6 @@
 #include <filesystem>
 #include <optional>
 #include <string>
-#include <system_error>
 #include <utility>
 
 #include <fcntl.h>
@@ -45,15 +45,6 @@ namespace howdy::native {
 			    .status        = status,
 			    .error_message = std::move(message),
 			};
-		}
-
-		auto SnapshotModelFile(const std::filesystem::path &path)
-		    -> std::optional<UserModelFileSnapshot> {
-			struct stat st{};
-			if (stat(path.c_str(), &st) != 0) {
-				return std::nullopt;
-			}
-			return user_model_store_internal::SnapshotFromStat(st);
 		}
 
 		auto LoadDocumentFromPath(const std::filesystem::path &path,
@@ -171,25 +162,6 @@ namespace howdy::native {
 			return result;
 		}
 
-		auto InspectRegularFileStatus(const std::filesystem::path &path, std::string *message)
-		    -> UserModelStatus {
-			std::error_code regular_ec;
-			if (std::filesystem::is_regular_file(path, regular_ec)) {
-				return UserModelStatus::kOk;
-			}
-			if (regular_ec) {
-				std::error_code exists_ec;
-				const auto      exists = std::filesystem::exists(path, exists_ec);
-				if (!exists && !exists_ec) {
-					return UserModelStatus::kNoModel;
-				}
-				*message = UserModelInspectionFailedMessage(path, exists_ec ? exists_ec.value()
-				                                                            : regular_ec.value());
-				return UserModelStatus::kParseError;
-			}
-			return UserModelStatus::kNoModel;
-		}
-
 	}  // namespace user_model_store_internal
 
 	auto UserModelStore::Production() -> UserModelStore {
@@ -221,26 +193,39 @@ namespace howdy::native {
 		if (path_result.status != UserModelStatus::kOk) {
 			return InspectFailure(path_result.status, path_result.error_message);
 		}
-		std::string regular_error;
-		const auto  regular_status =
-		    user_model_store_internal::InspectRegularFileStatus(path_result.path, &regular_error);
-		if (regular_status != UserModelStatus::kOk) {
-			return InspectFailure(regular_status, regular_error);
-		}
-		const auto current_snapshot = SnapshotModelFile(path_result.path);
-		if (!current_snapshot.has_value()) {
+		ScopedFd const input(
+		    open(path_result.path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+		if (!input.Valid()) {
 			const int error_number = errno;
-			// Removed since the regular-file check: no model, as that check would now report.
 			if (error_number == ENOENT) {
 				return InspectFailure(UserModelStatus::kNoModel, {});
+			}
+			if (error_number == ELOOP || error_number == EISDIR || error_number == ENXIO) {
+				return InspectFailure(UserModelStatus::kInsecurePath,
+				                      std::string(kUserModelFileLabel) +
+				                          " must be a regular file: " + path_result.path.string());
 			}
 			return InspectFailure(UserModelStatus::kParseError,
 			                      user_model_store_internal::UserModelInspectionFailedMessage(
 			                          path_result.path, error_number));
 		}
+		struct stat opened_stat{};
+		if (fstat(input.Get(), &opened_stat) != 0) {
+			const int error_number = errno;
+			return InspectFailure(UserModelStatus::kParseError,
+			                      user_model_store_internal::UserModelInspectionFailedMessage(
+			                          path_result.path, error_number));
+		}
+		// Keep empty files inspectable so clear can remove damaged empty storage.
+		const auto security =
+		    CheckSecurePathStat(opened_stat, SecurePathKind::kRegularFile, path_result.path,
+			                    kUserModelFileLabel, config_.owner_uid);
+		if (!security.ok) {
+			return InspectFailure(UserModelStatus::kInsecurePath, security.error_message);
+		}
 		return UserModelInspectResult{
 		    .status   = UserModelStatus::kOk,
-		    .snapshot = current_snapshot,
+		    .snapshot = user_model_store_internal::SnapshotFromStat(opened_stat),
 		};
 	}
 

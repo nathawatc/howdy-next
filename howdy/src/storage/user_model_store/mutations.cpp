@@ -33,15 +33,6 @@ namespace howdy::native::user_model_store_internal {
 		    "Model file was updated, but its directory could not be synced; verify state before "
 		    "retrying";
 
-		auto SnapshotsMatch(const UserModelFileSnapshot &left, const UserModelFileSnapshot &right)
-		    -> bool {
-			return left.dev == right.dev && left.inode == right.inode && left.size == right.size &&
-			       left.mtime_seconds == right.mtime_seconds &&
-			       left.mtime_nanosecs == right.mtime_nanosecs &&
-			       left.ctime_seconds == right.ctime_seconds &&
-			       left.ctime_nanosecs == right.ctime_nanosecs;
-		}
-
 		auto EntryMatches(const UserModelEntry &entry, const UserModelEntryExpectation &expected)
 		    -> bool {
 			return entry.id == expected.id && entry.time == expected.time &&
@@ -176,7 +167,7 @@ namespace howdy::native::user_model_store_internal {
 		              {.existence = MutationExistence::kRequireExisting, .load_document = false},
 		              [&](MutationContext &context) -> MutationDecision {
 			              if (!context.snapshot.has_value() ||
-						      !SnapshotsMatch(*context.snapshot, expected_snapshot)) {
+						      *context.snapshot != expected_snapshot) {
 				              return AbortMutation(UserModelStatus::kModelChanged,
 							                       std::string(kUserModelChangedMessage));
 			              }

@@ -6,13 +6,16 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
+#include <cstddef>
+#include <limits>
 #include <memory>
 #include <new>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <yyjson.h>
@@ -27,55 +30,54 @@ namespace howdy::native::user_model_codec {
 		auto operator=(const Impl &) -> Impl & = delete;
 		Impl(Impl &&)                          = delete;
 		auto operator=(Impl &&) -> Impl &      = delete;
-
-		~Impl() {
-			yyjson_doc_free(immutable_doc_);
-			yyjson_mut_doc_free(mutable_doc_);
-		}
+		~Impl()                                = default;
 
 		auto EnsureMutable() -> bool {
-			if (mutable_doc_ != nullptr) {
-				return true;
+			if (std::holds_alternative<user_model_codec_internal::YyjsonMutDocPtr>(doc_)) {
+				return Mutable() != nullptr;
 			}
-			if (immutable_doc_ != nullptr) {
-				mutable_doc_ = yyjson_doc_mut_copy(immutable_doc_, nullptr);
-				if (mutable_doc_ == nullptr) {
+			if (const auto *immutable = std::get_if<user_model_codec_internal::YyjsonDocPtr>(&doc_);
+			    immutable != nullptr && *immutable != nullptr) {
+				user_model_codec_internal::YyjsonMutDocPtr mut(
+				    yyjson_doc_mut_copy(immutable->get(), nullptr));
+				if (!mut) {
 					return false;
 				}
-				yyjson_doc_free(immutable_doc_);
-				immutable_doc_ = nullptr;
+				doc_ = std::move(mut);
 				return true;
 			}
 
-			mutable_doc_ = yyjson_mut_doc_new(nullptr);
-			if (mutable_doc_ == nullptr) {
+			user_model_codec_internal::YyjsonMutDocPtr mut(yyjson_mut_doc_new(nullptr));
+			if (!mut) {
 				return false;
 			}
-			auto *root = yyjson_mut_arr(mutable_doc_);
+			auto *root = yyjson_mut_arr(mut.get());
 			if (root == nullptr) {
-				yyjson_mut_doc_free(mutable_doc_);
-				mutable_doc_ = nullptr;
 				return false;
 			}
-			yyjson_mut_doc_set_root(mutable_doc_, root);
+			yyjson_mut_doc_set_root(mut.get(), root);
+			doc_ = std::move(mut);
 			return true;
 		}
 
-		void AdoptImmutable(yyjson_doc *immutable_doc) noexcept {
-			immutable_doc_ = immutable_doc;
+		void AdoptImmutable(user_model_codec_internal::YyjsonDocPtr immutable_doc) noexcept {
+			doc_ = std::move(immutable_doc);
 		}
 
 		[[nodiscard]] auto Immutable() const noexcept -> yyjson_doc * {
-			return immutable_doc_;
+			const auto *immutable = std::get_if<user_model_codec_internal::YyjsonDocPtr>(&doc_);
+			return immutable != nullptr ? immutable->get() : nullptr;
 		}
 
 		[[nodiscard]] auto Mutable() const noexcept -> yyjson_mut_doc * {
-			return mutable_doc_;
+			const auto *mut = std::get_if<user_model_codec_internal::YyjsonMutDocPtr>(&doc_);
+			return mut != nullptr ? mut->get() : nullptr;
 		}
 
 	private:
-		yyjson_doc     *immutable_doc_ = nullptr;
-		yyjson_mut_doc *mutable_doc_   = nullptr;
+		std::variant<std::monostate, user_model_codec_internal::YyjsonDocPtr,
+		             user_model_codec_internal::YyjsonMutDocPtr>
+		    doc_;
 	};
 
 	namespace {
@@ -157,15 +159,13 @@ namespace howdy::native::user_model_codec {
 	                    const std::string &expected_model, bool strict_shape) -> Document {
 		auto decoded = user_model_codec_internal::DecodeDocumentJson(input, expected_backend,
 		                                                             expected_model, strict_shape);
-		if (decoded.doc == nullptr) {
+		if (!decoded.doc) {
 			return Document(std::move(decoded.result));
 		}
 
-		std::unique_ptr<yyjson_doc, decltype(&yyjson_doc_free)> doc_owner(decoded.doc,
-		                                                                  yyjson_doc_free);
 		try {
 			auto impl = std::make_unique<Document::Impl>();
-			impl->AdoptImmutable(doc_owner.release());
+			impl->AdoptImmutable(std::move(decoded.doc));
 			return {std::move(decoded.result), std::move(impl)};
 		} catch (const std::bad_alloc &) {
 			return Document{UserModelListFailure(UserModelStatus::kParseError,
@@ -174,10 +174,14 @@ namespace howdy::native::user_model_codec {
 	}
 
 	auto AppendEntry(Document &document, const UserModelEntry &entry) -> bool {
+		// Allocated before the JSON array changes, so the two cannot disagree.
+		std::optional<UserModelEntry> stored_entry;
 		try {
 			if (document.impl_ == nullptr) {
 				document.impl_ = std::make_unique<Document::Impl>();
 			}
+			stored_entry.emplace(entry);
+			document.result_.entries.reserve(document.result_.entries.size() + 1);
 		} catch (const std::bad_alloc &) {
 			return false;
 		}
@@ -189,7 +193,15 @@ namespace howdy::native::user_model_codec {
 			return false;
 		}
 		auto *model = AddEntryValue(document.impl_->Mutable(), entry);
-		return model != nullptr && yyjson_mut_arr_append(root, model);
+		if (model == nullptr || !yyjson_mut_arr_append(root, model)) {
+			return false;
+		}
+		document.result_.status  = UserModelStatus::kOk;
+		document.result_.next_id = entry.id == std::numeric_limits<int>::max()
+		                               ? std::numeric_limits<int>::max()
+		                               : std::max(document.result_.next_id, entry.id + 1);
+		document.result_.entries.push_back(std::move(*stored_entry));
+		return true;
 	}
 
 	auto EraseEntry(Document &document, std::size_t index) -> bool {
@@ -197,7 +209,14 @@ namespace howdy::native::user_model_codec {
 			return false;
 		}
 		auto *root = yyjson_mut_doc_get_root(document.impl_->Mutable());
-		return yyjson_mut_arr_remove(root, index) != nullptr;
+		if (yyjson_mut_arr_remove(root, index) == nullptr) {
+			return false;
+		}
+		if (index < document.result_.entries.size()) {
+			document.result_.entries.erase(document.result_.entries.begin() +
+			                               static_cast<std::ptrdiff_t>(index));
+		}
+		return true;
 	}
 
 	auto IsEmpty(const Document &document) -> bool {
@@ -227,21 +246,19 @@ namespace howdy::native::user_model_codec {
 			output = yyjson_write_opts(document.impl_->Immutable(), YYJSON_WRITE_NOFLAG, nullptr,
 			                           &output_size, nullptr);
 		}
-		if (output == nullptr) {
+		const user_model_codec_internal::MallocCharPtr output_owner(output);
+		if (!output_owner) {
 			return std::nullopt;
 		}
 
 		try {
-			std::string serialized(output, output_size);
-			std::free(output);
-			return serialized;
+			return std::string(output_owner.get(), output_size);
 		} catch (const std::bad_alloc &) {
-			std::free(output);
 			return std::nullopt;
 		}
 	}
 
-	auto ValidateEncoding(const std::vector<float> &encoding) -> UserModelListResult {
+	auto ValidateEncoding(std::span<const float> encoding) -> UserModelListResult {
 		if (encoding.empty() || encoding.size() > user_model_limits::kMaxEncodingLength) {
 			return UserModelListFailure(
 			    UserModelStatus::kOversized,

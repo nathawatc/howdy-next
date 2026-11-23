@@ -110,9 +110,8 @@ namespace howdy::native::user_model_store_internal {
 			                        directory_security.error_message, *model_path);
 		}
 
-		const auto file_security = CheckSecureRootOwnedFileWithDirectory(
-		    *model_path, {.directory = kUserModelsDirectoryLabel, .file = kUserModelFileLabel},
-		    config.owner_uid, config.validation_root);
+		const auto file_security =
+		    CheckSecureRootOwnedFile(*model_path, kUserModelFileLabel, config.owner_uid);
 		if (!file_security.ok) {
 			if (file_security.error_code == ENOENT) {
 				return ReadinessFailure(UserModelStatus::kNoModel, {}, *model_path);

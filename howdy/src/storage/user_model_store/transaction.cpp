@@ -17,6 +17,7 @@
 #include "support/user_names.hpp"
 
 #include <cerrno>
+#include <expected>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -63,13 +64,14 @@ namespace howdy::native::user_model_store_internal {
 		}
 
 		// Whether `path` still names the opened `fd`, or, with no file open (-1), is still free.
-		// A symlink counts as something at the path. nullopt, with errno set, when lstat or
-		// fstat cannot tell.
-		auto PathStillMatches(const std::filesystem::path &path, int fd) -> std::optional<bool> {
+		// A symlink counts as something at the path.
+		auto PathStillMatches(const std::filesystem::path &path, int fd)
+		    -> std::expected<bool, int> {
 			struct stat path_stat{};
 			if (lstat(path.c_str(), &path_stat) != 0) {
-				if (errno != ENOENT) {
-					return std::nullopt;
+				const int error_number = errno;
+				if (error_number != ENOENT) {
+					return std::unexpected(error_number);
 				}
 				return fd < 0;
 			}
@@ -78,7 +80,7 @@ namespace howdy::native::user_model_store_internal {
 			}
 			struct stat fd_stat{};
 			if (fstat(fd, &fd_stat) != 0) {
-				return std::nullopt;
+				return std::unexpected(errno);
 			}
 			return SameFileIdentity(fd_stat, path_stat);
 		}
@@ -172,7 +174,8 @@ namespace howdy::native::user_model_store_internal {
 			}
 			// The exchange must have swapped out the opened model. If another actor replaced it
 			// after the identity check, exchange back and report the model changed.
-			if (const auto failure = IdentityFailure(staged.Path(), opened_fd); failure.has_value()) {
+			if (const auto failure = IdentityFailure(staged.Path(), opened_fd);
+			    failure.has_value()) {
 				if (RenameUnlessInjected(staged.Path(), path, AtomicRenameMode::kExchange,
 				                         hooks.rollback_exchange_errno) ==
 				    AtomicRenameResult::kSuccess) {
@@ -421,19 +424,19 @@ namespace howdy::native::user_model_store_internal {
 
 		// The namespace lock serializes writers only while the lock path still names the file this
 		// writer locked: a models directory removed and recreated since holds another lock.
-		// nullopt, with errno set, when lstat or fstat fails for a reason other than a missing
-		// lock path, which is an inspection failure rather than a change.
 		auto LockPathStillNamesLock(const std::filesystem::path &model_path, int lock_fd)
-		    -> std::optional<bool> {
+		    -> std::expected<bool, int> {
 			const auto  lock_path = ModelNamespaceLockPath(model_path);
 			struct stat path_stat{};
 			if (lstat(lock_path.c_str(), &path_stat) != 0) {
-				return errno == ENOENT || errno == ENOTDIR ? std::optional<bool>(false)
-				                                           : std::nullopt;
+				const int error_number = errno;
+				return error_number == ENOENT || error_number == ENOTDIR
+				           ? std::expected<bool, int>(false)
+						   : std::unexpected(error_number);
 			}
 			struct stat lock_stat{};
 			if (fstat(lock_fd, &lock_stat) != 0) {
-				return std::nullopt;
+				return std::unexpected(errno);
 			}
 			return SameFileIdentity(lock_stat, path_stat);
 		}
@@ -488,10 +491,9 @@ namespace howdy::native::user_model_store_internal {
 		auto RecheckOpenedPath(const std::filesystem::path &path, int fd) -> PathRecheck {
 			const auto unchanged = PathStillMatches(path, fd);
 			if (!unchanged.has_value()) {
-				const int error_number = errno;
 				return PathRecheck{
 				    .status        = UserModelStatus::kParseError,
-				    .error_message = UserModelInspectionFailedMessage(path, error_number),
+				    .error_message = UserModelInspectionFailedMessage(path, unchanged.error()),
 				};
 			}
 			if (!*unchanged) {
@@ -593,16 +595,6 @@ namespace howdy::native::user_model_store_internal {
 			return MutationFailure(status, std::move(message));
 		}
 
-		auto VerifyExistingRegularFile(const std::filesystem::path &path)
-		    -> std::optional<UserModelMutationResult> {
-			std::string regular_error;
-			const auto  regular_status = InspectRegularFileStatus(path, &regular_error);
-			if (regular_status == UserModelStatus::kOk) {
-				return std::nullopt;
-			}
-			return MapMutationStepFailure(regular_status, std::move(regular_error), false);
-		}
-
 		struct LockedMutationTarget {
 			std::optional<UserModelMutationResult> failure;
 			std::filesystem::path                  path;
@@ -681,11 +673,6 @@ namespace howdy::native::user_model_store_internal {
 					                                  allow_missing),
 				};
 			}
-			if (!allow_missing) {
-				if (auto failure = VerifyExistingRegularFile(path_result.path)) {
-					return {.failure = std::move(failure)};
-				}
-			}
 			if (config.hooks.before_lock) {
 				config.hooks.before_lock(path_result.path);
 			}
@@ -717,21 +704,15 @@ namespace howdy::native::user_model_store_internal {
 			const auto lock_still_held =
 			    LockPathStillNamesLock(path_result.path, opened_model.namespace_lock.Get());
 			if (!lock_still_held.has_value()) {
-				const int error_number = errno;
 				return {
 				    .failure = MutationFailure(
 				        UserModelStatus::kParseError,
 				        UserModelInspectionFailedMessage(ModelNamespaceLockPath(path_result.path),
-						                                 error_number)),
+						                                 lock_still_held.error())),
 				};
 			}
 			if (!*lock_still_held) {
 				return {.failure = ModelChangedFailure()};
-			}
-			if (!allow_missing) {
-				if (auto failure = VerifyExistingRegularFile(path_result.path)) {
-					return {.failure = std::move(failure)};
-				}
 			}
 			if (auto recheck = RecheckOpenedPath(path_result.path, opened_model.file.Get());
 			    recheck.status != UserModelStatus::kOk) {

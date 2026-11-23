@@ -5,6 +5,7 @@
 #include "support/face_metric.hpp"
 #include "test_support.hpp"
 
+#include <array>
 #include <atomic>
 #include <cstdlib>
 #include <limits>
@@ -71,9 +72,9 @@ namespace {
 		}
 	};
 
-	auto TestHasDuplicateDirectKey(std::string_view json_object, bool expected_duplicate,
-	                               bool verify_no_cpp_allocations, const std::string &label)
-	    -> bool {
+	auto TestDuplicateDirectKey(std::string_view json_object, bool expected_duplicate,
+	                            bool verify_no_cpp_allocations, const std::string &label) -> bool {
+		using howdy::native::user_model_codec_internal::ExtractModelFields;
 		yyjson_doc *doc = yyjson_read(json_object.data(), json_object.size(), 0);
 		if (doc == nullptr) {
 			return howdy::test::Expect(false, label + ": failed to parse test json");
@@ -83,10 +84,10 @@ namespace {
 		bool        no_alloc  = true;
 		if (verify_no_cpp_allocations) {
 			ScopedCppAllocationTracker const tracker;
-			duplicate = howdy::native::user_model_codec_internal::HasDuplicateDirectKey(root);
+			duplicate = ExtractModelFields(root, true).has_duplicate;
 			no_alloc  = !ScopedCppAllocationTracker::AllocationDetected();
 		} else {
-			duplicate = howdy::native::user_model_codec_internal::HasDuplicateDirectKey(root);
+			duplicate = ExtractModelFields(root, true).has_duplicate;
 		}
 		yyjson_doc_free(doc);
 		return howdy::test::Expect(duplicate == expected_duplicate,
@@ -251,40 +252,39 @@ namespace howdy::test::user_model_codec {
 		using howdy::native::UserModelStatus;
 
 		bool ok = true;
-		ok &= TestHasDuplicateDirectKey("{}", false, true,
-		                                "empty object (no keys) has no duplicates");
-		ok &= TestHasDuplicateDirectKey(R"({"id": 1})", false, true,
-		                                "single known key has no duplicates");
-		ok &= TestHasDuplicateDirectKey(R"({"future": 1})", false, true,
-		                                "single unknown key has no duplicates");
-		ok &= TestHasDuplicateDirectKey(
+		ok &= TestDuplicateDirectKey("{}", false, true, "empty object (no keys) has no duplicates");
+		ok &= TestDuplicateDirectKey(R"({"id": 1})", false, true,
+		                             "single known key has no duplicates");
+		ok &= TestDuplicateDirectKey(R"({"future": 1})", false, true,
+		                             "single unknown key has no duplicates");
+		ok &= TestDuplicateDirectKey(
 		    R"({"id": 7, "time": 1700000000, "label": "front", "backend": "opencv_dnn_sface"})",
 		    false, true, "normal object with multiple distinct known keys has no duplicates");
-		ok &= TestHasDuplicateDirectKey(R"({"id": 1, "id": 2})", true, true,
-		                                "adjacent duplicate known key id is detected");
-		ok &= TestHasDuplicateDirectKey(R"({"label": "a", "label": "b"})", true, true,
-		                                "adjacent duplicate known key label is detected");
-		ok &= TestHasDuplicateDirectKey(
+		ok &= TestDuplicateDirectKey(R"({"id": 1, "id": 2})", true, true,
+		                             "adjacent duplicate known key id is detected");
+		ok &= TestDuplicateDirectKey(R"({"label": "a", "label": "b"})", true, true,
+		                             "adjacent duplicate known key label is detected");
+		ok &= TestDuplicateDirectKey(
 		    R"({"id": 1, "time": 100, "label": "cam", "data": [[1.0]], "id": 2})", true, true,
 		    "duplicate known key id appearing later is detected");
-		ok &= TestHasDuplicateDirectKey(
+		ok &= TestDuplicateDirectKey(
 		    R"({"id": 1, "time": 100, "label": "cam", "backend": "sface", "metric": "cosine", "model": "m", "time": 200})",
 		    true, true, "duplicate known key time appearing later is detected");
-		ok &= TestHasDuplicateDirectKey(R"({"id": 1, "future": 42})", false, true,
-		                                "single unknown key alongside known key has no duplicates");
-		ok &= TestHasDuplicateDirectKey(R"({"id": 1, "future_a": 1, "future_b": 2})", false, true,
-		                                "multiple distinct unknown keys have no duplicates");
-		ok &= TestHasDuplicateDirectKey(R"({"future": 1, "future": 2})", true, true,
-		                                "adjacent duplicate unknown key is detected");
-		ok &= TestHasDuplicateDirectKey(R"({"id": 1, "future": 1, "time": 100, "future": 2})", true,
-		                                true, "duplicate unknown key appearing later is detected");
-		ok &= TestHasDuplicateDirectKey(
+		ok &= TestDuplicateDirectKey(R"({"id": 1, "future": 42})", false, true,
+		                             "single unknown key alongside known key has no duplicates");
+		ok &= TestDuplicateDirectKey(R"({"id": 1, "future_a": 1, "future_b": 2})", false, true,
+		                             "multiple distinct unknown keys have no duplicates");
+		ok &= TestDuplicateDirectKey(R"({"future": 1, "future": 2})", true, true,
+		                             "adjacent duplicate unknown key is detected");
+		ok &= TestDuplicateDirectKey(R"({"id": 1, "future": 1, "time": 100, "future": 2})", true,
+		                             true, "duplicate unknown key appearing later is detected");
+		ok &= TestDuplicateDirectKey(
 		    R"({"id": 1, "time": 100, "label": "cam", "data": [], "backend": "opencv_dnn_sface", "metric": "cosine", "model": "sface.onnx"})",
 		    false, true, "all seven known keys present exactly once have no duplicates");
-		ok &= TestHasDuplicateDirectKey(
+		ok &= TestDuplicateDirectKey(
 		    R"({"id": 1, "time": 100, "label": "cam", "data": [], "backend": "opencv_dnn_sface", "metric": "cosine", "model": "sface.onnx", "model": "sface2.onnx"})",
 		    true, true, "all seven known keys with duplicate trailing key is detected");
-		ok &= TestHasDuplicateDirectKey(
+		ok &= TestDuplicateDirectKey(
 		    R"({"id": 1, "time": 100, "label": "cam", "data": [], "backend": "opencv_dnn_sface", "metric": "cosine", "model": "sface.onnx", "id": 2})",
 		    true, true, "all seven known keys with duplicate leading key is detected");
 
@@ -322,6 +322,19 @@ namespace howdy::test::user_model_codec {
 		        .Result()
 		        .status,
 		    UserModelStatus::kOk, "multiple distinct unknown direct keys are accepted in decode");
+
+		{
+			std::string many_distinct = R"({"id":1)";
+			for (int i = 0; i < 32; ++i) {
+				many_distinct += ",\"extra_" + std::to_string(i) + "\":" + std::to_string(i);
+			}
+			const std::string many_dup = many_distinct + R"(,"extra_17":999})";
+			many_distinct += '}';
+			ok &= TestDuplicateDirectKey(many_distinct, false, false,
+			                             "many distinct unknown keys have no duplicate");
+			ok &= TestDuplicateDirectKey(many_dup, true, false,
+			                             "duplicate among many unknown keys is detected");
+		}
 		const auto tolerant_duplicate =
 		    Decode(ModelList({
 		               ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
@@ -438,15 +451,15 @@ namespace howdy::test::user_model_codec {
 		ok &= ExpectStatus(howdy::native::user_model_codec::ValidateEncoding({}).status,
 		                   UserModelStatus::kOversized, "empty encoding returns kOversized");
 		ok &= ExpectStatus(
-		    howdy::native::user_model_codec::ValidateEncoding({0.0F, 1.0F, -2.5F}).status,
+		    howdy::native::user_model_codec::ValidateEncoding(std::array{0.0F, 1.0F, -2.5F}).status,
 		    UserModelStatus::kOk, "finite valid encoding returns kOk");
 		ok &= ExpectStatus(howdy::native::user_model_codec::ValidateEncoding(
-		                       {std::numeric_limits<float>::quiet_NaN()})
+		                       std::array{std::numeric_limits<float>::quiet_NaN()})
 		                       .status,
 		                   UserModelStatus::kInvalidShape, "NaN encoding returns kInvalidShape");
 		ok &=
 		    ExpectStatus(howdy::native::user_model_codec::ValidateEncoding(
-		                     {std::numeric_limits<float>::infinity()})
+		                     std::array{std::numeric_limits<float>::infinity()})
 			                 .status,
 			             UserModelStatus::kInvalidShape, "infinity encoding returns kInvalidShape");
 		ok &= ExpectStatus(howdy::native::user_model_codec::ValidateEncoding(

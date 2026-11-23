@@ -6,14 +6,15 @@
 #include "support/face_metric.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
 #include <new>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -24,13 +25,6 @@
 namespace howdy::native::user_model_codec_internal {
 
 	namespace {
-
-#if YYJSON_VERSION_HEX >= 0x000D00
-		using ReadOnlyVal = yyjson_val const;
-#else
-		// yyjson 0.12 read helpers require a mutable pointer even for read-only traversal.
-		using ReadOnlyVal = yyjson_val;
-#endif
 
 		constexpr auto kStoredModelsIncompatibleMessage =
 		    "Stored face models use incompatible face-recognition metadata";
@@ -117,55 +111,101 @@ namespace howdy::native::user_model_codec_internal {
 			return ModelKeyBit::kNone;
 		}
 
+		class UnknownKeySet {
+		public:
+			void Add(std::string_view key) {
+				if (overflowed_) {
+					overflow_.push_back(key);
+					return;
+				}
+				if (inline_count_ < inline_.size()) {
+					inline_.at(inline_count_++) = key;
+					return;
+				}
+				overflow_.reserve(inline_.size() + 1);
+				overflow_.assign(inline_.begin(), inline_.end());
+				overflow_.push_back(key);
+				overflowed_ = true;
+			}
+
+			[[nodiscard]] auto HasDuplicate() -> bool {
+				if (overflowed_) {
+					std::ranges::sort(overflow_);
+					return std::ranges::adjacent_find(overflow_) != overflow_.end();
+				}
+				if (inline_count_ <= 1) {
+					return false;
+				}
+				const auto keys = std::span(inline_.data(), inline_count_);
+				std::ranges::sort(keys);
+				return std::ranges::adjacent_find(keys) != keys.end();
+			}
+
+		private:
+			static constexpr std::size_t kInlineCapacity = 8;
+
+			std::array<std::string_view, kInlineCapacity> inline_{};
+			std::size_t                                   inline_count_ = 0;
+			std::vector<std::string_view>                 overflow_;
+			bool                                          overflowed_ = false;
+		};
+
 	}  // namespace
 
-	auto HasDuplicateDirectKey(yyjson_val *model) -> bool {
-		if (yyjson_obj_size(model) <= 1) {
-			return false;
-		}
-
-		std::uint8_t seen_known_keys = 0;
-		auto         iterator        = yyjson_obj_iter_with(model);
-		while (ReadOnlyVal *key = yyjson_obj_iter_next(&iterator)) {
+	auto ExtractModelFields(yyjson_val *model_obj, bool check_duplicates) -> ExtractedModelFields {
+		ExtractedModelFields fields;
+		std::uint8_t         seen_known_keys = 0;
+		UnknownKeySet        unknown_keys;
+		auto                 iterator = yyjson_obj_iter_with(model_obj);
+		while (yyjson_val *const key = yyjson_obj_iter_next(&iterator)) {
 			const std::string_view name(yyjson_get_str(key), yyjson_get_len(key));
-			const auto             known_bit = static_cast<std::uint8_t>(ClassifyModelKey(name));
+			ReadOnlyVal *const     val       = yyjson_obj_iter_get_val(key);
+			const auto             known     = ClassifyModelKey(name);
+			const auto             known_bit = std::to_underlying(known);
 			if (known_bit != 0) {
-				if ((seen_known_keys & known_bit) != 0) {
-					return true;
+				if (check_duplicates && (seen_known_keys & known_bit) != 0) {
+					fields.has_duplicate = true;
+					return fields;
 				}
 				seen_known_keys |= known_bit;
-				continue;
-			}
-
-			auto inner_iterator = yyjson_obj_iter_with(model);
-			while (ReadOnlyVal *prev_key = yyjson_obj_iter_next(&inner_iterator)) {
-				if (prev_key == key) {
-					break;
+				switch (known) {
+					case ModelKeyBit::kId:
+						fields.id = val;
+						break;
+					case ModelKeyBit::kTime:
+						fields.time = val;
+						break;
+					case ModelKeyBit::kLabel:
+						fields.label = val;
+						break;
+					case ModelKeyBit::kData:
+						fields.data = val;
+						break;
+					case ModelKeyBit::kBackend:
+						fields.backend = val;
+						break;
+					case ModelKeyBit::kMetric:
+						fields.metric = val;
+						break;
+					case ModelKeyBit::kModel:
+						fields.model = val;
+						break;
+					case ModelKeyBit::kNone:
+						break;
 				}
-				if (std::string_view(yyjson_get_str(prev_key), yyjson_get_len(prev_key)) == name) {
-					return true;
-				}
+			} else if (check_duplicates) {
+				unknown_keys.Add(name);
 			}
 		}
-		return false;
+		if (check_duplicates && unknown_keys.HasDuplicate()) {
+			fields.has_duplicate = true;
+		}
+		return fields;
 	}
 
 	namespace {
 
-		auto FindLastField(yyjson_val *model, std::string_view name) -> yyjson_val * {
-			yyjson_val *value    = nullptr;
-			auto        iterator = yyjson_obj_iter_with(model);
-			while (auto *key = yyjson_obj_iter_next(&iterator)) {
-				if (std::string_view(yyjson_get_str(key), yyjson_get_len(key)) == name) {
-					value = yyjson_obj_iter_get_val(key);
-				}
-			}
-			return value;
-		}
-
-		auto ReadIntField(yyjson_val *model, const char *key, bool strict_shape)
-		    -> std::optional<int> {
-			ReadOnlyVal *value = FindLastField(model, key);
+		auto ReadIntField(ReadOnlyVal *value, bool strict_shape) -> std::optional<int> {
 			if (value == nullptr) {
 				return strict_shape ? std::nullopt : std::optional<int>(-1);
 			}
@@ -174,20 +214,15 @@ namespace howdy::native::user_model_codec_internal {
 			}
 			if (yyjson_is_uint(value)) {
 				const auto raw = yyjson_get_uint(value);
-				if (raw > static_cast<unsigned int>(std::numeric_limits<int>::max())) {
-					return std::nullopt;
-				}
-				return static_cast<int>(raw);
+				return std::in_range<int>(raw) ? std::optional<int>(static_cast<int>(raw))
+				                               : std::nullopt;
 			}
 			const auto raw = yyjson_get_sint(value);
-			if (raw < std::numeric_limits<int>::min() || raw > std::numeric_limits<int>::max()) {
-				return std::nullopt;
-			}
-			return static_cast<int>(raw);
+			return std::in_range<int>(raw) ? std::optional<int>(static_cast<int>(raw))
+			                               : std::nullopt;
 		}
 
-		auto ReadTimeField(yyjson_val *model) -> std::optional<std::int64_t> {
-			ReadOnlyVal *value = FindLastField(model, kModelTimeField);
+		auto ReadTimeField(ReadOnlyVal *value) -> std::optional<std::int64_t> {
 			if (value == nullptr) {
 				return 0;
 			}
@@ -196,17 +231,14 @@ namespace howdy::native::user_model_codec_internal {
 			}
 			if (yyjson_is_uint(value)) {
 				const auto raw = yyjson_get_uint(value);
-				if (raw > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-					return std::nullopt;
-				}
-				return static_cast<std::int64_t>(raw);
+				return std::in_range<std::int64_t>(raw)
+				           ? std::optional<std::int64_t>(static_cast<std::int64_t>(raw))
+						   : std::nullopt;
 			}
 			return static_cast<std::int64_t>(yyjson_get_sint(value));
 		}
 
-		auto ReadStringField(yyjson_val *model, const char *key, bool strict_shape)
-		    -> std::optional<std::string> {
-			ReadOnlyVal *value = FindLastField(model, key);
+		auto ReadStringField(ReadOnlyVal *value, bool strict_shape) -> std::optional<std::string> {
 			if (value == nullptr) {
 				return std::string();
 			}
@@ -274,10 +306,11 @@ namespace howdy::native::user_model_codec_internal {
 			std::string               model;
 		};
 
-		auto ParseMetadata(yyjson_val *model, bool strict_shape) -> MetadataParseResult {
-			const auto backend     = ReadStringField(model, kModelBackendField, strict_shape);
-			const auto metric_text = ReadStringField(model, kModelMetricField, strict_shape);
-			const auto model_name  = ReadStringField(model, kModelNameField, strict_shape);
+		auto ParseMetadata(const ExtractedModelFields &fields, bool strict_shape)
+		    -> MetadataParseResult {
+			const auto backend     = ReadStringField(fields.backend, strict_shape);
+			const auto metric_text = ReadStringField(fields.metric, strict_shape);
+			const auto model_name  = ReadStringField(fields.model, strict_shape);
 			if (!backend.has_value() || !metric_text.has_value() || !model_name.has_value()) {
 				return MetadataParseResult{
 				    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
@@ -305,7 +338,8 @@ namespace howdy::native::user_model_codec_internal {
 					                               "Model file contains an invalid model entry"),
 				};
 			}
-			if (strict_shape && HasDuplicateDirectKey(model)) {
+			const auto fields = ExtractModelFields(model, strict_shape);
+			if (fields.has_duplicate) {
 				return EntryParseResult{
 				    .result =
 				        UserModelListFailure(UserModelStatus::kInvalidShape,
@@ -313,7 +347,7 @@ namespace howdy::native::user_model_codec_internal {
 				};
 			}
 
-			const auto id = ReadIntField(model, kModelIdField, strict_shape);
+			const auto id = ReadIntField(fields.id, strict_shape);
 			if (!id.has_value()) {
 				return EntryParseResult{
 				    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
@@ -327,7 +361,7 @@ namespace howdy::native::user_model_codec_internal {
 				};
 			}
 
-			const auto time = ReadTimeField(model);
+			const auto time = ReadTimeField(fields.time);
 			if (!time.has_value()) {
 				return EntryParseResult{
 				    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
@@ -335,14 +369,14 @@ namespace howdy::native::user_model_codec_internal {
 				};
 			}
 
-			const auto label = ReadStringField(model, kModelLabelField, strict_shape);
+			const auto label = ReadStringField(fields.label, strict_shape);
 			if (!label.has_value()) {
 				return EntryParseResult{
 				    .result = UserModelListFailure(UserModelStatus::kInvalidShape,
 					                               "Stored face model label is not a string"),
 				};
 			}
-			auto metadata = ParseMetadata(model, strict_shape);
+			auto metadata = ParseMetadata(fields, strict_shape);
 			if (metadata.result.status != UserModelStatus::kOk) {
 				return EntryParseResult{.result = std::move(metadata.result)};
 			}
@@ -367,7 +401,7 @@ namespace howdy::native::user_model_codec_internal {
 				return EntryParseResult{.result = compatibility};
 			}
 
-			ReadOnlyVal *data = FindLastField(model, kModelDataField);
+			ReadOnlyVal *data = fields.data;
 			if (!yyjson_is_arr(data)) {
 				if (strict_shape) {
 					return EntryParseResult{
@@ -459,36 +493,32 @@ namespace howdy::native::user_model_codec_internal {
 	auto DecodeDocumentJson(std::string_view input, const std::string &expected_backend,
 	                        const std::string &expected_model, bool strict_shape)
 	    -> DecodedDocumentJson {
-		yyjson_doc *parsed = yyjson_read(input.data(), input.size(), YYJSON_READ_ALLOW_BOM);
-		if (parsed == nullptr) {
+		user_model_codec_internal::YyjsonDocPtr parsed_owner(
+		    yyjson_read(input.data(), input.size(), YYJSON_READ_ALLOW_BOM));
+		if (!parsed_owner) {
 			return DecodedDocumentJson{
 			    .result = UserModelListFailure(UserModelStatus::kParseError,
 				                               "Failed to parse user model JSON"),
-			    .doc    = nullptr,
 			};
 		}
 
-		std::unique_ptr<yyjson_doc, decltype(&yyjson_doc_free)> parsed_owner(parsed,
-		                                                                     yyjson_doc_free);
 		try {
-			if (!JsonDepthWithinLimit(yyjson_doc_get_root(parsed))) {
+			if (!JsonDepthWithinLimit(yyjson_doc_get_root(parsed_owner.get()))) {
 				return DecodedDocumentJson{
 				    .result = UserModelListFailure(UserModelStatus::kOversized,
 					                               "User model JSON nesting exceeds safety limit"),
-				    .doc    = nullptr,
 				};
 			}
-			auto result = ParseEntries(yyjson_doc_get_root(parsed), expected_backend,
+			auto result = ParseEntries(yyjson_doc_get_root(parsed_owner.get()), expected_backend,
 			                           expected_model, strict_shape);
 			return DecodedDocumentJson{
 			    .result = std::move(result),
-			    .doc    = parsed_owner.release(),
+			    .doc    = std::move(parsed_owner),
 			};
 		} catch (const std::bad_alloc &) {
 			return DecodedDocumentJson{
 			    .result = UserModelListFailure(UserModelStatus::kParseError,
 				                               "Failed to process user model JSON"),
-			    .doc    = nullptr,
 			};
 		}
 	}

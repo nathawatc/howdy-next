@@ -196,6 +196,9 @@ namespace howdy::test::user_models {
 			    const auto result = store.LoadModels("alice", backend);
 			    ok &= Expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
 				             "symlinked model file is rejected");
+			    const auto inspect_result = store.InspectFile("alice");
+			    ok &= Expect(inspect_result.status == howdy::native::UserModelStatus::kInsecurePath,
+				             "inspect rejects symlinked model file");
 			    ok &= Expect(fs::remove(model_path, ec), "remove symlinked model path");
 			    ec.clear();
 		    },
