@@ -1,47 +1,28 @@
 # Config Guidelines
 
-Read [`../../AGENTS.md`](../../AGENTS.md) first.
+Parent: [`../../AGENTS.md`](../../AGENTS.md).
 
-## Ownership
+## Boundaries
 
-- `config_schema.cpp`: canonical option table, lookup APIs, formatting, packaged fallbacks
-- `config_schema/validation.cpp`: schema consistency validation
-- `runtime_config.cpp`: typed runtime values and schema-backed defaults
-- `runtime_config_loader.cpp`: secure typed runtime loading
-- `runtime_config_loader/defaults.cpp`: runtime-only path/owner loading adapters
-- `config_utils.cpp`: high-level secure config transaction orchestration
-- `config_utils/file_ops.cpp`: locks, secure file I/O, staging/install, expected-content checks,
-  content validation
-- `config_utils/key_file.cpp`: INI scalar/line parsing and comment-preserving replacement
-- `runtime_paths.cpp`: installed path selection; `HOWDY_CONFIG`, `HOWDY_MODELS_DIR`,
-  `HOWDY_USER_MODELS_DIR`, and `HOWDY_LOG_PATH` apply only while the real and effective UID and GID
-  match (not setuid or setgid)
-
-Private cross-TU contracts stay in each component's `internal.hpp`. ConfigReader and strict float
-parsing live in `config_reader/internal.hpp`; semantic validation lives in
-`config_validation/internal.hpp`; typed parsing helpers live in
-`runtime_config_loader/internal.hpp`; the after-open, before-read race hook used by the secure
-config open/read paths lives in `include/config/test_hooks.hpp`.
-Config tests include these private contracts directly; do not expose INIReader through public headers.
+- `config_schema` is the single source of truth for option metadata and packaged defaults; generate
+  packaged `config.ini` through `howdy_config_generator` rather than hand-editing defaults.
+- Link consumers that only need typed values to `howdy_runtime_config`, not
+  `howdy_runtime_config_loader`. Keep filesystem access, UID checks, INI parsing, and validation
+  behind the loader and private `src/config/<component>/internal.hpp` headers; keep `INIReader` out
+  of public headers.
+- Keep INI text editing (`config_utils/key_file.cpp`) separate from filesystem transaction policy
+  (`config_utils/file_ops.cpp`).
+- `include/config/test_hooks.hpp` holds the after-open/before-read race hook used by secure config
+  open/read paths.
 
 ## Invariants
 
-- `config_schema` is the single source of truth for option metadata and packaged fallback values.
-  Generate packaged `config.ini`; do not hand-edit generated defaults.
-- Runtime consumers use typed config; do not add raw `ConfigReader` lookups outside config
-  parsing/loading code.
-- Consumers that only need `RuntimeConfig` link to `howdy_runtime_config`, not
-  `howdy_runtime_config_loader`; secure loading, filesystem, UID, INI parsing, and validation remain
-  behind the loader and private config implementation.
-- Keep secure path checks, locks, revalidation, staged install, parent sync, and commit-state
-  handling intact.
-- Preserve expected-current-content stale detection.
-- Keep INI text editing separate from filesystem transaction policy.
-- Treat post-rename sync failure as potentially committed.
-- `LoadRuntimeConfigFromFd` loads from a descriptor another process opened. It walks no path,
-  requires an explicit owner, rejects a descriptor that is not open read-only or is `O_PATH`, and
-  reads positionally, so the shared file offset never moves. A file unlinked since the open has no
-  link left and fails the one-link check, so a concurrent replace fails closed.
-
-Tests under `tests/config/` cover parsing, path security, atomic write/replace, runtime loading, and
-update behavior. Do not weaken failure-path coverage when simplifying helpers.
+- `runtime_paths.cpp` honors `HOWDY_CONFIG`, `HOWDY_MODELS_DIR`, `HOWDY_USER_MODELS_DIR`, and
+  `HOWDY_LOG_PATH` only while `geteuid() == getuid()` and `getegid() == getgid()` (ignored when
+  setuid or setgid).
+- Preserve secure path checks, locking, revalidation, expected-current-content stale detection,
+  staged install, parent-directory sync, and potentially-committed handling on post-rename sync
+  failure.
+- `LoadRuntimeConfigFromFd` walks no path, requires an explicit owner UID, requires a read-only
+  non-`O_PATH` regular file with `st_nlink == 1` (concurrent unlink/replace fails closed), and reads
+  positionally without advancing the shared file offset.

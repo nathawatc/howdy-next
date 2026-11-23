@@ -194,7 +194,7 @@ namespace howdy::native::user_model_store_internal {
 }  // namespace howdy::native::user_model_store_internal
 
 // The constructor and the runtime descriptor open live with readiness, apart from the codec and
-// the writers, so root PAM links only this unit (see src/storage/AGENTS.md).
+// the writers, so root PAM links only this unit (see src/storage/user_model_store/AGENTS.md).
 namespace howdy::native {
 
 	UserModelStore::UserModelStore(UserModelStoreConfig config)

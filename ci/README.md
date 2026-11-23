@@ -2,8 +2,9 @@
 
 > **For maintainers only.**
 >
-> Contributors should use the local CI runner commands in [`archlinux/AGENTS.md`](archlinux/AGENTS.md)
-> and [`nix/AGENTS.md`](nix/AGENTS.md). Run all commands below from the repository root.
+> Contributors should use the local CI runner commands in
+> [`../.agents/skills/run-local-ci/SKILL.md`](../.agents/skills/run-local-ci/SKILL.md). Run all
+> commands below from the repository root.
 
 ## Arch Linux
 

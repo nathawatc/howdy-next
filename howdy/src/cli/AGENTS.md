@@ -1,47 +1,24 @@
 # CLI Guidelines
 
-Read [`../../AGENTS.md`](../../AGENTS.md) and [`../app/AGENTS.md`](../app/AGENTS.md) first.
+Parent: [`../../AGENTS.md`](../../AGENTS.md). Related: [`../app/AGENTS.md`](../app/AGENTS.md).
 
-## Layout
+## Boundaries
 
-Each command exposes only `<command>.cpp` / `include/cli/<command>.hpp` at module scope. Extra
-implementation belongs under `src/cli/<command>/`; shared/test-facing seams belong under
-`include/cli/<command>/`.
+- Keep commands single-file until a genuine workflow or process seam emerges.
+  `confirmation_prompt.{cpp,hpp}` is the one non-command component (shared `[y/N]` prompt for
+  `clear` and `remove`).
+- Dispatcher owns top-level syntax and normalized global options; subcommands receive typed
+  invocations and own command-specific semantic validation.
+- Keep editor, capture, and environment adapters in production code (`add.cpp`,
+  `config/editor_process.cpp`, `snapshot.cpp`, `test.cpp`), outside injected workflow policy.
+- `include/cli/<command>/internal.hpp` headers are intentional shared/test injection seams; keep
+  test-only helpers under `howdy/tests/include/cli/`.
 
-Current multi-file commands:
+## Behavior Invariants
 
-- `add.cpp`: production adapters and `AddMain()`; `add/workflow.cpp`: injected command policy
-- `config.cpp`: command façade; `config/edit_session.cpp`: editor/install workflow;
-  `config/editor_process.cpp`: editor process launch and invoking-user drop
-- `snapshot.cpp`: production capture/encoding adapters; `snapshot/workflow.cpp`: validation and
-  secure writer policy
-- `test.cpp`: command/composition; `test/workflow.cpp`: preflight and diagnostic workflow;
-  `test/preview_session.cpp` and `test/preview_renderer.cpp`: reusable preview behavior
-
-Other commands remain single-file components unless a real boundary appears.
-
-`confirmation_prompt.cpp` / `include/cli/confirmation_prompt.hpp` is the one non-command component:
-the interactive `[y/N]` confirmation shared by `clear` and `remove`.
-
-## Behavior
-
-- Dispatcher owns top-level syntax and normalized global options; subcommands receive typed command
-  invocations and retain command-specific semantic validation.
-- Use typed runtime config and shared storage/config/model helpers.
-- Config edits stay secure and atomic. Preserve stale-content detection and temporary-file cleanup
-  semantics.
-- `download-models` keeps download, integrity verification, staging, and atomic installation as one
-  cohesive workflow; missing injected callbacks fail closed before network/filesystem work.
-- Snapshot writer validates BGR frame batches and reports commit-sync uncertainty without
+- Keep config edits secure and atomic with stale-content detection and temporary-file cleanup.
+- Keep `download-models` download, integrity verification, staging, and atomic installation as one
+  cohesive workflow; fail closed on missing injected callbacks before network or filesystem work.
+- Validate BGR frame batches in the snapshot writer and report commit-sync uncertainty without
   destructive retry.
-- Enrollment diagnostics use `ClassifyEnrollmentCaptureFailure()`.
-- Keep editor/environment behavior in production adapters, not injected test policy.
-
-## Test Seams
-
-Dependency-injection contracts under `include/cli/<command>/internal.hpp` are shared/test-facing by
-design. Keep test-only helpers under `tests/include/cli/`.
-
-Inspect `howdy/CMakeLists.txt` and `howdy/cmake/tests/*.cmake` before changing a suite; add, config,
-and download-models tests span multiple translation units, while snapshot has a single-TU CLI
-test and a two-TU writer test.
+- Route enrollment capture diagnostics through `ClassifyEnrollmentCaptureFailure()`.

@@ -1,16 +1,14 @@
 # PAM Test Guidelines
 
-Read [`../AGENTS.md`](../AGENTS.md) and the relevant `src/*/AGENTS.md` first.
+Parent: [`../AGENTS.md`](../AGENTS.md). Read the matching `src/<subsystem>/AGENTS.md` before
+changing tests for a subsystem.
 
 ## Rules
 
-- CTest suites are defined in `pam/cmake/tests/*.cmake` and may span several translation units.
-- Keep test-only shared headers under `tests/include/`.
-- Preserve caller-thread vs worker-thread ownership in test doubles; do not make tests pass by
-  allowing invalid PAM threading.
+- `pam/cmake/tests/*.cmake` defines logical CTest suites (several span multiple `.cpp` files).
+- Place PAM test-only shared headers under `pam/tests/include/`; prefer focused fixtures over
+  monolithic test-support headers.
+- Preserve caller-thread vs worker-thread ownership in test doubles; never relax PAM threading rules
+  to make tests pass.
 - Cover child exit/signal/timeout/reap, descriptor cleanup, conversation restoration, malformed
   helper output, and fail-closed mapping where relevant.
-- Reuse focused fixtures instead of creating monolithic test-support headers.
-
-Major multi-source suites include auth flow, native prompt conversation, prompt coordinator, and
-runtime session.

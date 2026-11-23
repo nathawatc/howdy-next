@@ -1,30 +1,25 @@
 # PAM Package Guidelines
 
-Read the [repository guidelines](../AGENTS.md) first.
+Parent: [`../AGENTS.md`](../AGENTS.md).
 
-## Subsystem Guides
+## Subsystems
 
-- [`src/module/AGENTS.md`](src/module/AGENTS.md): PAM ABI and auth policy
-- [`src/prompt/AGENTS.md`](src/prompt/AGENTS.md): prompt lifecycle and conversation safety
-- [`src/runtime/AGENTS.md`](src/runtime/AGENTS.md): helper/compare process runtime
-- [`src/runtime/auth_helper_process/AGENTS.md`](src/runtime/auth_helper_process/AGENTS.md): auth
-  helper spawn, wait, and result message
-- [`tests/AGENTS.md`](tests/AGENTS.md): PAM test organization
+- [`src/module/AGENTS.md`](src/module/AGENTS.md): PAM ABI, eligibility, auth flow, status mapping
+- [`src/prompt/AGENTS.md`](src/prompt/AGENTS.md): prompt coordinator, TTY/observed conversations,
+  uinput submitter
+- [`src/runtime/AGENTS.md`](src/runtime/AGENTS.md): runtime session, compare and auth-helper process
+  lifecycles
+- [`tests/AGENTS.md`](tests/AGENTS.md): PAM test suites, threading fakes, and installed E2E
 
 ## Package Invariants
 
-PAM authentication fails closed on invalid dependencies, a malformed or missing helper message,
-rejected runtime descriptors, unsafe conversation restoration, unexpected process state, or config
-failure. The auth helper's result is only its descriptor message; its exit status is never used. A
-compare exit status the PAM application took (it reaped compare first) is replaced only by compare's
-verdict byte, as `src/runtime/AGENTS.md` describes; without it the run fails closed.
-
-The caller thread owns PAM operations. Worker threads must not call PAM APIs. Preserve secure
-response erasure, descriptor ownership, child reap, timeout/cancellation behavior, and exact PAM
-status mapping.
-
-Production PAM module entrypoints live under `src/module/`; unsupported hooks return `PAM_IGNORE`.
-Keep test-only behavior out of production code.
-
-`pam/CMakeLists.txt` owns the module/install graph; `pam/cmake/tests/*.cmake` owns logical test
-suites.
+- Fail closed on invalid dependencies, malformed or missing helper messages, rejected runtime
+  descriptors, unsafe conversation restoration, unexpected process state, or config errors.
+- The caller thread owns every PAM API call; worker threads never call PAM APIs.
+- Preserve secure response erasure, descriptor ownership, child reaping, timeout/cancellation
+  semantics, and exact PAM status mapping.
+- `pam_explicit_config_path` (`HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY`) ensures PAM never loads
+  config from environment overrides.
+- `pam/CMakeLists.txt` owns module and install targets; `pam/cmake/tests/*.cmake` owns logical test
+  suites; `pam/po/` owns gettext catalogs (`POTFILES` + `LINGUAS`, validated by
+  `pam-translation-catalogs`).

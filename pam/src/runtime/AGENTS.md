@@ -1,69 +1,41 @@
 # PAM Runtime Guidelines
 
-Read [`../../AGENTS.md`](../../AGENTS.md) first. The auth helper's spawn, wait, and result rules are
-in [`auth_helper_process/AGENTS.md`](auth_helper_process/AGENTS.md).
+Parent: [`../../AGENTS.md`](../../AGENTS.md). Child:
+[`auth_helper_process/AGENTS.md`](auth_helper_process/AGENTS.md). Related:
+[`../../../howdy/src/compare/AGENTS.md`](../../../howdy/src/compare/AGENTS.md).
 
-## Ownership
+## Runtime Session
 
-- `runtime_session.cpp`: one-shot runtime descriptors (in-process for root, through the helper
-  otherwise), their validation, typed config load
-- `auth_helper_process.cpp`: helper orchestration and the descriptor-message exchange
-  (`auth_helper_process/`: spawn and wait, see its guide)
-- `compare_process.cpp`: compare timeout, verdict read, and reap (`compare_process/spawn.cpp`:
-  compare argv/environment, verdict socket, and descriptor closure)
-- `child_process.cpp`: `SpawnChild` and `TrackedChild`, the one spawn and the one pidfd
-  wait/signal implementation with PID fallback, used by both child lifecycles
-  (`child_process/internal.hpp`: the production spawn, file-action, and socketpair adapters both
-  spawn paths share)
-- `session_probe.cpp`: SSH detection, used when the `abort_if_ssh` option is set (eligibility is in
-  `module/auth_eligibility.cpp`); `lid_probe.cpp`: lid state;
-  `environment.cpp`: PAM and process environment lookup; `message_locale.cpp`: PAM message locale
+- A root PAM module opens config and user model in-process via `auth_helper/runtime_descriptors.hpp`
+  (the setuid helper trusts only the real UID and cannot serve a root module authenticating another
+  user). Non-root PAM runs the setuid helper (`auth_helper_process/AGENTS.md`).
+- `RuntimeSession` is one-shot and fails closed on repeated load attempts, missing typed config, or
+  rejected descriptors. Before use, verify every descriptor is `O_CLOEXEC`, open read-only and
+  non-`O_PATH`, a regular file with `st_nlink == 1` writable only by the trusted owner (root in
+  production), and has a model descriptor iff model state is ready. Own them until auth returns.
 
-## Invariants
+## Child Processes
 
-Preserve process/FD ownership, EINTR behavior, deadline semantics, timeout termination/reap,
-protocol validation, and the runtime-descriptor checks.
+- Start both children through `SpawnChild` and wait/signal through `TrackedChild` (shared production
+  adapters in `child_process/internal.hpp`).
+- Signal and reap through a pidfd acquired at spawn (never opened later from a PID, and never use
+  PID <= 0). Require a pidfd on spawn; probe/fallback rules and why Howdy neither changes `SIGCHLD`
+  nor calls `waitid(P_ALL)` are commented in `child_process.cpp`.
+- Treat `ECHILD` from pidfd wait or `ESRCH` from signal as reaped elsewhere: never signal or wait
+  again, and never block on a child that could not be signalled.
+- Compare reports its exit code as one byte on the required private verdict socket
+  (`protocol/compare_verdict.hpp`). Read it only after `ECHILD` (an available exit status always
+  decides; no single verdict fails closed). Keep a timeout or cancellation classified as such even
+  if compare is already gone when wait ends it.
 
-A root PAM module opens the runtime config and the user's model in-process with the shared opener
-(`auth_helper/runtime_descriptors.hpp`). Any other module runs the setuid helper's `open`, which
-trusts only the real UID and therefore cannot serve a root module authenticating someone else.
-Either way `RuntimeSession` checks every descriptor before use: close-on-exec, open read-only and
-not `O_PATH`, a regular file with one link that only the trusted owner (root in production) can
-write, and a model descriptor exactly when the model state is ready. It owns them until the
-authentication returns. Compare always runs in descriptor mode (`protocol/compare_descriptors.hpp`).
+## Compare Environment
 
-`RuntimeSession` is one-shot. Rejected descriptors, missing typed config, or repeated load attempts
-fail closed.
-
-### Child Processes
-
-Both children start through `SpawnChild` and are waited on and signalled through `TrackedChild`.
-
-- Signal and reap through a pidfd, never a bare PID: a PAM application that reaps children itself
-  can free the PID for reuse. The pidfd comes with the child, is carried to every wait and signal,
-  and is never opened later from the PID. A pidfd is required: without one the spawn fails and the
-  child is stopped. The probe and fallback rules are commented in `child_process.cpp`.
-- `TrackedChild` never uses a PID at or below 0.
-- `ECHILD` from a pidfd wait, or `ESRCH` from a signal, means the child was reaped elsewhere: it is
-  never signalled or waited on again. Nothing blocks on a child that could not be signalled.
-- Neither child changes the application's SIGCHLD action, and nothing drains children with
-  `waitid(P_ALL)`. The reasons are commented in `child_process.cpp`.
-- Compare reports its exit code as one byte on a private verdict socket
-  (`protocol/compare_verdict.hpp`), which the wait reads only after `ECHILD`. An available exit
-  status always decides; no single verdict fails closed. The socket is required: a setup failure
-  fails the spawn. Compare's production `main` exits with `_exit` right after reporting.
-- A timeout or cancellation stays one when compare is gone by the time the wait ends it.
-
-### Compare Environment
-
-Compare runs with a fixed environment, never copied from the caller: only `OPENBLAS_NUM_THREADS=1`
-and `OMP_NUM_THREADS=1`, then `HOWDY_COMPARE_VERDICT_FD=3`, `HOWDY_COMPARE_CONFIG_FD=4` and
-`HOWDY_COMPARE_MODEL_FD=5`, with argv `{howdy-compare, user}`. The child keeps stdio and fds 3 to 5;
-every descriptor above that is closed. Both thread pins are required; their reasons are commented in
-`compare_process/spawn.cpp`.
+- Launch compare (`compare_process/spawn.cpp`) with a fixed environment, never inherited:
+  `OPENBLAS_NUM_THREADS=1`, `OMP_NUM_THREADS=1` (both pins required; rationale in `spawn.cpp`), plus
+  the `protocol/compare_verdict.hpp` and `protocol/compare_descriptors.hpp` entries (`fds 3..5`),
+  `argv {howdy-compare, user}`, closing every descriptor above 5.
 
 ## Known Limitation: SSH Detection (Won't Fix)
 
-The `abort_if_ssh` option is a convenience, not a security boundary. The bypass, the rejected
-logind approach, and the conditions for reopening the question are documented in
-`session_probe.cpp`. Read them before changing SSH detection.
+`abort_if_ssh` is a convenience, not a security boundary; read the bypass, rejected logind approach,
+and reopening criteria in `session_probe.cpp` before changing SSH detection.

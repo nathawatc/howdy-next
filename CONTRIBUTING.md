@@ -2,49 +2,47 @@
 
 Thanks for contributing to Howdy Next.
 
-Howdy Next is a Linux facial-recognition auth stack with native C++
-CLI/runtime and PAM module. Keep changes secure, maintainable, and aligned with
-current build and test flow.
+Howdy Next is a Linux facial-recognition auth stack with a native C++ CLI/runtime and PAM module.
+Keep changes secure, maintainable, and aligned with the repository guidelines.
 
 ## Start Here
 
-Read repo guidelines before issue or PR:
+Read the repository guidelines before opening an issue or pull request:
 
 - [Repository Guidelines](AGENTS.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 
-`AGENTS.md` defines repository-wide rules. Read the nearest subsystem
-`AGENTS.md` for local ownership, security, and test guidance.
+[`AGENTS.md`](AGENTS.md) is the single source of truth for repository-wide invariants, layout,
+security rules, and commit conventions. Read the nearest nested `AGENTS.md` for subsystem-specific
+guidance.
 
 ## Licensing
 
-By submitting a contribution to Howdy Next, you agree to license your
-contribution under the GNU General Public License v3.0 or later
-(`GPL-3.0-or-later`).
+By submitting a contribution to Howdy Next, you agree to license your contribution under the GNU
+General Public License v3.0 or later (`GPL-3.0-or-later`).
 
-## Basic Workflow
+## Development Workflow
 
-Use CMake 3.31+ with GCC/Clang and GNU Make/Ninja. Installing `ccache` is
-recommended for faster incremental rebuilds. Howdy uses it automatically when
-available; pass `-DHOWDY_USE_CCACHE=OFF` at configure time to disable it.
+Use CMake 3.31+ with GCC/Clang and GNU Make/Ninja (see
+[Build and CMake](AGENTS.md#build-and-cmake)). Installing `ccache` is recommended for faster
+incremental rebuilds; Howdy uses it automatically when available (pass `-DHOWDY_USE_CCACHE=OFF` at
+configure time to disable it).
 
-### Release
+- **Build, CTest (`release`/`debug`), and incremental `clang-tidy`**: follow
+  [`verify-changes`](.agents/skills/verify-changes/SKILL.md).
+- **Formatting and linting (C/C++, CMake, Markdown, shell)**: follow
+  [`format-code`](.agents/skills/format-code/SKILL.md) (see also
+  [Code and Layout](AGENTS.md#code-and-layout)).
+- **Local containerized CI (Arch Linux and Nix)**: follow
+  [`run-local-ci`](.agents/skills/run-local-ci/SKILL.md).
+- **PAM translations (`howdy-pot`, `howdy-update-po`, `codegen`)**: follow
+  [`update-translations`](.agents/skills/update-translations/SKILL.md).
+- **Privileged installed PAM/setuid E2E (`run0`)**: follow
+  [`run-privileged-e2e`](.agents/skills/run-privileged-e2e/SKILL.md).
+- **Protocol libFuzzer targets (Clang)**: follow
+  [`run-fuzzers`](.agents/skills/run-fuzzers/SKILL.md).
 
-```sh
-cmake --preset release
-cmake --build --preset release --parallel "$(nproc)"
-ctest --preset release
-```
-
-### Debug
-
-```sh
-cmake --preset debug
-cmake --build --preset debug --parallel "$(nproc)"
-ctest --preset debug
-```
-
-## Cross-Compilation
+### Cross-Compilation
 
 Cross-compiling requires a suitable target toolchain or sysroot and
 `CMAKE_CROSSCOMPILING_EMULATOR`. Howdy builds target-side tools (`howdy_config_generator`,
@@ -69,46 +67,6 @@ Pass emulator arguments as a semicolon-separated CMake list when needed:
 -DCMAKE_CROSSCOMPILING_EMULATOR='/usr/bin/qemu-aarch64;-L;/usr/aarch64-linux-gnu'
 ```
 
-### Installed PAM/setuid End-to-End Test
-
-Privileged installed-path coverage stays opt-in. Build as normal user with dedicated
-compile-time prefix, then run only test through `run0`:
-
-```sh
-cmake --preset e2e
-cmake --build --preset e2e --parallel "$(nproc)"
-run0 --setenv=HOWDY_E2E_USER="$USER" ctest --preset e2e
-```
-
-Set `HOWDY_E2E_USER` to existing non-root account. Test also accepts valid non-root `SUDO_USER`
-supplied by privilege wrappers. Test installs temporarily below configured `/opt` prefix and removes
-installation and runtime staging on exit.
-
-### Translation Code Generation
-
-```sh
-cmake --build --preset release --target codegen --parallel "$(nproc)"
-```
-
-Translation maintenance:
-
-```sh
-cmake --build --preset release --target howdy-pot --parallel "$(nproc)"
-cmake --build --preset release --target howdy-update-po --parallel "$(nproc)"
-```
-
-Format C/C++ with `.clang-format`:
-
-```sh
-git ls-files '*.cpp' '*.hpp' | xargs clang-format -i
-```
-
-Static analysis before submit (CI runs the same script on pull requests):
-
-```sh
-cmake -DBUILD_DIR=build/debug -P "cmake/tidy_incremental.cmake"
-```
-
 ## Pull Requests
 
 Include:
@@ -119,27 +77,14 @@ Include:
 - test results
 - logs, screenshots, or terminal output when they clarify behavior
 
-Conventional Commits:
-
-```text
-fix(pam): handle helper setup failure
-perf(compare): reduce frame resize overhead
-test(config): cover invalid float values
-docs(wiki): update PAM integration examples
-build(release): bump version to X.Y.Z
-style(format): apply clang-format
-```
+Follow the commit message format (Conventional Commits, 72-character subject cap) in
+[Commits](AGENTS.md#commits).
 
 ## Security-Sensitive Changes
 
-Howdy Next is auth software. Changes to PAM behavior, config parsing, model
-storage, path validation, ownership checks, or `/etc/howdy` handling need
-extra care.
-
-Auth code should fail closed on unexpected errors. Do not bypass permission,
-ownership, symlink, hardlink, or writable trust-root checks.
-
-See [Repository Guidelines](AGENTS.md) before security-sensitive changes.
+Howdy Next is authentication software. Changes touching PAM behavior, config parsing, model
+storage, path validation, ownership checks, or `/etc/howdy` handling require strict review; follow
+the standing invariants in [Security](AGENTS.md#security) and the nearest subsystem `AGENTS.md`.
 
 ## Issues
 
@@ -155,5 +100,5 @@ Bug reports should include:
 
 Remove private data before posting logs.
 
-Feature requests should describe use case, expected behavior, and why change
-belongs in Howdy Next rather than local PAM, packaging, or desktop config.
+Feature requests should describe the use case, expected behavior, and why the change belongs in
+Howdy Next rather than local PAM, packaging, or desktop configuration.

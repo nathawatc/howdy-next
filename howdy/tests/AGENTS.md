@@ -1,21 +1,18 @@
 # Howdy Test Guidelines
 
-Read [`../AGENTS.md`](../AGENTS.md) first, then the production subsystem guide for code under test.
+Parent: [`../AGENTS.md`](../AGENTS.md). Read the matching `src/<subsystem>/AGENTS.md` before
+changing tests for a subsystem.
 
 ## Rules
 
-- A CTest logical suite may span several `.cpp` files. Inspect `howdy/CMakeLists.txt` and
-  `howdy/cmake/tests/*.cmake` before moving or adding coverage.
-- Keep test-only shared headers under `tests/include/<module>/`.
-- Never add `tests/include` to production targets.
+- `howdy/cmake/tests/*.cmake` owns logical CTest suites (several span multiple `.cpp` files);
+  inspect before moving or adding coverage.
+- Place package test-only shared headers under `howdy/tests/include/<module>/` (cross-package
+  helpers live in repo-root `tests/include/`).
 - Prefer injected filesystem, clock, capture, renderer, process, and inference dependencies over
-  production side effects.
-- Security-sensitive tests should cover success, malformed input, partial failure, rollback/cleanup,
-  and uncertain-commit paths where relevant.
-- Do not change production behavior merely to simplify a test.
-- Protocol decoders have fuzz targets (`tests/protocol/runtime_descriptor_message_fuzz*.cpp`). Their
-  fixed-input replay runs in every build; the libFuzzer binary builds only when
-  `HOWDY_ENABLE_FUZZING` (default `AUTO`) finds libFuzzer, which needs Clang.
-
-Representative multi-source areas include CLI add/config/download-models, user-model codec/storage,
-compare engine/privileges, auth helper, dispatcher/completion, and preview/snapshot.
+  host side effects.
+- Cover success, malformed input, partial failure, rollback/cleanup, and uncertain-commit paths on
+  security-sensitive code.
+- Protocol decoders have fuzz targets (`tests/protocol/runtime_descriptor_message_fuzz*.cpp`):
+  fixed-input replay runs in every build; libFuzzer targets build automatically when
+  `HOWDY_ENABLE_FUZZING` (`AUTO`) finds Clang libFuzzer.

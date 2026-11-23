@@ -1,30 +1,25 @@
 # Auth Helper Guidelines
 
-Read [`../../AGENTS.md`](../../AGENTS.md) first.
+Parent: [`../../AGENTS.md`](../../AGENTS.md). Related:
+[`../storage/user_model_store/AGENTS.md`](../storage/user_model_store/AGENTS.md),
+[`../../../pam/src/runtime/auth_helper_process/AGENTS.md`](../../../pam/src/runtime/auth_helper_process/AGENTS.md).
 
-## Ownership
+## Boundaries
 
-- `command.cpp`: the setuid helper's `open` subcommand, its guards, and syslog diagnostics
-- `runtime_descriptors.cpp` (library `howdy_runtime_descriptors`): the opener shared by `open` and
-  a root PAM module
-
-The helper's whole result is the one message of `protocol/runtime_descriptor_message.hpp` on
-descriptor 3: the model state plus the config and, when the model is ready, the model descriptor.
-When the config cannot be opened it sends nothing. PAM points the helper's stdio at `/dev/null`, so
-guard failures and diagnostics also go to syslog. The flush and `_exit` in `src/bin/auth_helper.cpp`
-follow `Run`, so static teardown never runs.
+- `runtime_descriptors.cpp` (`howdy_runtime_descriptors`) is the shared opener used both by the
+  setuid helper's `open` subcommand (`command.cpp`) and by a root PAM module running in-process.
+- `src/bin/auth_helper.cpp` flushes output and calls `_exit` immediately after `command::Run` so
+  static teardown never runs.
 
 ## Security Invariants
 
-The helper trusts only the real UID: the argv user must be the caller's own passwd name, and it
-validates the name and descriptor 3 (an `AF_UNIX` `SOCK_SEQPACKET` socket) before opening anything.
-It ignores `HOWDY_CONFIG` and `HOWDY_USER_MODELS_DIR` while it runs setuid
-(`config/runtime_paths.cpp`), so it only ever opens the installed files.
-
-The opener opens the config by path with `O_NOFOLLOW` and then checks its ancestors, and opens the
-model only after the model-store readiness walk and then checks the descriptor itself. Both
-descriptors are read-only and close-on-exec. A missing model is a model state, not a failure. An
-insecure model is reported as invalid storage with the config still sent, so PAM can decide
-eligibility, and so is an empty model file: writers link a first model in whole at commit and never
-truncate one, so an empty file is damaged storage, not an enrollment in progress. Do not weaken
-these checks to simplify the helper.
+- Trust only the real UID: `argv` user must match the `getuid()` passwd entry. Validate the username
+  and descriptor 3 (`AF_UNIX` `SOCK_SEQPACKET`) before opening any file.
+- While setuid, `config/runtime_paths.cpp` ignores `HOWDY_CONFIG` and `HOWDY_USER_MODELS_DIR` so
+  only installed paths open.
+- Open config with `O_NOFOLLOW` then check ancestors (`CheckSecureConfigFd`); open the user model
+  through `UserModelStore::OpenRuntimeDescriptor`. Keep both descriptors read-only and `O_CLOEXEC`.
+- Send strictly one `protocol/runtime_descriptor_message.hpp` message on fd 3 (send nothing when
+  config fails to open). Report missing, insecure, or empty models as model states while still
+  sending config so PAM decides eligibility; log guard failures and diagnostics to syslog because
+  PAM redirects stdio to `/dev/null`.

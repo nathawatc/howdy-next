@@ -1,43 +1,26 @@
 # PAM Prompt Guidelines
 
-Read [`../../AGENTS.md`](../../AGENTS.md) first.
+Parent: [`../../AGENTS.md`](../../AGENTS.md). Related: [`../module/AGENTS.md`](../module/AGENTS.md).
 
-## Ownership
+## Boundaries
 
-- `prompt_coordinator.cpp`: compare/prompt race, worker ownership, cancellation, restoration, final
-  result
-- `native_prompt_conversation.cpp`: native TTY conversation, abort, terminal state, fail-closed
-  restoration
-- `observed_prompt_conversation.cpp`: caller-thread secret-prompt observation/delegation
-- `conversation_response.cpp`: secure PAM response erasure/release
-- `internal_fd.cpp`: safe Howdy-owned descriptor normalization
-- `prompt_submitter.cpp`: uinput prompt submitter (`CreateUinputPromptSubmitter`, libevdev)
-- `native_prompt_input.cpp`: canonical-mode line editing for the native TTY prompt
-- `pam_conversation.cpp`: `PamConversation` wrapper over the PAM conversation callback
-- `workaround.cpp`: prompt workaround modes selected by the `workaround=` option
+- `pam_prompt_core` coordinates exclusively through `PromptCoordinatorOperations` callbacks and never
+  calls production compare spawn/wait/cancel/reap implementations directly (production wiring lives
+  in `src/module/production_entrypoint.cpp`).
+- Keep `prompt_coordinator.cpp` and `native_prompt_conversation.cpp` cohesive rather than splitting
+  them for LOC.
 
 ## Invariants
 
-`pam_prompt_core` coordinates through explicit `PromptCoordinatorOperations` callbacks. It must
-not call production compare-process spawn, wait, cancel, or reap implementations directly;
-production wiring belongs in `src/module/production_entrypoint.cpp`. Retain explicit callback-based
-operation objects instead of introducing virtual interfaces or a broader OO abstraction layer.
-
-The caller thread owns PAM conversation install/restore and `pam_get_authtok()`. The compare worker
-performs no PAM operation and owns one child lifecycle. The coordinator owns the child's pidfd and
-verdict socket returned by the spawn callback until the run ends; wait and cancel callbacks only
-borrow them. A failed or throwing spawn that still handed back a child with its pidfd has that
-child stopped and reaped through the pidfd; without a pidfd the child is left to the spawn.
-
-Native prompt requires an eligible foreground TTY and safe descriptor identity. Long-lived
-Howdy-owned descriptors must end above `STDERR_FILENO`.
-
-Conversation restoration must report original-restored, fail-closed-installed, or unsafe.
-Non-original outcomes force `PAM_SYSTEM_ERR`; unsafe callback context stays quarantined/retained for
-lifetime safety.
-
-Securely erase discarded PAM response strings before release. Do not cast away ownership of PAM
-authentication tokens.
-
-`prompt_coordinator.cpp` and `native_prompt_conversation.cpp` are cohesive state/lifecycle
-boundaries; do not split them merely for LOC.
+- The caller thread owns PAM conversation install/restore and `pam_get_authtok()`; the compare
+  worker performs zero PAM calls and owns one child lifecycle.
+- `PromptCoordinator` owns the child's pidfd and verdict socket returned by spawn until the run
+  ends; wait and cancel only borrow them. If a failing or throwing spawn still returned a child with
+  a pidfd, stop and reap it through that pidfd; without a pidfd, leave cleanup to spawn.
+- Native prompt requires an eligible foreground TTY and safe fd identity; normalize long-lived
+  Howdy-owned descriptors above `STDERR_FILENO` (`internal_fd.cpp`).
+- Conversation restoration reports original-restored, fail-closed-installed, or unsafe: non-original
+  outcomes force `PAM_SYSTEM_ERR`, and unsafe callback contexts remain quarantined for lifetime
+  safety.
+- Securely erase discarded PAM response strings (`conversation_response.cpp`) before release; never
+  cast away ownership of PAM authentication tokens.

@@ -2,7 +2,7 @@
 
 // Store contracts shared by user_model_store.cpp, user_models.cpp, transaction.cpp, and
 // mutations.cpp: document loading and the Mutate transaction, which depend on the codec. Never
-// include this from readiness.cpp (see src/storage/AGENTS.md).
+// include this from readiness.cpp (see src/storage/user_model_store/AGENTS.md).
 
 #include "../user_model_codec/internal.hpp"
 #include "readiness/internal.hpp"

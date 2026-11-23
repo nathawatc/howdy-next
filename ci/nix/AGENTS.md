@@ -1,37 +1,18 @@
 # Nix CI Guidelines
 
-Read the [repository guidelines](../../AGENTS.md) first.
+Parent: [`../../AGENTS.md`](../../AGENTS.md). Maintainer image build/push:
+[`../README.md`](../README.md).
 
 ## Scope
 
-Covers `ci/nix/` and `.github/workflows/nix.yml`.
+Covers `ci/nix/`, `nix/`, `flake.nix`, `flake.lock`, and `.github/workflows/nix.yml`.
 
-## Rules
+## Invariants
 
-- Build from the pinned `nixos/nix` version used by `ci/nix/Containerfile`.
-- Tag published CI images as `<nix-version>-<revision>`.
-- Prebuild dependencies and CI runtime tools, but never prebuild Howdy itself.
-- Keep `check-prebuilt.sh` as the single fail-fast guard for stale or incomplete images.
-- Run workflow checks offline and without lock-file updates.
-- Evaluate both supported Linux systems, but build and test the Howdy package only on x86_64 CI.
-- Keep image construction and garbage collection in one layer.
-
-## Local CI
-
-Run from the repository root:
-
-```sh
-podman run --rm --network=none \
-  -v "$PWD:/workspace:ro" -w /workspace \
-  ghcr.io/nathawatc/howdy-next/ci-nix:2.36.0-1 bash -c '
-    set -e
-    bash ci/nix/check-prebuilt.sh
-    nix flake check --offline --no-update-lock-file --no-build --all-systems
-    nix build --offline --no-update-lock-file --no-link --max-jobs auto -L \
-      .#checks.x86_64-linux.package
-  '
-```
-
-Rebuild the CI image when the guard reports a changed dependency set or when runtime tools or the
-image recipe change. Image build and publishing commands are maintainer-only and live in
-[`../README.md`](../README.md).
+- Base `Containerfile` on the pinned `nixos/nix` version and tag published images
+  `<nix-version>-<revision>` matching `.github/workflows/nix.yml`.
+- Prebuild `ci-dependencies` and `ci-runtime`, never Howdy itself; run image build and
+  `nix-store --gc` in a single layer.
+- Keep `check-prebuilt.sh` as the single fail-fast guard for stale or incomplete CI images.
+- Run workflow checks offline with `--no-update-lock-file`; evaluate both supported Linux systems
+  (`x86_64-linux`, `aarch64-linux`), and build/test the Howdy package on `x86_64-linux` CI.

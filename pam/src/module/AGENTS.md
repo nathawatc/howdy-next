@@ -1,24 +1,18 @@
 # PAM Module Guidelines
 
-Read [`../../AGENTS.md`](../../AGENTS.md) first.
+Parent: [`../../AGENTS.md`](../../AGENTS.md). Related: [`../prompt/AGENTS.md`](../prompt/AGENTS.md),
+[`../runtime/AGENTS.md`](../runtime/AGENTS.md).
 
-## Ownership
+## Boundaries
 
-- `main.cpp`: `pam_sm_authenticate` ABI façade
-- `main/unsupported_entrypoints.cpp`: unsupported PAM hooks returning `PAM_IGNORE`
-- `production_entrypoint.cpp`: production dependency composition, including explicit prompt
-  spawn/wait/cancel/reap callback binding
-- `entrypoint.cpp`: injectable entrypoint boundary
-- `auth_flow.cpp`: service policy, readiness, runtime/prompt composition, PAM result mapping
-- `auth_eligibility.cpp`, `confirmation_message.cpp`, `pam_options.cpp`, `status_mapping.cpp`:
-  focused policy helpers; `pam_option_catalog.cpp`: the PAM option catalog
+- Keep `main.cpp` (`pam_sm_authenticate`) thin and omit a fake `main.hpp`. Unsupported PAM hooks
+  live in `main/unsupported_entrypoints.cpp` (OBJECT library `pam_unsupported_entrypoints` so
+  symbols stay exported) and return `PAM_IGNORE`.
+- Keep `auth_flow.cpp` focused on authentication policy, free of child-lifecycle or
+  descriptor-transport internals.
+- Bind production prompt/runtime callbacks exclusively in `production_entrypoint.cpp`.
 
-## Rules
+## Invariants
 
-Keep ABI entrypoints thin. Do not expose a fake `main.hpp` solely for layout symmetry.
-`auth_flow.cpp` owns authentication policy, not child lifecycle or staging internals. Keep production
-adapter binding in `production_entrypoint.cpp`; do not add registries, DI containers, or abstract
-interface frameworks.
-
-Unexpected states and invalid dependencies map fail closed to `PAM_SYSTEM_ERR`. Preserve
-unsupported-hook behavior and exported PAM symbols.
+- Map unexpected states and invalid dependencies fail-closed to `PAM_SYSTEM_ERR`.
+- Preserve exported PAM symbols (`pam/cmake/tests/check_module_exports.cmake`).

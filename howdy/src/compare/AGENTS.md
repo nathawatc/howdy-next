@@ -1,43 +1,27 @@
 # Compare Guidelines
 
-Read [`../../AGENTS.md`](../../AGENTS.md) first.
+Parent: [`../../AGENTS.md`](../../AGENTS.md). Related:
+[`../../../pam/src/runtime/AGENTS.md`](../../../pam/src/runtime/AGENTS.md).
 
-## Ownership
+## Boundaries
 
-- `args.*`: compare argv parsing and validation
-- `capture_session.*`: camera lifecycle, timeout clock, frame statistics, exposure restore
-- `engine.*`: preprocessing, validation, detection/embedding adapters, match selection
-- `logic.*`: compare threshold and best-match scoring policy
-- `sandbox.cpp`, `sandbox/seccomp.cpp`: sandbox policy (rlimit, `PR_SET_NO_NEW_PRIVS`, seccomp-BPF)
-- `processing.*`: shared processing helpers
-- `entrypoint.cpp` (`entrypoint/{descriptors,reporting}.cpp`, `entrypoint/internal.hpp`):
-  composition, arguments, config/model load, output/report policy, exit mapping, runtime-descriptor
-  intake (`protocol/compare_descriptors.hpp`), and the verdict byte PAM reads when the application
-  reaped compare (`protocol/compare_verdict.hpp`); `src/bin/compare.cpp` exits with `_exit` right
-  after it
-- `src/bin/compare.cpp`: thin production wrapper that pins compare trust roots to UID 0
-
-Privilege dropping is one security-sensitive subsystem:
-
-- `privileges.cpp`: high-level policy/orchestration
-- `privileges/operations.cpp`: syscall/account adapters
-- `privileges/verification.cpp`: credential/capability transition and verification
-- `privileges/internal.hpp`: private cross-TU contract
-- `include/compare/privileges/internal.hpp`: separate shared/test seam
+- `src/bin/compare.cpp` pins trust roots to UID 0 and calls `_exit` immediately after
+  `RunCompareEntrypoint` flushes output and writes the verdict byte.
+- Privilege dropping (`privileges.cpp`, `privileges/{operations,verification}.cpp`, private
+  `privileges/internal.hpp`, shared/test seam `include/compare/privileges/internal.hpp`) is one
+  auditable security subsystem: keep policy out of syscall adapters and keep the subsystem intact
+  rather than splitting for LOC.
 
 ## Invariants
 
-Compare reads its config and the user model only from descriptors: PAM passes the config at fd 4
-and the model at fd 5, announced by `HOWDY_COMPARE_CONFIG_FD=4` and `HOWDY_COMPARE_MODEL_FD=5`, and
-compare's only argument is the user. `TakeRuntimeDescriptors` takes them before compare opens
-anything, so neither number can be one of compare's own files. Both must be announced exactly and
-open, and the verdict socket must be announced; anything else aborts. Every descriptor announced at
-its exact number is compare's from then on and is closed on every path, each right after it is
-loaded. The fd loaders own the type, owner, mode, and link checks; do not duplicate them here.
-
-Preserve privilege-transition ordering, capability clearing, ID/fs-ID checks, root-regain
-verification, and fatal fail-closed behavior. Do not move policy into syscall adapters or split the
-privilege subsystem further for size alone.
-
-Keep compare engine/capture tests independent from real ONNX inference when they are testing
-orchestration or semantic result mapping.
+- Read config and user model strictly from inherited fds announced by
+  `protocol/compare_descriptors.hpp` together with `protocol/compare_verdict.hpp`, with `user` as
+  the sole positional argument.
+- Call `TakeRuntimeDescriptors` before compare opens any file so announced numbers cannot alias
+  compare's own fds. Abort on any missing or mismatched announcement or closed descriptor; take
+  ownership of every announced fd and close each immediately after loading.
+- Delegate fd type, owner, mode, and link checks to `LoadRuntimeConfigFromFd` and
+  `LoadUserModelsFromFd` rather than duplicating them here.
+- Preserve privilege-transition ordering, capability clearing, UID/GID/fs-ID checks, root-regain
+  verification, rlimit/`PR_SET_NO_NEW_PRIVS`/seccomp-BPF ordering, and fatal fail-closed exits.
+- Keep engine and capture orchestration tests ONNX-free by injecting inference.

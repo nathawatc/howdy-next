@@ -1,62 +1,26 @@
 # Arch Linux CI Guidelines
 
-Read the [repository guidelines](../../AGENTS.md) first.
+Parent: [`../../AGENTS.md`](../../AGENTS.md). Maintainer image build/push:
+[`../README.md`](../README.md).
 
 ## Scope
 
 Covers `ci/archlinux/`, `.github/workflows/archlinux.yml`, and `.github/workflows/clang_tidy.yml`.
 
-## Rules
+## Invariants
 
-- Keep `.github/workflows/archlinux.yml` aligned with `ghcr.io/nathawatc/howdy-next/ci-archlinux:latest`.
-- Build from `docker.io/library/archlinux:latest`.
-- Install dependencies with pacman; do not build OpenCV from source in CI.
-- Keep dependency floors aligned with root CMake requirements, including CMake, glibc, OpenCV,
-  yyjson, libinih, and libcurl requirements.
-- Keep `qt6-base`. Arch's OpenCV HighGUI uses its Qt 6 backend, and `howdy test` shows its preview
-  through HighGUI. No CMake target names Qt, so the package looks unused but is not.
-- Keep the image minimal and clear pacman caches in the same layer.
-- Keep OCI labels in `Containerfile`, not duplicated in wrapper commands.
-- Keep the `clang` floor aligned with the LLVM version `.clang-tidy` is written for.
-- Keep ccache storage on `CCACHE_DIR`, outside the workspace. Only `main` saves the cache; pull
-  requests restore it (see `archlinux.yml`).
-- `clang_tidy.yml` reuses this image with `fetch-depth: 2` and `BASE=HEAD^1`. It configures the
-  `debug` preset and builds only `howdy_version_metadata`, which is all tidy needs (see the
-  workflow).
-- E2E tests are excluded. GitHub Actions runners do not expose the required container privileges.
-
-## Local CI
-
-Run from the repository root:
-
-```sh
-podman run --rm \
-  -v "$PWD:/workspace:ro" \
-  --tmpfs /workspace/build:rw,exec,notmpcopyup \
-  -w /workspace \
-  ghcr.io/nathawatc/howdy-next/ci-archlinux:latest bash -c '
-    set -e
-    cmake --preset release -DHOWDY_WARNINGS_AS_ERRORS=ON
-    cmake --build --preset release --parallel "$(nproc)"
-    ctest --preset release
-  '
-```
-
-Run clang-tidy on code changed since `main`:
-
-```sh
-podman run --rm \
-  -v "$PWD:/workspace:ro" \
-  --tmpfs /workspace/build:rw,exec,notmpcopyup \
-  -w /workspace \
-  ghcr.io/nathawatc/howdy-next/ci-archlinux:latest bash -c '
-    set -e
-    cmake --preset debug
-    cmake --build --preset debug --target howdy_version_metadata
-    cmake -DBUILD_DIR=build/debug -DBASE="$(git merge-base HEAD main)" \
-      -P cmake/tidy_incremental.cmake
-  '
-```
-
-Rebuild the CI image when dependencies or the image recipe change. Image build and publishing
-commands are maintainer-only and live in [`../README.md`](../README.md).
+- Base `Containerfile` on `docker.io/library/archlinux:latest` and keep
+  `.github/workflows/archlinux.yml` aligned with `ghcr.io/nathawatc/howdy-next/ci-archlinux:latest`.
+- Install dependencies with pacman (never build OpenCV from source in CI), clear pacman caches in
+  the same layer, and keep OCI labels in `Containerfile` rather than wrapper commands.
+- Keep pacman dependency floors aligned with root `CMakeLists.txt` (CMake, glibc, OpenCV, yyjson,
+  libinih, libcurl) and keep the `clang` floor aligned with `.clang-tidy`.
+- Keep `qt6-base` (Arch's OpenCV HighGUI Qt 6 backend used by `howdy test`; no CMake target names
+  Qt, so it looks unused) and keep the `pacman.conf` `usr/share/i18n/*` override plus `th_TH.UTF-8`
+  locale generation (required by PAM translation tests).
+- Keep `CCACHE_DIR` outside the workspace; only `main` saves the cache, while pull requests restore
+  only.
+- `clang_tidy.yml` reuses this image with `fetch-depth: 2` and `BASE=HEAD^1`, configures `debug`,
+  and builds only `howdy_version_metadata`.
+- Keep privileged E2E tests excluded from GitHub Actions runners (runners lack the required
+  container privileges).

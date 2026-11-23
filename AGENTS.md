@@ -1,90 +1,59 @@
 # Repository Guidelines
 
-This file defines repository-wide rules. Read the nearest `AGENTS.md` before changing a subsystem;
-local files add detail but do not override these invariants.
+Standing rules for every change. Read the nearest nested `AGENTS.md` before editing a subsystem;
+local guides add detail without relaxing these invariants.
 
-## Repository Map
+## Map
 
-- [`ci/archlinux/AGENTS.md`](ci/archlinux/AGENTS.md): Arch Linux CI image and workflow rules
-- [`ci/nix/AGENTS.md`](ci/nix/AGENTS.md): Nix CI image, Flake, and module checks
-- [`howdy/AGENTS.md`](howdy/AGENTS.md): native Howdy package
-- [`pam/AGENTS.md`](pam/AGENTS.md): PAM module
+- [`howdy/AGENTS.md`](howdy/AGENTS.md): native CLI, helpers, config, storage, vision, compare, and
+  tests
+- [`pam/AGENTS.md`](pam/AGENTS.md): PAM module, prompt handling, process runtime, translations, and
+  tests
+- [`ci/archlinux/AGENTS.md`](ci/archlinux/AGENTS.md): Arch Linux CI container, build workflow, and
+  clang-tidy workflow
+- [`ci/nix/AGENTS.md`](ci/nix/AGENTS.md): Nix CI container, flake, `nix/` derivations, and Nix
+  workflow
 
-Package-level files route to narrower subsystem guidance.
+## Build and CMake
 
-## Build and Test
-
-Use CMake 3.31+ and C++23.
-
-```sh
-cmake --preset release
-cmake --build --preset release --parallel "$(nproc)"
-ctest --preset release
-```
-
-```sh
-cmake --preset debug
-cmake --build --preset debug --parallel "$(nproc)"
-ctest --preset debug
-```
-
-Look up pkg-config dependencies with `howdy_pkg_check_modules()` (`cmake/howdy_pkg_config.cmake`),
-not `pkg_check_modules()` directly; the wrapper's header explains why.
-
-Use focused tests while iterating, then run the full relevant preset before closing a change. A
-CTest suite may span several translation units; inspect CMake source lists before assuming one test
-file owns the suite.
+- Target CMake 3.31+ and C++23.
+- Resolve every pkg-config dependency through `howdy_pkg_check_modules()`
+  (`cmake/howdy_pkg_config.cmake`) rather than `pkg_check_modules()` directly (header explains the
+  CMake `Requires` bug).
+- A CTest logical suite may span multiple translation units; inspect `howdy/cmake/tests/*.cmake` or
+  `pam/cmake/tests/*.cmake` before assuming one file owns a suite.
 
 ## Code and Layout
 
-- Follow `.clang-format`; preserve tabs in touched C/C++ files.
-- Use snake_case for files, functions, and tests.
-- A production component normally exposes one module-level pair: `src/<module>/<component>.cpp` and
-  `include/<module>/<component>.hpp`.
-- Put subordinate production implementation under `src/<module>/<component>/`.
-- Put shared/test-facing subordinate contracts under `include/<module>/<component>/` only when
-  production or tests need them.
-- Keep private cross-TU contracts under the matching `src/.../<component>/internal.hpp`.
-- Do not create empty mirror directories for visual symmetry.
-- `src/bin/` and `src/tools/` are entrypoint/tool exceptions.
-- Keep test-only shared headers under `tests/include/`; never add test include roots to production
-  targets.
-
-For formatting:
-
-```sh
-# C/C++
-git ls-files '*.cpp' '*.hpp' | xargs clang-format -i
-
-# CMake (format, then enforce the LSP's C0301 100-column limit, which `format` does not check)
-git ls-files -z '*CMakeLists.txt' '*.cmake' | xargs -0 sh -c 'neocmakelsp format -i "$@" && awk '\''length > 100 { print FILENAME ":" FNR ": " length; bad = 1 } END { exit bad }'\'' "$@"' sh
-
-# Markdown
-rumdl fmt .
-
-# Shell
-git ls-files '*.sh' | xargs shellcheck
-shfmt -w .
-```
-
-Do not use `clang-format --dry-run` (including `--dry-run --Werror`) as a formatting verifier;
-`.clang-format` explains why. Verify by running `clang-format -i` and checking `git diff`, or by
-comparing formatter stdout with the source file.
-
-CI runs `clang-tidy` on pull requests through `cmake/tidy_incremental.cmake` against `build/debug`
-(see [`ci/archlinux/AGENTS.md`](ci/archlinux/AGENTS.md)). For changed code, run the same script
-locally before pushing. Never use `build/release` for tidy; the script header explains why.
+- Use `snake_case` for files, functions, and tests; preserve tabs in C/C++ (`.clang-format`,
+  `.editorconfig`).
+- Expose one module-level pair per production component (`src/<module>/<component>.cpp` +
+  `include/<module>/<component>.hpp`). Place subordinate implementation under
+  `src/<module>/<component>/`, private cross-TU contracts at
+  `src/<module>/<component>/internal.hpp`, and shared/test-facing contracts under
+  `include/<module>/<component>/` only when external or test consumers need them. Omit empty mirror
+  directories. `src/bin/` and `src/tools/` are entrypoint/tool exceptions.
+- Keep test-only shared headers under `tests/include/` (package-local or repo-root); keep test
+  include roots out of production targets.
+- Prefer explicit dependency tables and callback structs over registries, DI containers, or
+  virtual-interface frameworks.
+- Comment non-obvious *why* inline next to the code (rejected alternatives, security/ordering
+  constraints, upstream workarounds) instead of narrating *what* code does or duplicating code-local
+  rationale in `AGENTS.md`.
+- Update the nearest `AGENTS.md` (and any affected `.agents/skills/*/SKILL.md`) in the same change
+  whenever invariants, subsystem boundaries, or workflows change.
 
 ## Security
 
-Preserve fail-closed behavior, privilege boundaries, ownership/mode checks, descriptor lifetime,
-lock ordering, staged-file semantics, and durability handling. Treat a commit-sync failure as
-potentially committed. Do not weaken `/etc/howdy`, model, user-model, PAM, or helper protocol checks
-to simplify code.
-
-Runtime code uses typed `RuntimeConfig`; do not add raw `ConfigReader` lookups to consumers.
+- Fail closed on unexpected errors, malformed inputs, or privilege/ownership violations. Preserve
+  privilege boundaries, ownership/mode checks, descriptor lifetimes, lock ordering, staged-file
+  semantics, and durability handling; treat post-rename commit-sync failure as potentially
+  committed.
+- Use typed `RuntimeConfig`, `VideoConfig`, and `FaceConfig` at runtime boundaries; keep raw
+  `ConfigReader` lookups inside config parsing/loading.
 
 ## Commits
 
-Use Conventional Commits with imperative subjects, for example `fix(pam): ...`, `refactor(config):
-...`, `test(storage): ...`, or `build(release): ...`. Do not push unless explicitly requested.
+Use Conventional Commits with imperative subjects (`fix(pam): ...`, `refactor(storage): ...`,
+`test(config): ...`, `build(release): ...`). Cap subject lines at 72 characters (GitHub truncates
+longer subjects). Push only when explicitly requested.

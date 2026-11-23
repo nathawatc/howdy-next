@@ -1,44 +1,35 @@
 # Howdy Package Guidelines
 
-Read the [repository guidelines](../AGENTS.md) first.
+Parent: [`../AGENTS.md`](../AGENTS.md).
 
-## Scope
+## Subsystems
 
-Covers `howdy/include`, `howdy/src`, `howdy/tests`, package resources, and Howdy-specific CMake
-targets.
-
-## Subsystem Guides
-
-- [`src/app/AGENTS.md`](src/app/AGENTS.md): dispatcher, command catalog, completion
-- [`src/auth_helper/AGENTS.md`](src/auth_helper/AGENTS.md): setuid helper that opens runtime descriptors
-- [`src/cli/AGENTS.md`](src/cli/AGENTS.md): user-facing commands
-- [`src/compare/AGENTS.md`](src/compare/AGENTS.md): compare process and privilege drop
-- [`src/config/AGENTS.md`](src/config/AGENTS.md): config schema, parsing, secure writes
-- [`src/storage/AGENTS.md`](src/storage/AGENTS.md): user-model storage/codec/readiness
-- [`src/vision/AGENTS.md`](src/vision/AGENTS.md): camera and face pipeline
-- [`tests/AGENTS.md`](tests/AGENTS.md): test ownership and support headers
+- [`src/app/AGENTS.md`](src/app/AGENTS.md): CLI dispatch, command catalog, completion
+- [`src/auth_helper/AGENTS.md`](src/auth_helper/AGENTS.md): setuid helper that opens runtime
+  descriptors
+- [`src/cli/AGENTS.md`](src/cli/AGENTS.md): user-facing subcommands
+- [`src/compare/AGENTS.md`](src/compare/AGENTS.md): compare process, privilege drop, sandbox
+- [`src/config/AGENTS.md`](src/config/AGENTS.md): config schema, loader, secure writes
+- [`src/storage/AGENTS.md`](src/storage/AGENTS.md): user-model codec, fd loader, and store
+- [`src/vision/AGENTS.md`](src/vision/AGENTS.md): camera capture, OpenCV 5 DNN pipeline, preview
+- [`tests/AGENTS.md`](tests/AGENTS.md): native test layout, fuzzers, and fixtures
 
 ## Package Invariants
 
-- `howdy` is the only installed user-facing CLI. Do not add standalone command executables.
-- Keep privileged helpers under `<libexecdir>/howdy`; this includes `howdy-compare` and setuid
-  `howdy-auth-helper`.
-- Use typed `RuntimeConfig`, `VideoConfig`, and `FaceConfig` at runtime boundaries.
-- Shared face/capture policy belongs under `include/support/`, independent of vision. Config, storage,
-  compare, vision, and CLI consumers must not depend on vision merely to use those contracts.
-- Reuse `support/fd_io.hpp`, `support/atomic_files.hpp`, and `support/file_security.hpp` instead of
-  duplicating bounded I/O, staged-file, or secure-path logic.
-- Use shared model readiness/integrity checks before inference or authentication.
-- Keep OpenCV include directories marked as system includes through `howdy_opencv`.
-- The auth helper's `open` result is one message defined in
-  `protocol/runtime_descriptor_message.hpp`, with a shared encoder and decoder; reject anything
-  else.
-
-## CMake and Tests
-
-`howdy/CMakeLists.txt` and `howdy/cmake/tests/*.cmake` own production/test source membership. Keep
-every new translation unit in exactly one intended target and avoid adding `howdy/src` as a global
-include root just to reach private headers.
-
-Run focused tests while editing, then both Release and Debug full suites before a broad maintenance
-change is considered complete.
+- `howdy` is the sole installed user-facing CLI; install privileged helpers (`howdy-compare`, setuid
+  `howdy-auth-helper`) under `<libexecdir>/howdy`.
+- Keep shared face/capture policy under `include/support/` so config, storage, compare, and CLI
+  never depend on vision for shared contracts.
+- Reuse `support/fd_io.hpp`, `support/atomic_files.hpp`, and `support/file_security.hpp` for bounded
+  I/O, staged files, and secure paths.
+- Run shared model readiness/integrity checks (`model_assets/model_file.hpp`) before inference or
+  authentication.
+- Expose OpenCV headers as system includes through `howdy_opencv`.
+- Cross-process wire formats live in `include/protocol/` (`runtime_descriptor_message.hpp`,
+  `compare_descriptors.hpp`, `compare_verdict.hpp`); use their shared constants/codec and reject any
+  deviation.
+- `howdy/CMakeLists.txt` and `howdy/cmake/tests/*.cmake` own target membership: keep each
+  translation unit in one intended target and keep `howdy/src` off global include paths.
+- `howdy/cmake/docs.cmake` (`howdy_docs`) generates `howdy.1`, `howdy.ini.5`, and `pam_howdy.8`
+  from `howdy_command_catalog`, `howdy_pam_option_catalog`, `howdy_config_schema`, and `*.in`
+  templates; update catalogs, schema, or templates rather than generated output.
