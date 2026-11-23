@@ -436,17 +436,31 @@ namespace howdy::test::config_cli {
 			             "source config exactly at size limit is copied");
 			if (copy.has_value()) {
 				using howdy::native::config_internal::ReadTempConfigSnapshot;
+				using howdy::native::config_internal::TempConfigReadStatus;
 				std::string snapshot;
-				ok &= Expect(ReadTempConfigSnapshot(copy->path, geteuid(), &snapshot) &&
+				ok &= Expect(ReadTempConfigSnapshot(copy->path, geteuid(), &snapshot) ==
+				                     TempConfigReadStatus::kOk &&
 				                 snapshot == at_limit,
 				             "edited temp config exactly at size limit is read");
-				ok &= Expect(!ReadTempConfigSnapshot(copy->path, geteuid() + 1, &snapshot),
+				ok &= Expect(ReadTempConfigSnapshot(copy->path, geteuid() + 1, &snapshot) ==
+				                 TempConfigReadStatus::kUntrusted,
 				             "edited temp config owned by another user is rejected");
 				ok &=
 				    Expect(WriteFile(copy->path, over_limit), "write oversized edited temp config");
-				ok &= Expect(!ReadTempConfigSnapshot(copy->path, geteuid(), &snapshot),
+				ok &= Expect(ReadTempConfigSnapshot(copy->path, geteuid(), &snapshot) ==
+				                 TempConfigReadStatus::kUnreadable,
 				             "oversized edited temp config is rejected");
+				if (geteuid() != 0) {  // root ignores the mode
+					ok &=
+					    Expect(chmod(copy->path.c_str(), 0) == 0, "make edited config unreadable");
+					ok &= Expect(ReadTempConfigSnapshot(copy->path, geteuid(), &snapshot) ==
+					                 TempConfigReadStatus::kUnreadable,
+					             "edited temp config that cannot be opened is not untrusted");
+				}
 				fs::remove(copy->path, error);
+				ok &= Expect(ReadTempConfigSnapshot(copy->path, geteuid(), &snapshot) ==
+				                 TempConfigReadStatus::kUntrusted,
+				             "missing edited temp config is untrusted");
 			}
 
 			ok &= Expect(WriteFile(source_path, over_limit), "write oversized source config");

@@ -89,6 +89,7 @@ auto howdy::native::config_internal::ConfigMainWithDependencies(
 		case ConfigEditStatus::kReadFailed:
 			std::cout << howdy::native::kEditedConfigInstallFailedMessage << '\n';
 			return kConfigExitAbort;
+		case ConfigEditStatus::kEditedConfigUnreadable:
 		case ConfigEditStatus::kInvalidEditedConfig:
 		case ConfigEditStatus::kConfigChanged:
 		case ConfigEditStatus::kInstallFailed:

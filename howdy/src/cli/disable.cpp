@@ -42,6 +42,9 @@ namespace {
 auto howdy::native::disable_internal::DisableMainWithDependencies(
     const howdy::native::CommandInvocation &invocation, const DisableDependencies &dependencies)
     -> int {
+	if (invocation.positionals.empty()) {
+		return kDisableExitAbort;
+	}
 	const std::string &argument_value = invocation.positionals.front();
 	std::string        out_value;
 	bool               disabled = false;

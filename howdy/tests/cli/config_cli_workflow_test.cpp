@@ -1,6 +1,7 @@
 #include "cli/config/edit_session.hpp"
 #include "cli/config/internal.hpp"
 #include "cli/config_cli_test_support.hpp"
+#include "config/config_limits.hpp"
 #include "support/invoking_user.hpp"
 #include "test_support.hpp"
 
@@ -295,6 +296,24 @@ namespace howdy::test::config_cli {
 				                 ReadFile(fixture.ConfigPath()) == kEditedContent,
 				             "edit without wrapper identity accepts file owned by current user");
 			}
+			{
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				bool                       replaced = false;
+				context.on_editor = [&replaced](const fs::path &temp_path) -> void {
+					replaced =
+					    unlink(temp_path.c_str()) == 0 && mkfifo(temp_path.c_str(), 0600) == 0;
+				};
+				ScopedEnvironmentVariable const config_env("HOWDY_CONFIG",
+				                                           fixture.ConfigPath().string());
+				const ConfigEditSession session(DependenciesFor(context, fixture.TempRoot()));
+				const auto              result = session.Run({});
+				ok &= Expect(replaced, "editor replaces temp file with a FIFO");
+				ok &= Expect(result.status == ConfigEditStatus::kReadFailed,
+				             "FIFO at the temp path is rejected without blocking");
+				ok &= Expect(ReadFile(fixture.ConfigPath()) == kWorkflowOriginalContent,
+				             "config stays unchanged after FIFO replacement");
+			}
 			if (geteuid() == 0) {
 				// Only root can hand the file to another uid, as a hostile editor could.
 				TestDirectoryFixture const fixture;
@@ -374,6 +393,23 @@ namespace howdy::test::config_cli {
 				                                          "Editing config.ini\nFailed to install "
 				                                          "edited config\n",
 				             "snapshot failure output exact");
+			}
+			{
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				context.edited_content = std::string(howdy::native::kMaxConfigFileSize + 1, '#');
+				const auto result =
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
+				ok &= Expect(result.exit_code == 1 &&
+				                 result.output.contains("Edited config could not be read") &&
+				                 result.output.contains(context.recorded_temp_path.string()),
+				             "oversized edit reports why and where it was kept: " + result.output);
+				ok &= Expect(ReadFile(context.recorded_temp_path) == context.edited_content,
+				             "oversized edit keeps the user's temp file");
+				ok &= Expect(ReadFile(fixture.ConfigPath()) == kWorkflowOriginalContent,
+				             "oversized edit leaves the config unchanged");
+				std::error_code ec;
+				fs::remove(context.recorded_temp_path, ec);
 			}
 			return ok;
 		}

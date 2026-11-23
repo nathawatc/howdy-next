@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -149,6 +150,20 @@ auto main() -> int {
 		ok &= Expect(result.output.empty(), "null updater prints nothing");
 		ok &= Expect(context.resolve_calls == 0 && context.update_calls == 0,
 		             "null updater calls no dependencies");
+	}
+
+	{
+		TestContext context;
+		for (const auto &positionals : {
+		         std::vector<std::string>{},
+		         std::vector<std::string>{"key"},
+		     }) {
+			const auto result = RunSet({.positionals = positionals}, DependenciesFor(context));
+			ok &= Expect(result.exit_code == 1 && result.output.empty(),
+			             "missing positional arguments abort without output");
+		}
+		ok &= Expect(context.resolve_calls == 0 && context.update_calls == 0,
+		             "missing positional arguments invoke no dependencies");
 	}
 
 	return ok ? 0 : 1;

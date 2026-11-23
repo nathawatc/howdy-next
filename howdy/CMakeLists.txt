@@ -341,6 +341,7 @@ add_library(
  src/cli/snapshot.cpp
  src/cli/snapshot/workflow.cpp
  src/cli/test.cpp
+ src/cli/test/gui_probe.cpp
  src/cli/test/workflow.cpp
 )
 howdy_configure_native_target(howdy_cli)

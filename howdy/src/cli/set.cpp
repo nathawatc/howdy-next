@@ -32,7 +32,7 @@ auto howdy::native::set_internal::SetMainWithDependencies(
     const howdy::native::CommandInvocation &invocation, const SetDependencies &dependencies)
     -> int {
 	if (dependencies.resolve_config_path == nullptr ||
-	    dependencies.update_config_value == nullptr) {
+	    dependencies.update_config_value == nullptr || invocation.positionals.size() < 2) {
 		return kSetExitAbort;
 	}
 

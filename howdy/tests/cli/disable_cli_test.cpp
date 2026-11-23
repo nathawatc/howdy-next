@@ -320,6 +320,17 @@ auto main() -> int {
 		ok &= ExpectUpdate(context, "false", "enable success");
 	}
 
+	{
+		TestContext context;
+		const auto  result = RunDisable({}, DependenciesFor(context));
+		ok &= Expect(result.exit_code == 1 && result.stdout_output.empty() &&
+		                 result.stderr_output.empty(),
+		             "missing positional argument fails closed");
+		ok &= Expect(context.resolver_calls == 0 && context.loader_calls == 0 &&
+		                 context.updater_calls == 0,
+		             "missing positional invokes no dependency");
+	}
+
 	ok &= BoundaryAwareEntrypointIntegration();
 
 	return ok ? 0 : 1;

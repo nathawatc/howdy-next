@@ -1,6 +1,7 @@
 #include "cli/test.hpp"
 
 #include "app/command_invocation.hpp"
+#include "cli/test/gui_probe.hpp"
 #include "cli/test/internal.hpp"
 #include "cli/test/preview_renderer.hpp"
 #include "cli/test/preview_session.hpp"
@@ -17,6 +18,7 @@
 #include "vision/video_capture.hpp"
 
 #include <chrono>
+#include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -24,12 +26,13 @@
 #include <string_view>
 #include <thread>
 #include <utility>
-#include <vector>
 
 #include <grp.h>
 #include <unistd.h>
 
 #include <opencv2/core/mat.hpp>
+
+#include <sys/types.h>
 
 namespace {
 
@@ -57,9 +60,16 @@ namespace {
 		}
 
 		const auto &invoking_user = *invoking_identity.user;
+		if (initgroups(invoking_user.name.c_str(), invoking_user.gid) != 0 ||
+		    setgid(invoking_user.gid) != 0 || setuid(invoking_user.uid) != 0) {
+			return false;
+		}
+		if (getuid() != invoking_user.uid || geteuid() != invoking_user.uid ||
+		    getgid() != invoking_user.gid || getegid() != invoking_user.gid) {
+			return false;
+		}
 		howdy::native::ResetInvokingUserGuiEnvironment(invoking_user);
-		return initgroups(invoking_user.name.c_str(), invoking_user.gid) == 0 &&
-		       setgid(invoking_user.gid) == 0 && setuid(invoking_user.uid) == 0;
+		return true;
 	}
 
 	auto GetenvStringView(const char *name) -> std::string_view {
@@ -70,16 +80,53 @@ namespace {
 		return value;
 	}
 
-	void PrepareInvokingGuiEnvironment() {
+	auto ProductionGuiProbeOperations() -> test_cli_internal::GuiProbeOperations {
+		return {
+		    .context   = nullptr,
+		    .getgroups = [](void * /*context*/, int size, gid_t *groups) -> int {
+			    return ::getgroups(size, groups);
+		    },
+		    .setgroups = [](void * /*context*/, std::size_t count, const gid_t *groups) -> int {
+			    return ::setgroups(count, groups);
+		    },
+		    .initgroups = [](void * /*context*/, const char *user, gid_t gid) -> int {
+			    return ::initgroups(user, gid);
+		    },
+		    .getegid = [](void * /*context*/) -> gid_t {
+			    return ::getegid();
+		    },
+		    .geteuid = [](void * /*context*/) -> uid_t {
+			    return ::geteuid();
+		    },
+		    .setegid = [](void * /*context*/, gid_t gid) -> int {
+			    return ::setegid(gid);
+		    },
+		    .seteuid = [](void * /*context*/, uid_t uid) -> int {
+			    return ::seteuid(uid);
+		    },
+		    .probe = [](void * /*context*/, const howdy::native::InvokingUser &user) -> void {
+			    howdy::native::PrepareInvokingUserGuiEnvironment(user);
+		    },
+		};
+	}
+
+	// The display check runs before the permanent drop because the camera must still open
+	// as root, so the ~/.Xauthority and /run/user/<uid> probe cannot simply move after
+	// setuid. Probing under the invoking user's effective IDs keeps root from following
+	// user-controlled symlinks, while the retained saved UID 0 lets preflight continue as
+	// root until DropToInvokingGuiUser. Returns an error message on failure.
+	auto PrepareInvokingGuiEnvironment() -> std::optional<std::string> {
 		if (geteuid() != 0) {
-			return;
+			return std::nullopt;
 		}
 
 		const auto invoking_identity = howdy::native::ResolveInvokingIdentity();
-		if (invoking_identity.status == howdy::native::InvokingIdentityStatus::kResolved &&
-		    invoking_identity.user.has_value()) {
-			howdy::native::PrepareInvokingUserGuiEnvironment(*invoking_identity.user);
+		if (invoking_identity.status != howdy::native::InvokingIdentityStatus::kResolved ||
+		    !invoking_identity.user.has_value()) {
+			return std::nullopt;
 		}
+		return test_cli_internal::RunGuiProbeAsInvokingUser(*invoking_identity.user,
+		                                                    ProductionGuiProbeOperations());
 	}
 
 	auto HasGraphicalDisplayEnvironment() -> bool {
@@ -89,9 +136,8 @@ namespace {
 		    GetenvStringView(howdy::native::kXdgRuntimeDirEnvironmentVariable));
 	}
 
-	auto TestCliLoadRuntimeConfigDependency(void *context)
+	auto TestCliLoadRuntimeConfigDependency([[maybe_unused]] void *context)
 	    -> howdy::native::RuntimeConfigLoadResult {
-		(void)context;
 		return howdy::native::LoadRuntimeConfig();
 	}
 
@@ -144,8 +190,7 @@ namespace {
 		return test_cli_internal::TestPreflightOperationResult{.ok = true};
 	}
 
-	auto HasGraphicalDisplayDependency(void *context) -> bool {
-		(void)context;
+	auto HasGraphicalDisplayDependency([[maybe_unused]] void *context) -> bool {
 		return HasGraphicalDisplayEnvironment();
 	}
 
@@ -199,8 +244,7 @@ namespace {
 		    });
 	}
 
-	auto SwitchGuiUserDependency(void *context) -> bool {
-		(void)context;
+	auto SwitchGuiUserDependency([[maybe_unused]] void *context) -> bool {
 		return DropToInvokingGuiUser();
 	}
 
@@ -223,13 +267,13 @@ namespace {
 		return static_cast<test_cli_internal::TestPreviewRenderer *>(context)->SlowMode();
 	}
 
-	auto PreviewNowDependency(void *context) -> std::chrono::steady_clock::time_point {
-		(void)context;
+	auto PreviewNowDependency([[maybe_unused]] void *context)
+	    -> std::chrono::steady_clock::time_point {
 		return std::chrono::steady_clock::now();
 	}
 
-	void PreviewSleepDependency(void *context, std::chrono::milliseconds duration) {
-		(void)context;
+	void PreviewSleepDependency([[maybe_unused]] void    *context,
+	                            std::chrono::milliseconds duration) {
 		std::this_thread::sleep_for(duration);
 	}
 
@@ -246,7 +290,12 @@ namespace {
 		test_cli_internal::PreviewCleanup const cleanup{production_context->renderer,
 		                                                production_context->capture};
 
-		PrepareInvokingGuiEnvironment();
+		if (auto probe_error = PrepareInvokingGuiEnvironment()) {
+			return test_cli_internal::TestPreviewResult{
+			    .status        = test_cli_internal::TestPreviewStatus::kGuiUserError,
+			    .error_message = std::move(*probe_error),
+			};
+		}
 
 		auto preflight_result = test_cli_internal::RunPreviewPreflight(
 		    config, user,

@@ -143,7 +143,14 @@ auto howdy::native::test_cli_internal::TestMainWithDependencies(
 			return kWorkflowExitCameraError;
 		case TestPreviewStatus::kGuiUserError:
 			std::cerr << "Failed to switch GUI session to the invoking user\n";
-			std::cerr << "Run this command from your desktop session through sudo/doas/pkexec\n";
+			// A specific credential error means the invocation was fine and the advice
+			// below would mislead.
+			if (!preview_result.error_message.empty()) {
+				std::cerr << "Error: " << preview_result.error_message << "\n";
+			} else {
+				std::cerr
+				    << "Run this command from your desktop session through sudo/doas/pkexec\n";
+			}
 			return kWorkflowExitCameraError;
 		default:
 			std::cerr << "Internal error: unknown test preview status\n";
