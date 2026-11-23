@@ -44,8 +44,8 @@ namespace howdy::native {
 	                                std::string &first_error) const -> std::vector<EncodedFace> {
 		std::vector<EncodedFace> encodings;
 		encodings.reserve(detections.size());
-		std::size_t index = 0;
-		for (auto &&[detection, face] : std::views::zip(detections, faces)) {
+		for (auto &&[index, detection, face] :
+		     std::views::zip(std::views::iota(std::size_t{0}), detections, faces)) {
 			auto encoding = dependencies_.inference.encode_face(dependencies_.inference.context,
 			                                                    prepared, detection);
 			if (!FaceEncodingSucceeded(encoding)) {
@@ -55,17 +55,16 @@ namespace howdy::native {
 					                  ? kInvalidFaceEncodingMessage
 					                  : std::move(encoding.error_message);
 				}
-				++index;
 				continue;
 			}
 			encodings.push_back({.face_index = index, .encoding = std::move(encoding.encoding)});
-			++index;
 		}
 		return encodings;
 	}
 
 	auto PreviewEngine::MatchFaces(const std::vector<EncodedFace> &encodings,
-	                               std::vector<PreviewFaceResult> &faces) -> std::optional<bool> {
+	                               std::vector<PreviewFaceResult> &faces) const
+	    -> std::optional<bool> {
 		bool matched = false;
 		for (const auto &encoded : encodings) {
 			auto const match = dependencies_.matching.match_face(dependencies_.matching.context,
@@ -121,10 +120,10 @@ namespace howdy::native {
 				break;
 		}
 
-		const auto inference_start   = dependencies_.now(dependencies_.inference.context);
+		const auto inference_start   = dependencies_.now(dependencies_.clock_context);
 		const auto inference_elapsed = [this, &inference_start] -> std::chrono::milliseconds {
 			return std::chrono::duration_cast<std::chrono::milliseconds>(
-			    dependencies_.now(dependencies_.inference.context) - inference_start);
+			    dependencies_.now(dependencies_.clock_context) - inference_start);
 		};
 
 		auto const prepared =

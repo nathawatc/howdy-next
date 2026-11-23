@@ -33,16 +33,17 @@ namespace howdy::native {
 		FaceModel(const FaceModel &)                     = delete;
 		auto operator=(const FaceModel &) -> FaceModel & = delete;
 
-		FaceModel(FaceModel &&) noexcept;
-		auto operator=(FaceModel &&) noexcept -> FaceModel &;
+		FaceModel(FaceModel &&other) noexcept;
+		auto operator=(FaceModel &&other) noexcept -> FaceModel &;
 
 		[[nodiscard]] auto Ok() const -> bool;
 		[[nodiscard]] auto ErrorMessage() const -> const std::string &;
 		[[nodiscard]] auto Metric() const -> FaceMetric;
 
 		[[nodiscard]] static auto PrepareFrame(const cv::Mat &frame) -> cv::Mat;
-		auto                      Detect(const cv::Mat &frame) -> FaceDetectionResult;
-		auto Encode(const cv::Mat &frame, const FaceDetection &face) -> FaceEncodingResult;
+		[[nodiscard]] auto        Detect(const cv::Mat &frame) -> FaceDetectionResult;
+		[[nodiscard]] auto        Encode(const cv::Mat &frame, const FaceDetection &face)
+		    -> FaceEncodingResult;
 		[[nodiscard]] auto WarmUpRecognizer() -> bool;
 
 	private:

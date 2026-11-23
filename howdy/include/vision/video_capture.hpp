@@ -19,7 +19,7 @@ namespace howdy::native {
 		int         device_fps     = 0;
 	};
 
-	auto LoadCaptureSettings(const VideoConfig &config) -> CaptureSettings;
+	[[nodiscard]] auto LoadCaptureSettings(const VideoConfig &config) -> CaptureSettings;
 
 	class VideoCaptureTestAccess;
 
@@ -27,12 +27,12 @@ namespace howdy::native {
 	public:
 		explicit VideoCapture(CaptureSettings settings);
 
-		auto Open(bool perform_warm_up = true) -> bool;
-		auto WarmUp() -> bool;
-		auto Read(cv::Mat &frame, cv::Mat *gray_frame = nullptr) -> bool;
-		void Release();
+		[[nodiscard]] auto Open(bool perform_warm_up = true) -> bool;
+		[[nodiscard]] auto WarmUp() -> bool;
+		[[nodiscard]] auto Read(cv::Mat &frame, cv::Mat *gray_frame = nullptr) -> bool;
+		void               Release();
 
-		auto Set(int property, double value) -> bool;
+		[[nodiscard]] auto Set(int property, double value) -> bool;
 
 		[[nodiscard]] auto ErrorMessage() const -> const std::string &;
 

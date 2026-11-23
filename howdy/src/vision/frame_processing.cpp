@@ -3,8 +3,8 @@
 #include "config/runtime_config.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
-#include <vector>
 
 #include <opencv2/core.hpp>
 #include <opencv2/core/cvstd_wrapper.hpp>
@@ -60,12 +60,12 @@ namespace howdy::native {
 			return stats;
 		}
 
-		cv::Mat                         hist;
-		static const std::vector<int>   kHistSize{8};
-		static const std::vector<float> kHistRange{0.0F, 256.0F};
-		static const std::vector<int>   kChannels{0};
-		const std::vector<cv::Mat>      images{gray};
-		cv::calcHist(images, kChannels, cv::Mat(), hist, kHistSize, kHistRange);
+		cv::Mat                        hist;
+		constexpr std::array<int, 1>   channels{0};
+		constexpr std::array<int, 1>   hist_size{8};
+		constexpr std::array<float, 2> range{0.0F, 256.0F};
+		const float                   *ranges = range.data();
+		cv::calcHist(&gray, 1, channels.data(), cv::Mat(), hist, 1, hist_size.data(), &ranges);
 
 		stats.hist_total = cv::sum(hist).val[0];
 		if (stats.hist_total != 0.0) {

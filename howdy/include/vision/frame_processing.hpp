@@ -29,12 +29,13 @@ namespace howdy::native {
 		int rotation = 0;
 	};
 
-	auto MakeClahe(const VideoConfig &config) -> cv::Ptr<cv::CLAHE>;
+	[[nodiscard]] auto MakeClahe(const VideoConfig &config) -> cv::Ptr<cv::CLAHE>;
 	void ApplyClaheIfEnabled(cv::Mat &gray, const VideoConfig &config, cv::Ptr<cv::CLAHE> &clahe);
-	auto RotateFrame(const cv::Mat &frame, const VideoConfig &config, int frame_number) -> cv::Mat;
-	auto MeasureBrightness(const cv::Mat &gray) -> BrightnessStats;
-	auto ClassifyBrightness(double hist_total, float darkness, float dark_threshold)
+	[[nodiscard]] auto RotateFrame(const cv::Mat &frame, const VideoConfig &config,
+	                               int frame_number) -> cv::Mat;
+	[[nodiscard]] auto MeasureBrightness(const cv::Mat &gray) -> BrightnessStats;
+	[[nodiscard]] auto ClassifyBrightness(double hist_total, float darkness, float dark_threshold)
 	    -> BrightnessDecision;
-	auto FrameResizeScale(FrameGeometry frame, float max_height) -> double;
+	[[nodiscard]] auto FrameResizeScale(FrameGeometry frame, float max_height) -> double;
 
 }  // namespace howdy::native
