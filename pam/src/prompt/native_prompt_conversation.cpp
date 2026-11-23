@@ -16,16 +16,18 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
 #include <fcntl.h>
-#include <stdlib.h>
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
@@ -72,8 +74,11 @@ namespace {
 			return {};
 		}
 
-		auto tty_fd = howdy::pam::detail::NormalizeInternalFd(howdy::pam::detail::ScopedFd(
-		    open(target->path.c_str(), O_RDWR | O_CLOEXEC | O_NOCTTY | O_NONBLOCK | O_NOFOLLOW)));
+		auto tty_fd = howdy::pam::detail::NormalizeInternalFd(
+		    howdy::pam::detail::ScopedFd(howdy::native::RetryOnEintr([&] -> int {
+			    return open(target->path.c_str(),
+				            O_RDWR | O_CLOEXEC | O_NOCTTY | O_NONBLOCK | O_NOFOLLOW);
+		    })));
 		if (!tty_fd.Valid()) {
 			return {};
 		}
@@ -178,7 +183,9 @@ namespace {
 
 	void DrainAbortPipe(int fd) {
 		std::array<char, 32> buffer{};
-		while (read(fd, buffer.data(), buffer.size()) > 0) {
+		while (howdy::native::RetryOnEintr([&] -> ssize_t {
+			       return read(fd, buffer.data(), buffer.size());
+		       }) > 0) {
 		}
 	}
 
@@ -206,7 +213,7 @@ namespace {
 }  // namespace
 
 auto ResolveNativePromptTty(std::string_view pam_tty) -> std::optional<NativePromptTtyTarget> {
-	if (pam_tty.empty()) {
+	if (pam_tty.empty() || pam_tty.contains('\0')) {
 		return std::nullopt;
 	}
 	auto path = std::string(pam_tty);
@@ -215,20 +222,24 @@ auto ResolveNativePromptTty(std::string_view pam_tty) -> std::optional<NativePro
 	}
 
 	// Resolve symlinks and ".." so PAM_TTY cannot steer the open outside /dev.
-	const std::unique_ptr<char, decltype(&std::free)> canonical(realpath(path.c_str(), nullptr),
-	                                                            &std::free);
-	if (canonical == nullptr || !std::string_view(canonical.get()).starts_with("/dev/")) {
+	std::error_code ec;
+	const auto      canonical_path = std::filesystem::canonical(path, ec);
+	if (ec) {
+		return std::nullopt;
+	}
+	const std::string canonical_string = canonical_path.string();
+	if (!canonical_string.starts_with("/dev/")) {
 		return std::nullopt;
 	}
 
 	// /dev also holds world-writable directories (shm, mqueue); never open anything but a
 	// character device.
 	struct stat metadata{};
-	if (stat(canonical.get(), &metadata) != 0 || !S_ISCHR(metadata.st_mode)) {
+	if (stat(canonical_string.c_str(), &metadata) != 0 || !S_ISCHR(metadata.st_mode)) {
 		return std::nullopt;
 	}
 	return NativePromptTtyTarget{
-	    .path    = canonical.get(),
+	    .path    = canonical_string,
 	    .device  = metadata.st_dev,
 	    .inode   = metadata.st_ino,
 	    .rdevice = metadata.st_rdev,
@@ -322,6 +333,9 @@ NativePromptConversation::~NativePromptConversation() {
 }
 
 void NativePromptConversation::RetainUnsafeDispatchContext() noexcept {
+	if (dispatch_context_ == nullptr) {
+		return;
+	}
 	dispatch_context_->fail_closed.store(true);
 	dispatch_context_->owner = nullptr;
 	if (!howdy::pam::QuarantineUnsafeCallbackContext(dispatch_context_)) {
@@ -331,49 +345,26 @@ void NativePromptConversation::RetainUnsafeDispatchContext() noexcept {
 }
 
 auto NativePromptConversation::RestoreOriginal() noexcept -> howdy::pam::ConversationRestoreResult {
-	if (!installed_) {
-		return howdy::pam::ConversationRestoreResult::kOriginalRestored;
-	}
-
-	if (pamh_ == nullptr) {
-		pam_syslog(pamh_, LOG_CRIT, "Cannot restore PAM conversation: null PAM handle");
-		RetainUnsafeDispatchContext();
-		installed_ = false;
-		return howdy::pam::ConversationRestoreResult::kUnsafe;
-	}
-
-	const int restore_result =
-	    operations_.set_pam_item(operations_.context, pamh_, PAM_CONV, &original_conv_);
-	if (restore_result == PAM_SUCCESS) {
-		installed_ = false;
-		return howdy::pam::ConversationRestoreResult::kOriginalRestored;
-	}
-
-	pam_syslog(pamh_, LOG_CRIT, "Failed to restore original PAM conversation: %d", restore_result);
-	static const struct pam_conv kFailClosedConv = {
-	    .conv        = howdy::pam::FailClosedConversationDispatch,
-	    .appdata_ptr = nullptr,
-	};
-	const int fail_closed_result =
-	    operations_.set_pam_item(operations_.context, pamh_, PAM_CONV, &kFailClosedConv);
-	if (fail_closed_result != PAM_SUCCESS) {
-		pam_syslog(pamh_, LOG_CRIT, "Failed to install fail-closed PAM conversation: %d",
-		           fail_closed_result);
-		RetainUnsafeDispatchContext();
-		installed_ = false;
-		return howdy::pam::ConversationRestoreResult::kUnsafe;
-	}
-	installed_ = false;
-	return howdy::pam::ConversationRestoreResult::kFailClosedInstalled;
+	return howdy::pam::RestorePamConversation(
+	    pamh_, installed_, &original_conv_,
+	    [this](pam_handle_t *handle, int item_type, const void *item) noexcept -> int {
+		    return operations_.set_pam_item == nullptr
+		               ? PAM_SYSTEM_ERR
+					   : operations_.set_pam_item(operations_.context, handle, item_type, item);
+	    },
+	    [this] noexcept -> void {
+		    RetainUnsafeDispatchContext();
+	    });
 }
 
 auto NativePromptConversation::Available() const -> bool {
-	return has_original_conv_ && tty_fd_.Valid() && abort_pipe_.read.Valid() &&
+	return has_original_conv_ && dispatch_context_ != nullptr &&
+	       operations_.set_pam_item != nullptr && tty_fd_.Valid() && abort_pipe_.read.Valid() &&
 	       abort_pipe_.write.Valid();
 }
 
 auto NativePromptConversation::Install() -> int {
-	if (!Available()) {
+	if (!Available() || pamh_ == nullptr || operations_.set_pam_item == nullptr) {
 		return PAM_SYSTEM_ERR;
 	}
 
@@ -471,19 +462,16 @@ auto NativePromptConversation::Handle(int num_msg, const struct pam_message **ms
 		std::vector<std::size_t> *lengths_   = nullptr;
 	} cleanup_guard{&pam_responses, &response_lengths};
 
-	const auto messages    = std::span(msgm, count);
-	auto const responses   = std::span(pam_responses, count);
-	auto       response_it = responses.begin();
-	auto       length_it   = response_lengths.begin();
-	for (const auto *message_ptr : messages) {
+	const auto messages  = std::span(msgm, count);
+	auto const responses = std::span(pam_responses, count);
+	for (auto &&[message_ptr, current_response, current_length] :
+	     std::views::zip(messages, responses, response_lengths)) {
 		if (message_ptr == nullptr) {
 			return PAM_CONV_ERR;
 		}
 
-		auto                     &current_response = *response_it++;
-		auto                     &current_length   = *length_it++;
-		const struct pam_message &message          = *message_ptr;
-		int                       result           = PAM_SUCCESS;
+		const struct pam_message &message = *message_ptr;
+		int                       result  = PAM_SUCCESS;
 		switch (message.msg_style) {
 			case PAM_PROMPT_ECHO_OFF:
 				result = PromptInput(message, &current_response.resp, true, &current_length);
@@ -651,11 +639,16 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 	}
 
 	struct termios original_termios{};
-	if (tcgetattr(tty_fd_.Get(), &original_termios) != 0) {
+	if (howdy::native::RetryOnEintr([&] -> int {
+		    return tcgetattr(tty_fd_.Get(), &original_termios);
+	    }) != 0) {
 		return PAM_CONV_ERR;
 	}
 
 	const struct termios prompt_termios = PromptTermios(original_termios, hide_input);
+	// Not retried on EINTR: from a background process group the kernel raises SIGTTOU and fails
+	// with EINTR on every call when the application's handler lacks SA_RESTART, so a retry loop
+	// would spin where neither an abort request nor the timeout is seen.
 	if (tcsetattr(tty_fd_.Get(), TCSANOW, &prompt_termios) != 0) {
 		return PAM_CONV_ERR;
 	}
@@ -688,7 +681,9 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 			auto *owner = std::exchange(owner_, nullptr);
 			// Drop a half-typed secret so it cannot reach the next reader of the terminal: before
 			// the restore (a non-canonical original would make it readable) and after it (keys
-			// typed in between). Typeahead is kept when the prompt was never shown.
+			// typed in between). Typeahead is kept when the prompt was never shown. Single
+			// attempts: tcflush raises SIGTTOU in the background just like the installing
+			// tcsetattr.
 			const bool discard_input = prompt_shown_ && !line_read_;
 			if (discard_input) {
 				(void)tcflush(owner->tty_fd_.Get(), TCIFLUSH);
@@ -721,7 +716,7 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 		bool                      line_read_    = false;
 	} terminal_guard{this, &original_termios, !hide_input};
 
-	const std::string prompt_text = message.msg == nullptr ? "" : message.msg;
+	const std::string_view prompt_text = message.msg == nullptr ? "" : message.msg;
 	if (!WriteAll(tty_fd_.Get(), prompt_text, abort_requested_)) {
 		return PAM_CONV_ERR;
 	}

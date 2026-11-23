@@ -11,6 +11,7 @@
 #include <future>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -706,5 +707,20 @@ auto ExpectNativePromptInputEdges() -> bool {
 	ok &= Expect(ProcessCharacter('\n', terminal, password, response_too_long) ==
 	                 CharacterResult::kComplete,
 	             "newline completes password input");
+
+	SensitiveBuffer full_buffer;
+	for (std::size_t index = 0; index < howdy::pam::native_prompt_input::kMaxPromptResponseBytes;
+	     ++index) {
+		full_buffer.PushBack('a');
+	}
+	bool push_threw = false;
+	try {
+		full_buffer.PushBack('x');
+	} catch (const std::out_of_range &) {
+		push_threw = true;
+	}
+	ok &= Expect(push_threw && full_buffer.Full() &&
+	                 full_buffer.Size() == howdy::pam::native_prompt_input::kMaxPromptResponseBytes,
+	             "PushBack overflow throws without corrupting buffer length");
 	return ok;
 }

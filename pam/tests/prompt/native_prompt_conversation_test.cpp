@@ -191,7 +191,9 @@ auto ExpectOriginalConversationRestored() -> bool {
 		ok &= Expect(conversation.Available(), "restore test native prompt is available");
 		ok &= Expect(conversation.Install() == PAM_SUCCESS,
 		             "restore test installs native conversation");
-		conversation.RestoreOriginal();
+		ok &= Expect(conversation.RestoreOriginal() ==
+		                 howdy::pam::ConversationRestoreResult::kOriginalRestored,
+		             "restore test restores original conversation");
 	}
 
 	const void *restored_item = nullptr;
@@ -386,6 +388,7 @@ auto main() -> int {
 	ok &= ExpectNativePromptInputEdges();
 	ok &= ExpectKernelLineEditing();
 	ok &= ExpectAbortDuringStoppedOutputDoesNotHang();
+	ok &= ExpectBackgroundTerminalSetupDoesNotSpin();
 	ok &= ExpectOversizedPromptFailsClosed();
 	ok &= ExpectRestoreFailureFailsClosed();
 	ok &= ExpectPromptExceptionRestoresTerminalAndRecordsRestoreFailure();

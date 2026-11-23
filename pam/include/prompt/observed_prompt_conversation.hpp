@@ -30,8 +30,8 @@ namespace howdy::pam {
 		virtual ~SecretPromptConversation()                                            = default;
 
 		[[nodiscard]] virtual auto Available() const -> bool                               = 0;
-		virtual auto               Install() -> int                                        = 0;
-		virtual auto               RestoreOriginal() noexcept -> ConversationRestoreResult = 0;
+		[[nodiscard]] virtual auto Install() -> int                                        = 0;
+		[[nodiscard]] virtual auto RestoreOriginal() noexcept -> ConversationRestoreResult = 0;
 	};
 
 	class ObservedPromptConversation final : public SecretPromptConversation {
@@ -45,8 +45,8 @@ namespace howdy::pam {
 		auto operator=(ObservedPromptConversation &&) -> ObservedPromptConversation &      = delete;
 
 		[[nodiscard]] auto Available() const -> bool override;
-		auto               Install() -> int override;
-		auto               RestoreOriginal() noexcept -> ConversationRestoreResult override;
+		[[nodiscard]] auto Install() -> int override;
+		[[nodiscard]] auto RestoreOriginal() noexcept -> ConversationRestoreResult override;
 
 	private:
 		friend class ObservedPromptConversationTestAccess;

@@ -52,14 +52,15 @@ namespace howdy::pam {
 
 	class PromptCoordinatorOperations {
 	public:
-		static auto Create(void *context, SpawnCompareProcessFn spawn_compare_process,
-		                   WaitForCompareProcessFn          wait_for_compare_process,
-		                   CancelAndReapCompareProcessFn    cancel_and_reap_compare_process,
-		                   InputPromptPreflightFn           input_prompt_preflight,
-		                   CreatePromptSubmitterFn          create_prompt_submitter,
-		                   CreateNativePromptFn             create_native_prompt,
-		                   CreateSecretPromptConversationFn create_secret_prompt_conversation,
-		                   RequestAuthTokenFn               request_auth_token)
+		[[nodiscard]] static auto
+		Create(void *context, SpawnCompareProcessFn spawn_compare_process,
+		       WaitForCompareProcessFn          wait_for_compare_process,
+		       CancelAndReapCompareProcessFn    cancel_and_reap_compare_process,
+		       InputPromptPreflightFn           input_prompt_preflight,
+		       CreatePromptSubmitterFn          create_prompt_submitter,
+		       CreateNativePromptFn             create_native_prompt,
+		       CreateSecretPromptConversationFn create_secret_prompt_conversation,
+		       RequestAuthTokenFn               request_auth_token)
 		    -> std::optional<PromptCoordinatorOperations> {
 			if (spawn_compare_process == nullptr || wait_for_compare_process == nullptr ||
 			    cancel_and_reap_compare_process == nullptr || input_prompt_preflight == nullptr ||
@@ -198,7 +199,7 @@ namespace howdy::pam {
 
 		~PromptCoordinator() = default;
 
-		auto Run(const CompareLaunchRequest &request) -> PromptCoordinatorResult;
+		[[nodiscard]] auto Run(const CompareLaunchRequest &request) -> PromptCoordinatorResult;
 
 	private:
 		friend class PromptCoordinatorTestAccess;
@@ -237,8 +238,10 @@ namespace howdy::pam {
 			bool                   secret_prompt_active     = false;
 			bool                   cancellation_requested   = false;
 			bool                   shutdown_requested       = false;
+			bool                   cancellation_signal_failed = false;
 		};
 
+		// Takes mutex_ when the write fails, so call it without holding mutex_.
 		void        SignalCancellation() noexcept;
 		static auto CancellationRequested(void *context) -> bool;
 		static auto SecretPromptBegin(void *context) noexcept -> SecretPromptGeneration;
@@ -282,7 +285,6 @@ namespace howdy::pam {
 		// borrows them.
 		howdy::native::ScopedFd child_pidfd_;
 		howdy::native::ScopedFd compare_verdict_fd_;
-		bool                    cancellation_signal_failed_ = false;
 		State                   state_;
 		Workaround              effective_workaround_ = Workaround::kOff;
 		bool                    run_started_          = false;

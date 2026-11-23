@@ -11,7 +11,7 @@ namespace howdy::pam {
 		kNativeInput,
 	};
 
-	__attribute__((visibility("hidden"))) auto
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	ShouldAskForPassword(bool ask_auth_tok, Workaround workaround, bool auth_token_available)
 	    -> bool;
 

@@ -15,6 +15,7 @@
 #include "support/error_message.hpp"
 #include "support/process_status.hpp"
 
+#include <array>
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
@@ -24,6 +25,7 @@
 #include <thread>
 
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <security/pam_ext.h>
@@ -65,9 +67,15 @@ namespace howdy::pam {
 		    }) != 0 &&
 		    errno != EAGAIN) {
 			const int error_number = errno;
+			{
+				std::scoped_lock const lock(mutex_);
+				state_.cancellation_signal_failed = true;
+			}
+			std::array<char, 128> error_buffer{};
+			const char           *error_text =
+			    strerror_r(error_number, error_buffer.data(), error_buffer.size());
 			pam_syslog(pamh_, LOG_ERR, "Compare cancellation eventfd write failed: %s (%d)",
-			           howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
-			cancellation_signal_failed_ = true;
+			           error_text != nullptr ? error_text : "unknown error", error_number);
 		}
 	}
 
@@ -429,9 +437,9 @@ namespace howdy::pam {
 		{
 			std::scoped_lock const lock(mutex_);
 			state_.cancellation_requested = true;
-			SignalCancellation();
-			state_.shutdown_requested = true;
+			state_.shutdown_requested     = true;
 		}
+		SignalCancellation();
 		condition_.notify_all();
 		CompareWorker(child_pid, compare_deadline);
 		child_pidfd_.Reset();
@@ -453,6 +461,7 @@ namespace howdy::pam {
 	}
 
 	void PromptCoordinator::PublishPasswordCallReturned() {
+		bool should_signal = false;
 		{
 			std::scoped_lock const lock(mutex_);
 			state_.password_call_returned = true;
@@ -464,8 +473,11 @@ namespace howdy::pam {
 			if (state_.first_completion == FirstCompletion::kNone) {
 				state_.first_completion       = FirstCompletion::kPassword;
 				state_.cancellation_requested = true;
-				SignalCancellation();
+				should_signal                 = true;
 			}
+		}
+		if (should_signal) {
+			SignalCancellation();
 		}
 		condition_.notify_all();
 	}
@@ -556,31 +568,69 @@ namespace howdy::pam {
 			return SystemErrorResult();
 		}
 
-		std::thread child_thread;
+		class WorkerShutdownGuard {
+		public:
+			explicit WorkerShutdownGuard(PromptCoordinator &coordinator) noexcept
+			    : coordinator_(&coordinator) {}
+
+			WorkerShutdownGuard(const WorkerShutdownGuard &)                     = delete;
+			auto operator=(const WorkerShutdownGuard &) -> WorkerShutdownGuard & = delete;
+			WorkerShutdownGuard(WorkerShutdownGuard &&)                          = delete;
+			auto operator=(WorkerShutdownGuard &&) -> WorkerShutdownGuard &      = delete;
+
+			void Disarm() noexcept {
+				coordinator_ = nullptr;
+			}
+
+			~WorkerShutdownGuard() {
+				if (coordinator_ == nullptr) {
+					return;
+				}
+				{
+					std::scoped_lock const lock(coordinator_->mutex_);
+					coordinator_->state_.cancellation_requested = true;
+					coordinator_->state_.shutdown_requested     = true;
+				}
+				coordinator_->SignalCancellation();
+				coordinator_->condition_.notify_all();
+			}
+
+		private:
+			PromptCoordinator *coordinator_ = nullptr;
+		};
+
+		std::jthread child_thread;
 		try {
 			child_thread =
-			    std::thread(&PromptCoordinator::CompareWorker, this, child_pid, compare_deadline);
+			    std::jthread(&PromptCoordinator::CompareWorker, this, child_pid, compare_deadline);
 		} catch (const std::exception &error) {
 			pam_syslog(pamh_, LOG_ERR, "Failed to start compare wait worker: %s", error.what());
 			CleanupSpawnedChild(child_pid, compare_deadline);
 			return SystemErrorResult();
 		}
-		int pam_result = PAM_SUCCESS;
+		WorkerShutdownGuard worker_guard(*this);
+		int                 pam_result = PAM_SUCCESS;
 		if (ask_pass) {
 			PublishPasswordCallEntered();
 			pam_result = RequestPassword();
 			PublishPasswordCallReturned();
 		}
 
+		worker_guard.Disarm();
 		child_thread.join();
 		// The worker has reaped the child; nothing borrows these any more.
 		child_pidfd_.Reset();
 		compare_verdict_fd_.Reset();
 		const bool terminal_restore_failed =
 		    native_prompt_ != nullptr && native_prompt_->TerminalRestoreFailed();
-		const auto restore_result = RestorePromptConversation();
-		auto       result         = BuildResult(ask_pass, pam_result);
-		if (cancellation_signal_failed_ || terminal_restore_failed ||
+		const auto restore_result             = RestorePromptConversation();
+		auto       result                     = BuildResult(ask_pass, pam_result);
+		bool       cancellation_signal_failed = false;
+		{
+			std::scoped_lock const lock(mutex_);
+			cancellation_signal_failed = state_.cancellation_signal_failed;
+		}
+		if (cancellation_signal_failed || terminal_restore_failed ||
 		    restore_result != ConversationRestoreResult::kOriginalRestored) {
 			result.decision   = PromptCoordinatorDecision::kPamResult;
 			result.pam_status = PAM_SYSTEM_ERR;

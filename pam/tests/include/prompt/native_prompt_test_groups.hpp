@@ -16,6 +16,7 @@ auto ExpectDispatchThrowCleanup(int throw_mode, const std::string &message) -> b
 auto ExpectDestroyedInstalledNativeWrapperFailsClosed() -> bool;
 auto ExpectNativeTerminalEligibility() -> bool;
 auto ExpectNativeTerminalAliases() -> bool;
+auto ExpectBackgroundTerminalSetupDoesNotSpin() -> bool;
 auto ClosedStdinPreservedWithTerminalStdout() -> bool;
 auto ClosedStdoutPreservedWithTerminalStdin() -> bool;
 auto ClosedStderrPreservedWithTerminalStdin() -> bool;
