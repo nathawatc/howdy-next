@@ -1,6 +1,7 @@
 [global]
 editorconfig = true
 extend-enable = ["MD060", "MD063"]
+flavor = "gfm"
 
 [MD013]
 code-blocks = false  # Exclude code blocks from line length check
