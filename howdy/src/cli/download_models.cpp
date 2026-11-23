@@ -179,7 +179,7 @@ auto howdy::native::download_models_internal::DownloadModelsWriteCallback(void  
 		return 0;
 	}
 
-	if (!howdy::native::WriteAllToFd(context->staged->fd.Get(), data, total)) {
+	if (!howdy::native::WriteAllToFd(context->staged->Fd().Get(), data, total)) {
 		return 0;
 	}
 	context->bytes_written += total;
@@ -291,9 +291,9 @@ namespace {
 		}
 
 		struct stat staged_stat{};
-		if (dependencies.fstat_file(staged->fd.Get(), &staged_stat) != 0) {
+		if (dependencies.fstat_file(staged->Fd().Get(), &staged_stat) != 0) {
 			const int  error_number = errno;
-			const auto staged_path  = staged->path;
+			const auto staged_path  = staged->Path();
 			howdy::native::CleanupStagedFile(*staged);
 			std::cout << "Failed to fstat staged model '" << staged_path.string()
 			          << "': " << howdy::native::SystemErrorMessage(error_number) << "\n";
@@ -306,7 +306,7 @@ namespace {
 			return false;
 		}
 
-		const auto actual_sha256 = dependencies.sha256_file(staged->fd.Get());
+		const auto actual_sha256 = dependencies.sha256_file(staged->Fd().Get());
 		if (!actual_sha256.has_value() || model.sha256 != *actual_sha256) {
 			howdy::native::CleanupStagedFile(*staged);
 			std::cout << (actual_sha256.has_value() ? "Checksum mismatch for "

@@ -57,7 +57,7 @@ namespace howdy::test::download_models {
 			DependenciesState().downloaded_urls.push_back(url);
 			for (const auto &artifact : kPinnedModelArtifacts) {
 				if (artifact.url == url) {
-					return ftruncate(staged.fd.Get(), static_cast<off_t>(artifact.size)) == 0;
+					return ftruncate(staged.Fd().Get(), static_cast<off_t>(artifact.size)) == 0;
 				}
 			}
 			return false;

@@ -48,15 +48,13 @@ auto main() -> int {
 	ec.clear();
 	const TemporaryDirectory temp_guard(temp_root);
 
-	howdy::native::StagedFile empty_path_install{
-	    .fd   = howdy::native::ScopedFd(open("/dev/null", O_WRONLY | O_CLOEXEC)),
-	    .path = {},
-	};
-	ok &= Expect(empty_path_install.fd.Get() >= 0, "open fd for empty-path staged install");
+	howdy::native::StagedFile empty_path_install(
+	    howdy::native::ScopedFd(open("/dev/null", O_WRONLY | O_CLOEXEC)), {});
+	ok &= Expect(empty_path_install.Fd().Get() >= 0, "open fd for empty-path staged install");
 	ok &= Expect(!CommitIsDurable(
 	                 howdy::native::InstallStagedFile(empty_path_install, temp_root / "unused")),
 	             "staged install rejects empty path");
-	ok &= Expect(empty_path_install.fd.Get() < 0, "empty-path staged install closes fd");
+	ok &= Expect(empty_path_install.Fd().Get() < 0, "empty-path staged install closes fd");
 
 	const auto blocked_parent = temp_root / "blocked-parent";
 	ok &= Expect(WriteFile(blocked_parent, "not a directory"),
@@ -80,7 +78,7 @@ auto main() -> int {
 	ok &= Expect(require_existing_staged.has_value(),
 	             "require-existing policy accepts existing real parent");
 	WithPresent(require_existing_staged, [&] -> void {
-		ok &= Expect(fs::exists(require_existing_staged->path, ec) && !ec,
+		ok &= Expect(fs::exists(require_existing_staged->Path(), ec) && !ec,
 		             "require-existing policy creates staged file in real parent");
 		howdy::native::CleanupStagedFile(*require_existing_staged);
 	});
@@ -130,16 +128,16 @@ auto main() -> int {
 	    howdy::native::PrepareStagedFile(successful_install_destination, ".howdy-download-");
 	ok &= Expect(successful_install.has_value(), "prepare staged file for successful install");
 	WithPresent(successful_install, [&] -> void {
-		const auto staged_path = successful_install->path;
-		ok &= Expect(howdy::native::WriteAllToFd(successful_install->fd.Get(), "model"),
+		const auto staged_path = successful_install->Path();
+		ok &= Expect(howdy::native::WriteAllToFd(successful_install->Fd().Get(), "model"),
 		             "download-like write leaves staged fd open before install");
-		ok &= Expect(successful_install->fd.Get() >= 0,
+		ok &= Expect(successful_install->Fd().Get() >= 0,
 		             "download-like staged fd remains open until install");
 		ok &= Expect(CommitIsDurable(howdy::native::InstallStagedFile(
 		                 *successful_install, successful_install_destination)),
 		             "install staged file fsyncs and closes download-like open fd");
-		ok &= Expect(successful_install->fd.Get() < 0, "successful install closes staged fd");
-		ok &= Expect(successful_install->path.empty(), "successful install clears staged path");
+		ok &= Expect(successful_install->Fd().Get() < 0, "successful install closes staged fd");
+		ok &= Expect(successful_install->Path().empty(), "successful install clears staged path");
 		ok &= Expect(fs::exists(successful_install_destination, ec) && !ec,
 		             "successful install creates destination");
 		ok &= Expect(ReadFile(successful_install_destination) == "model",
@@ -153,7 +151,7 @@ auto main() -> int {
 	    howdy::native::PrepareStagedFile(uncertain_install_destination, ".howdy-download-");
 	ok &= Expect(uncertain_install.has_value(), "prepare staged file for uncertain install");
 	WithPresent(uncertain_install, [&] -> void {
-		ok &= Expect(howdy::native::WriteAllToFd(uncertain_install->fd.Get(), "model"),
+		ok &= Expect(howdy::native::WriteAllToFd(uncertain_install->Fd().Get(), "model"),
 		             "write uncertain staged install content");
 		const auto install_result = howdy::native::InstallStagedFile(
 		    *uncertain_install, uncertain_install_destination, howdy::test::FailParentSync);
@@ -161,7 +159,7 @@ auto main() -> int {
 		             "failed parent sync reports committed install with uncertain durability");
 		ok &= Expect(ReadFile(uncertain_install_destination) == "model",
 		             "failed parent sync leaves committed destination visible");
-		ok &= Expect(uncertain_install->path.empty(),
+		ok &= Expect(uncertain_install->Path().empty(),
 		             "failed parent sync clears consumed staged path");
 	});
 
@@ -171,7 +169,7 @@ auto main() -> int {
 		auto       staged      = howdy::native::PrepareStagedFile(destination, ".howdy-download-");
 		ok &= Expect(staged.has_value(), name + ": prepare staged file");
 		WithPresent(staged, [&] -> void {
-			ok &= Expect(howdy::native::WriteAllToFd(staged->fd.Get(), "model"),
+			ok &= Expect(howdy::native::WriteAllToFd(staged->Fd().Get(), "model"),
 			             name + ": write staged content");
 			ok &= Expect(howdy::native::InstallStagedFile(*staged, destination, sync_parent) ==
 			                 howdy::native::AtomicFileCommitResult::kCommittedSyncFailed,
@@ -188,7 +186,7 @@ auto main() -> int {
 	    howdy::native::PrepareStagedFile(failed_install_destination, ".howdy-download-");
 	ok &= Expect(failed_install.has_value(), "prepare staged file for failed install");
 	WithPresent(failed_install, [&] -> void {
-		const auto staged_path = failed_install->path;
+		const auto staged_path = failed_install->Path();
 		ok &= Expect(!CommitIsDurable(howdy::native::InstallStagedFile(
 		                 *failed_install, temp_root / "missing" / "model")),
 		             "staged install fails for missing destination parent");
@@ -234,8 +232,8 @@ auto main() -> int {
 	    howdy::native::PrepareStagedFile(no_replace_path, ".howdy-no-replace-");
 	ok &= Expect(no_replace_staged.has_value(), "prepare no-replace staged file");
 	WithPresent(no_replace_staged, [&] -> void {
-		const auto staged_path = no_replace_staged->path;
-		ok &= Expect(howdy::native::WriteAllToFd(no_replace_staged->fd.Get(), "replacement"),
+		const auto staged_path = no_replace_staged->Path();
+		ok &= Expect(howdy::native::WriteAllToFd(no_replace_staged->Fd().Get(), "replacement"),
 		             "write no-replace staged file");
 		const auto result = howdy::native::InstallStagedFile(
 		    *no_replace_staged, no_replace_path, howdy::native::SyncParentDirectory,
@@ -259,7 +257,7 @@ auto main() -> int {
 	    howdy::native::StagedFileMetadataPolicy::kUseDefaultMode);
 	ok &= Expect(default_mode_staged.has_value(), "prepare default-mode policy staged file");
 	WithPresent(default_mode_staged, [&] -> void {
-		ok &= Expect(howdy::native::WriteAllToFd(default_mode_staged->fd.Get(), "new"),
+		ok &= Expect(howdy::native::WriteAllToFd(default_mode_staged->Fd().Get(), "new"),
 		             "write default-mode policy staged file");
 		ok &= Expect(CommitIsDurable(
 		                 howdy::native::InstallStagedFile(*default_mode_staged, default_mode_path)),

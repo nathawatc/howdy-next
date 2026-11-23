@@ -136,13 +136,11 @@ auto howdy::native::snapshot_internal::WriteSnapshotAtPath(
 		std::vector<uchar> encoded_bytes;
 		if (!dependencies.encode_image(dependencies.context, extension, snap, &encoded_bytes) ||
 		    encoded_bytes.empty() ||
-		    !howdy::native::WriteAllToFd(staged->fd.Get(),
+		    !howdy::native::WriteAllToFd(staged->Fd().Get(),
 		                                 std::as_bytes(std::span(encoded_bytes)))) {
-			howdy::native::CleanupStagedFile(*staged);
 			return false;
 		}
 	} catch (...) {
-		howdy::native::CleanupStagedFile(*staged);
 		return false;
 	}
 	const auto result = howdy::native::InstallStagedFile(
@@ -193,9 +191,8 @@ auto howdy::native::snapshot_internal::WriteSnapshotWithUniquePath(
 }
 
 auto howdy::native::snapshot_internal::SnapshotMainWithDependencies(
-    const howdy::native::CommandInvocation &invocation, const SnapshotDependencies &dependencies)
-    -> int {
-	(void)invocation;
+    [[maybe_unused]] const howdy::native::CommandInvocation &invocation,
+    const SnapshotDependencies                              &dependencies) -> int {
 	if (dependencies.load_runtime_config == nullptr || dependencies.capture_frames == nullptr ||
 	    dependencies.write_snapshot == nullptr) {
 		return kSnapshotExitAbort;

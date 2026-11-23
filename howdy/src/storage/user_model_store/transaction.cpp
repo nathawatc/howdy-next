@@ -156,7 +156,7 @@ namespace howdy::native::user_model_store_internal {
 		                         int opened_fd, const user_model_store_test_hooks::Hooks &hooks)
 		    -> AtomicFileCommitResult {
 			const auto exchange_result = RenameUnlessInjected(
-			    staged.path, path, AtomicRenameMode::kExchange, hooks.exchange_errno);
+			    staged.Path(), path, AtomicRenameMode::kExchange, hooks.exchange_errno);
 			if (exchange_result != AtomicRenameResult::kSuccess) {
 				// A model removed after the identity check fails the exchange (ENOENT); report
 				// that as a changed model, not a write failure. A replaced model does not fail
@@ -172,23 +172,23 @@ namespace howdy::native::user_model_store_internal {
 			}
 			// The exchange must have swapped out the opened model. If another actor replaced it
 			// after the identity check, exchange back and report the model changed.
-			if (const auto failure = IdentityFailure(staged.path, opened_fd); failure.has_value()) {
-				if (RenameUnlessInjected(staged.path, path, AtomicRenameMode::kExchange,
+			if (const auto failure = IdentityFailure(staged.Path(), opened_fd); failure.has_value()) {
+				if (RenameUnlessInjected(staged.Path(), path, AtomicRenameMode::kExchange,
 				                         hooks.rollback_exchange_errno) ==
 				    AtomicRenameResult::kSuccess) {
 					CleanupStagedFile(staged);
 					return *failure;
 				}
-				staged.path.clear();
+				staged.Disarm();
 				return AtomicFileCommitResult::kStateUncertain;
 			}
 
 			// Exchange commits the canonical write; old-file removal is cleanup only.
 			std::error_code ec;
 			if (!hooks.fail_write_cleanup) {
-				std::filesystem::remove(staged.path, ec);
+				std::filesystem::remove(staged.Path(), ec);
 			}
-			staged.path.clear();
+			staged.Disarm();
 			return SyncModelsDirectory(path, hooks) ? AtomicFileCommitResult::kCommitted
 			                                        : AtomicFileCommitResult::kCommittedSyncFailed;
 		}
@@ -219,11 +219,11 @@ namespace howdy::native::user_model_store_internal {
 			if (!staged.has_value()) {
 				return StagingFailureResult(path);
 			}
-			if (hooks.fail_write || !WriteAllToFd(staged->fd.Get(), *serialized)) {
+			if (hooks.fail_write || !WriteAllToFd(staged->Fd().Get(), *serialized)) {
 				CleanupStagedFile(*staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}
-			if (hooks.fail_fsync || !SyncFd(staged->fd.Get())) {
+			if (hooks.fail_fsync || !SyncFd(staged->Fd().Get())) {
 				CleanupStagedFile(*staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}
@@ -243,7 +243,7 @@ namespace howdy::native::user_model_store_internal {
 			if (creating) {
 				return CommitFirstModel(*staged, path, hooks);
 			}
-			if (!staged->fd.Close()) {
+			if (!staged->Fd().Close()) {
 				CleanupStagedFile(*staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}

@@ -58,7 +58,7 @@ namespace howdy::test::download_models {
 		auto &state = DependenciesState();
 		state.downloaded_urls.push_back(url);
 		return state.download_succeeds &&
-		       howdy::native::WriteAllToFd(staged.fd.Get(), state.downloaded_content);
+		       howdy::native::WriteAllToFd(staged.Fd().Get(), state.downloaded_content);
 	}
 
 	auto FailingSha256File(int /*fd*/) -> std::optional<std::string> {

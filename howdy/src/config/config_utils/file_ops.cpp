@@ -74,7 +74,7 @@ namespace howdy::native::config_utils_internal {
 		if (!staged.has_value()) {
 			return std::nullopt;
 		}
-		if (!WriteAllToFd(staged->fd.Get(), content)) {
+		if (!WriteAllToFd(staged->Fd().Get(), content)) {
 			CleanupStagedFile(*staged);
 			return AtomicFileCommitResult::kNotCommitted;
 		}
