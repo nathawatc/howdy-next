@@ -48,8 +48,8 @@ namespace howdy::pam::auth_eligibility {
 
 	class AuthenticationEligibilityOperations {
 	public:
-		static auto Create(void *context, SshSessionPresentFn ssh_session_present,
-		                   ReadLidStateFn read_lid_state)
+		[[nodiscard]] static auto Create(void *context, SshSessionPresentFn ssh_session_present,
+		                                 ReadLidStateFn read_lid_state)
 		    -> std::optional<AuthenticationEligibilityOperations> {
 			if (ssh_session_present == nullptr || read_lid_state == nullptr) {
 				return std::nullopt;
@@ -79,7 +79,8 @@ namespace howdy::pam::auth_eligibility {
 	};
 
 	// The model state the runtime session got from its opener or the auth helper.
-	auto ClassifyModelState(howdy::native::runtime_descriptor_message::ModelState state)
+	[[nodiscard]] auto
+	ClassifyModelState(howdy::native::runtime_descriptor_message::ModelState state)
 	    -> ModelCondition;
 
 	// The user's model as the runtime session found it.
@@ -89,16 +90,16 @@ namespace howdy::pam::auth_eligibility {
 		std::string message;
 	};
 
-	auto ProductionAuthenticationEligibilityOperations() -> AuthenticationEligibilityOperations;
+	[[nodiscard]] auto ProductionAuthenticationEligibilityOperations()
+	    -> AuthenticationEligibilityOperations;
 
-	auto DecideAuthenticationEligibility(const howdy::native::RuntimeConfig &config,
-	                                     const AuthenticationConditions     &conditions)
+	[[nodiscard]] auto DecideAuthenticationEligibility(const howdy::native::RuntimeConfig &config,
+	                                                   const AuthenticationConditions &conditions)
 	    -> AuthenticationEligibilityResult;
 
-	auto EvaluateAuthenticationEligibility(pam_handle_t                       *pamh,
-	                                       const howdy::native::RuntimeConfig &config,
-	                                       const char *username, const UserModelFinding &model,
-	                                       const AuthenticationEligibilityOperations &operations)
+	[[nodiscard]] auto EvaluateAuthenticationEligibility(
+	    pam_handle_t *pamh, const howdy::native::RuntimeConfig &config, const char *username,
+	    const UserModelFinding &model, const AuthenticationEligibilityOperations &operations)
 	    -> AuthenticationEligibilityResult;
 
 }  // namespace howdy::pam::auth_eligibility

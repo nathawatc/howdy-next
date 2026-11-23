@@ -1,10 +1,14 @@
+#ifndef _GNU_SOURCE
+#	define _GNU_SOURCE
+#endif
+
 #include "module/status_mapping.hpp"
 
 #include "module/auth_eligibility.hpp"
 #include "module/translation.hpp"
 #include "protocol/compare_exit.hpp"
 
-#include <cstring>
+#include <format>
 #include <string>
 
 #include <stdlib.h>
@@ -73,13 +77,11 @@ auto MapCompareWaitStatus(int status) -> CompareStatusDecision {
 
 	if (WIFSIGNALED(status)) {
 		const int   signal_number = WTERMSIG(status);
-		const char *signal_text   = strsignal(signal_number);
+		const char *signal_text   = sigdescr_np(signal_number);
 		if (signal_text != nullptr) {
-			decision.log_message = std::string(kChildKilledBySignalPrefix) +
-			                       std::string(signal_text, std::strlen(signal_text));
+			decision.log_message = std::format("{}{}", kChildKilledBySignalPrefix, signal_text);
 		} else {
-			decision.log_message =
-			    std::string(kChildKilledBySignalPrefix) + std::to_string(signal_number);
+			decision.log_message = std::format("{}{}", kChildKilledBySignalPrefix, signal_number);
 		}
 	}
 

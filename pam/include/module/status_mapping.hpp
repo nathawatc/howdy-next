@@ -18,8 +18,8 @@ struct CompareStatusDecision {
 	std::string      log_message;
 };
 
-auto MapCompareWaitStatus(int status) -> CompareStatusDecision;
-auto BuildUnknownErrorMessage(int exit_status) -> std::string;
+[[nodiscard]] auto MapCompareWaitStatus(int status) -> CompareStatusDecision;
+[[nodiscard]] auto BuildUnknownErrorMessage(int exit_status) -> std::string;
 
-__attribute__((visibility("hidden"))) auto MapAuthenticationEligibility(
+[[nodiscard]] __attribute__((visibility("hidden"))) auto MapAuthenticationEligibility(
     const howdy::pam::auth_eligibility::AuthenticationEligibilityResult &result) -> int;

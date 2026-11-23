@@ -25,7 +25,7 @@ namespace howdy::pam::auth_flow {
 		uid_t runtime_owner_uid = 0;
 	};
 
-	__attribute__((visibility("hidden"))) auto
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	IdentifyWithDependencies(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_tok,
 	                         const IdentifyDependencies &dependencies) -> int;
 
@@ -33,13 +33,13 @@ namespace howdy::pam::auth_flow {
 	SendConversationMessage(pam_handle_t *pamh, const ConversationFn &conv_function, int msg_type,
 	                        const std::string &message);
 
-	__attribute__((visibility("hidden"))) auto AuthTokenPresent(pam_handle_t *pamh) -> bool;
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto AuthTokenPresent(pam_handle_t *pamh)
+	    -> bool;
 
-	__attribute__((visibility("hidden"))) auto HowdyError(pam_handle_t *pamh, int status,
-	                                                      const ConversationFn &conv_function)
-	    -> int;
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	HowdyError(pam_handle_t *pamh, int status, const ConversationFn &conv_function) -> int;
 
-	__attribute__((visibility("hidden"))) auto
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	HowdyStatus(pam_handle_t *pamh, const char *username, int status,
 	            const howdy::native::RuntimeConfig &config, const ConversationFn &conv_function)
 	    -> int;

@@ -15,9 +15,9 @@
 #include "support/bit_flags.hpp"
 
 #include <chrono>
-#include <cstdlib>
 #include <paths.hpp>
 #include <string>
+#include <string_view>
 
 #include <libintl.h>
 #include <stdlib.h>
@@ -49,8 +49,6 @@ namespace {
 
 	void SendDetectionNotice(pam_handle_t *pamh, const howdy::native::RuntimeConfig &config,
 	                         const ConversationFn &conv_function) {
-		// Custom install prefixes require Howdy's domain to map to its configured locale directory.
-		bindtextdomain(howdy::pam::kGettextDomain, LOCALEDIR);
 		if (!config.core.detection_notice) {
 			return;
 		}
@@ -123,7 +121,7 @@ namespace howdy::pam::auth_flow {
 	auto HowdyStatus(pam_handle_t *pamh, const char *username, int status,
 	                 const howdy::native::RuntimeConfig &config,
 	                 const ConversationFn               &conv_function) -> int {
-		if (status != EXIT_SUCCESS) {
+		if (!CompareStatusIs(status, CompareExit::kSuccess)) {
 			return HowdyError(pamh, status, conv_function);
 		}
 
@@ -193,6 +191,8 @@ namespace howdy::pam::auth_flow {
 		if (pamh == nullptr) {
 			return PAM_SYSTEM_ERR;
 		}
+		// Custom install prefixes require Howdy's domain to map to its configured locale directory.
+		bindtextdomain(howdy::pam::kGettextDomain, LOCALEDIR);
 
 		const char *username = nullptr;
 		int         pam_res  = GetUsername(pamh, &username);

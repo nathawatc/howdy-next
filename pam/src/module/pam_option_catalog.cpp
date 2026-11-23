@@ -2,6 +2,7 @@
 
 #include "prompt/workaround.hpp"
 
+#include <algorithm>
 #include <array>
 #include <span>
 #include <string_view>
@@ -38,12 +39,9 @@ namespace howdy::pam {
 	}
 
 	auto FindWorkaround(std::string_view value) -> const WorkaroundDescriptor * {
-		for (const auto &descriptor : kWorkaroundCatalog) {
-			if (descriptor.value == value) {
-				return &descriptor;
-			}
-		}
-		return nullptr;
+		const auto *const it =
+		    std::ranges::find(kWorkaroundCatalog, value, &WorkaroundDescriptor::value);
+		return it == kWorkaroundCatalog.end() ? nullptr : &*it;
 	}
 
 }  // namespace howdy::pam

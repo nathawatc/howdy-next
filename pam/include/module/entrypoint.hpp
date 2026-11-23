@@ -14,12 +14,12 @@ namespace howdy::pam {
 		AuthenticateFn authenticate = nullptr;
 	};
 
-	__attribute__((visibility("hidden"))) auto
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	RunAuthenticationEntrypoint(pam_handle_t *pamh, PamModuleArguments arguments,
 	                            bool                          request_auth_token,
 	                            const EntrypointDependencies &dependencies) noexcept -> int;
 
-	__attribute__((visibility("hidden"))) auto
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	RunPamAuthenticate(pam_handle_t *pamh, int flags, int argc, const char **argv,
 	                   const EntrypointDependencies &dependencies) noexcept -> int;
 
