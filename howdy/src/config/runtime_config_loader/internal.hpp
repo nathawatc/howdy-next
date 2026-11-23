@@ -40,10 +40,7 @@ namespace howdy::native {
 		const int value =
 		    reader.GetInt(std::string(option.section), std::string(option.key), *fallback);
 		if (const auto *range = std::get_if<config_schema::IntegerRange>(&option.range)) {
-			if (range->allowed_value.has_value() && value == *range->allowed_value) {
-				return value;
-			}
-			return value >= range->minimum && value <= range->maximum ? value : *fallback;
+			return config_schema::RangeContains(*range, value) ? value : *fallback;
 		}
 		return value;
 	}
@@ -57,7 +54,7 @@ namespace howdy::native {
 		const float value =
 		    reader.GetFloat(std::string(option.section), std::string(option.key), *fallback);
 		if (const auto *range = std::get_if<config_schema::FloatRange>(&option.range)) {
-			return value >= range->minimum && value <= range->maximum ? value : *fallback;
+			return config_schema::RangeContains(*range, value) ? value : *fallback;
 		}
 		return value;
 	}

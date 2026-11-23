@@ -306,6 +306,129 @@ namespace howdy::test {
 		ok &= Expect(WriteConfigTestFile(context.config_path, after_threshold),
 		             "restore valid config after recovery-write test");
 
+		const auto multiline_path = context.temp_root / "multiline.ini";
+		ok &= Expect(WriteConfigTestFile(multiline_path, "[video]\n"
+		                                                 "device_path = /dev/video0\n"
+		                                                 "  continued_line\n"
+		                                                 "timeout = 4\n"),
+		             "write multiline INI option fixture");
+		ok &= Expect(howdy::native::UpdateConfigValue(multiline_path, "device_path", nullptr,
+		                                              "none", false, true, {context.temp_root}),
+		             "update_config_value replaces multiline INI option");
+		ok &= Expect(ReadFile(multiline_path) == "[video]\n"
+		                                         "device_path = none\n"
+		                                         "timeout = 4\n",
+		             "multiline INI update removes orphaned continuation lines");
+
+		ok &= Expect(WriteConfigTestFile(multiline_path, "[video]\n"
+		                                                 "device_path = /dev/video0\n"
+		                                                 "\n"
+		                                                 "; comment\n"
+		                                                 "  stale\n"
+		                                                 "\n"
+		                                                 "timeout = 4\n"),
+		             "write continuation-after-blank-and-comment fixture");
+		ok &= Expect(howdy::native::UpdateConfigValue(multiline_path, "device_path", nullptr,
+		                                              "none", false, true, {context.temp_root}),
+		             "update_config_value replaces value continued across blank/comment lines");
+		const auto after_gap_update = ReadFile(multiline_path);
+		ok &= Expect(after_gap_update == "[video]\n"
+		                                 "device_path = none\n"
+		                                 "\n"
+		                                 "; comment\n"
+		                                 "\n"
+		                                 "timeout = 4\n",
+		             "continuation after blank/comment lines is removed; comments are kept");
+		howdy::native::ConfigReader const gap_reader(after_gap_update);
+		ok &= Expect(gap_reader.Ok() && gap_reader.Get("video", "device_path", "") == "none",
+		             "INI parser reads the replaced value without a stale continuation");
+
+		ok &= Expect(
+		    WriteConfigTestFile(multiline_path,
+			                    "[video]\n"
+			                    "device_path =\n"
+			                    "  /dev/v4l/by-path/pci-0000:00:14.0-usb-0:1:1.0-video-index0\n"
+			                    "timeout = 4\n"),
+		    "write device path continuation fixture");
+		ok &= Expect(howdy::native::UpdateConfigValue(multiline_path, "device_path", nullptr,
+		                                              "none", false, true, {context.temp_root}) &&
+		                 ReadFile(multiline_path) == "[video]\n"
+		                                             "device_path = none\n"
+		                                             "timeout = 4\n",
+		             "a continued device path with colons is replaced as a plain value");
+
+		ok &= Expect(WriteConfigTestFile(multiline_path, "[video]\n"
+		                                                 "device_path = /dev/video0\n"
+		                                                 "\f\n"
+		                                                 "\f  /dev/video1\n"
+		                                                 "\v/dev/video2\n"
+		                                                 "timeout = 4\n"),
+		             "write form-feed continuation fixture");
+		ok &=
+		    Expect(howdy::native::UpdateConfigValue(multiline_path, "device_path", nullptr, "none",
+			                                        false, true, {context.temp_root}) &&
+			           ReadFile(multiline_path) == "[video]\n"
+			                                       "device_path = none\n"
+			                                       "\f\n"
+			                                       "timeout = 4\n",
+			       "continuations indented with other whitespace are replaced as inih reads them");
+
+		ok &= Expect(WriteConfigTestFile(multiline_path, "[video]\n"
+		                                                 "device_path = /dev/video0\n"
+		                                                 "  second ; note: old = camera\n"
+		                                                 "timeout = 4\n"),
+		             "write inline-comment continuation fixture");
+		ok &= Expect(howdy::native::UpdateConfigValue(multiline_path, "device_path", nullptr,
+		                                              "none", false, true, {context.temp_root}) &&
+		                 ReadFile(multiline_path) == "[video]\n"
+		                                             "device_path = none\n"
+		                                             "timeout = 4\n",
+		             "separators in an inline comment do not make a continuation ambiguous");
+
+		for (const auto *const bare :
+		     {"disabled\r\n", "disabled\ftrue\n", "disabled\n", "disabled"}) {
+			ok &= Expect(WriteConfigTestFile(multiline_path, std::string("[core]\n") + bare),
+			             "write separator-less option fixture");
+			ok &=
+			    Expect(howdy::native::UpdateConfigValue(multiline_path, "disabled", nullptr, "true",
+				                                        false, true, {context.temp_root}) &&
+				           ReadFile(multiline_path) == "[core]\ndisabled = true\n",
+				       "separator-less option line is repaired whatever whitespace ends it");
+		}
+
+		// Each indented line continues the first value, but erasing it would drop a setting.
+		for (const auto *const ambiguous : {
+		         "[core]\ndisabled = false\n   \n  disabled = true\n",
+		         "[core]\n  disabled = false\n  abort_if_ssh = true\n",
+		         "[core]\ndisabled = false\n; note\n  abort_if_ssh: true\n",
+		         "[core]\ndisabled = false\n\n  [video]\n",
+		         "[core]\ndisabled = false\n  abort_if_ssh true\n",
+		         "[core]\ndisabled = false\n  abort-if-ssh = true\n",
+		         "[core]\ndisabled = false\n  abort.if.ssh = true\n",
+		         "[core]\ndisabled = false\n  [video\n",
+		         "[core]\ndisabled = false\n  abort if ssh = true\n",
+		         "[core]\ndisabled = false\n  \"abort_if_ssh\" = true\n",
+		         "[core]\ndisabled = false\n  abort_if_ssh\n",
+		         "[core]\ndisabled = false\n  abort_if_ssh",
+		         // A line without a separator owns nothing: what follows belongs to the option
+				 // above.
+		         "[core]\nabort_if_ssh = true\ndisabled\n  second\n",
+		         "[core]\nabort_if_ssh = true\ndisabled false\nmalformed\n  second\n",
+		         "[core]\ndisabled\n  abort_if_ssh = true\n",
+		     }) {
+			ok &= Expect(WriteConfigTestFile(multiline_path, ambiguous),
+			             "write ambiguous continuation fixture");
+			std::string ambiguous_error;
+			ok &= Expect(!howdy::native::UpdateConfigValue(multiline_path, "disabled",
+			                                               &ambiguous_error, "true", false, false,
+			                                               {context.temp_root}) &&
+			                 ambiguous_error.starts_with("Config line ") &&
+			                 ambiguous_error.contains(" is indented"),
+			             "ambiguous continuation is refused by line: " + ambiguous_error);
+			ok &= Expect(ReadFile(multiline_path) == ambiguous,
+			             "refused ambiguous continuation leaves the config unchanged");
+		}
+
 		return ok;
 	}
 

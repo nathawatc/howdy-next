@@ -14,7 +14,7 @@ namespace howdy::native {
 		bool disabled{};
 	};
 
-	auto DefaultCoreConfig() -> CoreConfig;
+	[[nodiscard]] auto DefaultCoreConfig() -> CoreConfig;
 
 	struct VideoConfig {
 		int         timeout{};
@@ -33,8 +33,8 @@ namespace howdy::native {
 		int         rotate{};
 	};
 
-	auto DefaultVideoConfig() -> VideoConfig;
-	auto DefaultFaceMetric() -> FaceMetric;
+	[[nodiscard]] auto DefaultVideoConfig() -> VideoConfig;
+	[[nodiscard]] auto DefaultFaceMetric() -> FaceMetric;
 
 	struct FaceConfig {
 		float      yunet_score_threshold{};
@@ -44,13 +44,13 @@ namespace howdy::native {
 		float      sface_threshold{};
 	};
 
-	auto DefaultFaceConfig() -> FaceConfig;
+	[[nodiscard]] auto DefaultFaceConfig() -> FaceConfig;
 
 	struct DebugConfig {
 		bool end_report{};
 	};
 
-	auto DefaultDebugConfig() -> DebugConfig;
+	[[nodiscard]] auto DefaultDebugConfig() -> DebugConfig;
 
 	struct RuntimeConfig {
 		CoreConfig  core  = DefaultCoreConfig();

@@ -7,7 +7,7 @@ howdy_add_native_test(
  tests/config/config_path_security_test.cpp
 )
 target_link_libraries(howdy_config_utils_test PRIVATE howdy_config
-                      PkgConfig::INIREADER)
+                      PkgConfig::INIREADER Threads::Threads)
 
 howdy_add_native_test(
  howdy_config_schema_test

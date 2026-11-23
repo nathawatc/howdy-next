@@ -24,7 +24,11 @@ namespace howdy::native {
 
 	auto ConfigReader::GetInt(const std::string &section, const std::string &name,
 	                          int fallback) const -> int {
-		return static_cast<int>(reader_.GetInteger(section, name, fallback));
+		const auto value = reader_.Get(section, name, "");
+		if (const auto parsed = ParseConfigIntStrict(value)) {
+			return *parsed;
+		}
+		return fallback;
 	}
 
 	auto ConfigReader::GetFloat(const std::string &section, const std::string &name,

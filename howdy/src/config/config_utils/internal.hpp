@@ -4,6 +4,7 @@
 #include "support/file_lock.hpp"
 #include "support/file_security/validation_root.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -27,7 +28,8 @@ namespace howdy::native::config_utils_internal {
 	}
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	AcquireConfigLock(ScopedFileLock &guard, const std::filesystem::path &config_path) -> bool;
+	AcquireConfigLock(ScopedFileLock &guard, const std::filesystem::path &config_path,
+	                  std::string *error_message) -> bool;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	ExpectedContentMatches(const std::filesystem::path &config_path, const std::string &expected,
@@ -49,6 +51,13 @@ namespace howdy::native::config_utils_internal {
 		kNotFound,
 		kReplaced,
 		kDuplicate,
+		// A line continuing the old value looks like a setting or section of its own.
+		kAmbiguousContinuation,
+	};
+
+	struct ConfigLineReplaceOutcome {
+		ConfigLineReplaceResult result = ConfigLineReplaceResult::kNotFound;
+		std::size_t             line   = 0;  // 1-based, set for kAmbiguousContinuation
 	};
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
@@ -59,7 +68,7 @@ namespace howdy::native::config_utils_internal {
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	ReplaceLineValue(std::vector<std::string> &lines, ConfigLineReplacement replacement)
-	    -> ConfigLineReplaceResult;
+	    -> ConfigLineReplaceOutcome;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	IsSafeIniScalarValue(std::string_view value) -> bool;

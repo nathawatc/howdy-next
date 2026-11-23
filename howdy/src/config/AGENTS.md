@@ -18,8 +18,13 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md).
 ## Invariants
 
 - `runtime_paths.cpp` honors `HOWDY_CONFIG`, `HOWDY_MODELS_DIR`, `HOWDY_USER_MODELS_DIR`, and
-  `HOWDY_LOG_PATH` only while `geteuid() == getuid()` and `getegid() == getgid()` (ignored when
-  setuid or setgid).
+  `HOWDY_LOG_PATH` only while `geteuid() == getuid()` and `getegid() == getgid()` and via
+  `secure_getenv()` (ignored when setuid, setgid, or `AT_SECURE`).
+- Validate the config `.lock` with `fstat` before `flock`: a regular file owned by the trusted
+  owner with `st_nlink == 1` and no group/other permission bits. Fail closed with a reason instead
+  of repairing it. After `flock`, fail closed unless the path still names the locked file.
+- Match inih continuation rules when replacing a value, and refuse the update when a continuation
+  line looks like an assignment or section header instead of erasing it.
 - Preserve secure path checks, locking, revalidation, expected-current-content stale detection,
   staged install, parent-directory sync, and potentially-committed handling on post-rename sync
   failure.

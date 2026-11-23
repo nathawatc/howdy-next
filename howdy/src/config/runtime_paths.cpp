@@ -1,10 +1,14 @@
+#ifndef _GNU_SOURCE
+#	define _GNU_SOURCE
+#endif
+
 #include "config/runtime_paths.hpp"
 
 #include "paths.hpp"
 
-#include <cstdlib>
 #include <filesystem>
 
+#include <stdlib.h>
 #include <unistd.h>
 
 namespace howdy::native {
@@ -20,7 +24,7 @@ namespace howdy::native {
 				return {};
 			}
 
-			if (const char *value = std::getenv(name); value != nullptr && *value != '\0') {
+			if (const char *value = secure_getenv(name); value != nullptr && *value != '\0') {
 				std::filesystem::path path(value);
 				if (path.is_absolute()) {
 					return path;

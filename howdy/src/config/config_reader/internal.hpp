@@ -35,14 +35,36 @@ namespace howdy::native {
 		INIReader reader_;
 	};
 
-	inline auto ParseConfigFloatStrict(std::string_view value) -> std::optional<float> {
+	[[nodiscard]] inline auto ParseConfigIntStrict(std::string_view value) -> std::optional<int> {
 		if (value.empty()) {
 			return std::nullopt;
 		}
 
 		if (value.front() == '+') {
 			value.remove_prefix(1);
-			if (value.empty()) {
+			if (value.empty() || value.front() == '-' || value.front() == '+') {
+				return std::nullopt;
+			}
+		}
+
+		int        parsed = 0;
+		const auto result = std::from_chars(value.begin(), value.end(), parsed);
+		if (result.ec != std::errc{} || result.ptr != value.end()) {
+			return std::nullopt;
+		}
+
+		return parsed;
+	}
+
+	[[nodiscard]] inline auto ParseConfigFloatStrict(std::string_view value)
+	    -> std::optional<float> {
+		if (value.empty()) {
+			return std::nullopt;
+		}
+
+		if (value.front() == '+') {
+			value.remove_prefix(1);
+			if (value.empty() || value.front() == '-' || value.front() == '+') {
 				return std::nullopt;
 			}
 		}

@@ -28,17 +28,19 @@ namespace howdy::native {
 		int                          error_code = 0;
 	};
 
-	auto LoadRuntimeConfig(const std::filesystem::path &config_path, std::optional<uid_t> owner_uid,
-	                       const file_security_internal::ValidationRoot &validation_root = {})
+	[[nodiscard]] auto
+	LoadRuntimeConfig(const std::filesystem::path &config_path, std::optional<uid_t> owner_uid,
+	                  const file_security_internal::ValidationRoot &validation_root = {})
 	    -> RuntimeConfigLoadResult;
 	// Loads from a descriptor opened by another process. It must be open read-only and name a
 	// regular file with one link, owned by `owner_uid`, that neither group nor others can write.
 	// The read is positional, so the shared file offset does not move. `display_path` only names
 	// the source in the result and messages; no path is opened or walked.
-	auto LoadRuntimeConfigFromFd(int config_fd, const std::filesystem::path &display_path,
-	                             uid_t owner_uid) -> RuntimeConfigLoadResult;
+	[[nodiscard]] auto LoadRuntimeConfigFromFd(int                          config_fd,
+	                                           const std::filesystem::path &display_path,
+	                                           uid_t owner_uid) -> RuntimeConfigLoadResult;
 #ifndef HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
-	auto LoadRuntimeConfig() -> RuntimeConfigLoadResult;
+	[[nodiscard]] auto LoadRuntimeConfig() -> RuntimeConfigLoadResult;
 #endif
 
 }  // namespace howdy::native

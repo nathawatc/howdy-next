@@ -13,7 +13,6 @@
 #include <limits>
 #include <optional>
 #include <string>
-#include <utility>
 
 #include <unistd.h>
 
@@ -34,7 +33,7 @@ namespace howdy::native {
 		ConfigPathCheckResult security;
 	};
 
-	inline auto ConfigAccessErrorHint(int error_code) -> std::string {
+	[[nodiscard]] inline auto ConfigAccessErrorHint(int error_code) -> std::string {
 		if (error_code != EACCES || geteuid() == 0) {
 			return {};
 		}
@@ -45,14 +44,15 @@ namespace howdy::native {
 		       "helper; do not make /etc/howdy or config.ini world-readable";
 	}
 
-	inline auto ApplyConfigAccessErrorHint(ConfigPathCheckResult result) -> ConfigPathCheckResult {
+	[[nodiscard]] inline auto ApplyConfigAccessErrorHint(ConfigPathCheckResult result)
+	    -> ConfigPathCheckResult {
 		if (!result.ok) {
 			result.error_message += ConfigAccessErrorHint(result.error_code);
 		}
 		return result;
 	}
 
-	inline auto
+	[[nodiscard]] inline auto
 	CheckSecureConfigFd(int fd, const std::filesystem::path &config_path,
 	                    const std::optional<uid_t>                    owner_uid,
 	                    const file_security_internal::ValidationRoot &validation_root = {})
@@ -62,7 +62,7 @@ namespace howdy::native {
 		    validation_root));
 	}
 
-	inline auto
+	[[nodiscard]] inline auto
 	CheckSecureConfigPath(const std::filesystem::path                  &config_path,
 	                      const std::optional<uid_t>                    owner_uid,
 	                      const file_security_internal::ValidationRoot &validation_root = {})
@@ -72,18 +72,21 @@ namespace howdy::native {
 		    validation_root));
 	}
 
-	auto OpenSecureConfigForRead(const std::filesystem::path                  &config_path,
-	                             std::optional<uid_t>                          owner_uid,
-	                             const file_security_internal::ValidationRoot &validation_root = {})
+	[[nodiscard]] auto
+	OpenSecureConfigForRead(const std::filesystem::path                  &config_path,
+	                        std::optional<uid_t>                          owner_uid,
+	                        const file_security_internal::ValidationRoot &validation_root = {})
 	    -> SecureConfigOpenResult;
 
-	inline auto ReadConfigFromFd(int                              fd,
-	                             const std::optional<std::size_t> max_bytes = kMaxConfigFileSize)
+	[[nodiscard]] inline auto
+	ReadConfigFromFd(int fd, const std::optional<std::size_t> max_bytes = kMaxConfigFileSize)
 	    -> std::optional<std::string> {
 		// A positional read from the start leaves the descriptor offset alone, which matters when
 		// the descriptor was inherited and its open file description is shared.
-		const auto read_limit = max_bytes.has_value() ? *max_bytes + std::size_t{1}
-		                                              : std::numeric_limits<std::size_t>::max();
+		std::size_t read_limit = std::numeric_limits<std::size_t>::max();
+		if (max_bytes.has_value() && *max_bytes < read_limit) {
+			read_limit = *max_bytes + std::size_t{1};
+		}
 		const auto result =
 		    ReadFdToStringBounded({.fd = fd, .max_bytes = read_limit, .offset = off_t{0}});
 		if (result.read_error || (max_bytes.has_value() && result.output.size() > *max_bytes)) {
@@ -92,17 +95,18 @@ namespace howdy::native {
 		return result.output;
 	}
 
-	auto ValidateConfigContent(const std::string &content, std::string *error_message) -> bool;
-	auto ReplaceConfigContentAtomically(
+	[[nodiscard]] auto ValidateConfigContent(const std::string &content, std::string *error_message)
+	    -> bool;
+	[[nodiscard]] auto ReplaceConfigContentAtomically(
 	    const std::filesystem::path &config_path, const std::string &content,
 	    std::string *error_message = nullptr, bool lock = true, bool validate_runtime = true,
 	    const std::string                            *expected_current_content = nullptr,
 	    SyncParentDirectoryFn                         sync_parent     = SyncParentDirectory,
 	    const file_security_internal::ValidationRoot &validation_root = {}) -> bool;
-	auto UpdateConfigValue(const std::filesystem::path &config_path, const std::string &key,
-	                       std::string *error_message, const std::string &value, bool lock = false,
-	                       bool                                          validate_runtime = true,
-	                       const file_security_internal::ValidationRoot &validation_root  = {})
-	    -> bool;
+	[[nodiscard]] auto
+	UpdateConfigValue(const std::filesystem::path &config_path, const std::string &key,
+	                  std::string *error_message, const std::string &value, bool lock = false,
+	                  bool                                          validate_runtime = true,
+	                  const file_security_internal::ValidationRoot &validation_root  = {}) -> bool;
 
 }  // namespace howdy::native
