@@ -15,6 +15,7 @@ namespace howdy::native::compare_processing_internal {
 	using InitializeModelFn = bool (*)(void *context);
 	using OpenCaptureFn     = CompareCaptureOpenResult (*)(void *context);
 	using DropPrivilegesFn  = ComparePrivilegeResult (*)(void *context);
+	using ApplySeccompFn    = bool (*)(void *context);
 	using ConstructEngineFn = void (*)(void *context);
 	using ResetTimeoutFn    = void (*)(void *context);
 	using WarmModelFn       = bool (*)(void *context);
@@ -26,6 +27,7 @@ namespace howdy::native::compare_processing_internal {
 		InitializeModelFn initialize_model = nullptr;
 		OpenCaptureFn     open_capture     = nullptr;
 		DropPrivilegesFn  drop_privileges  = nullptr;
+		ApplySeccompFn    apply_seccomp    = nullptr;
 		ConstructEngineFn construct_engine = nullptr;
 		ResetTimeoutFn    reset_timeout    = nullptr;
 		WarmModelFn       warm_model       = nullptr;

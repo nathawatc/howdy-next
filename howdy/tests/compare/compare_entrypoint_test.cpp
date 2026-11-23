@@ -200,6 +200,19 @@ namespace {
 		ok &= Expect(!loaded.config_open && !loaded.model_open,
 		             "descriptor mode closes the config and model descriptors");
 
+		const auto invalid_shape_path = root / "invalid-shape-model.dat";
+		ok &= Expect(howdy::test::WriteFile(invalid_shape_path, "{}") &&
+		                 chmod(invalid_shape_path.c_str(), 0600) == 0,
+		             "write invalid-shape descriptor-mode model");
+		const auto invalid_shape_model = OpenAboveProtocol(invalid_shape_path, O_RDONLY);
+		const auto invalid_shape_run   = run({
+		    .config_fd = config.Get(),
+		    .model_fd  = invalid_shape_model.Get(),
+		    .owner     = owner,
+		});
+		ok &= Expect(aborted(invalid_shape_run, "") && !invalid_shape_run.diagnostics.empty(),
+		             "descriptor mode aborts with diagnostic on invalid-shape model JSON object");
+
 		ok &= Expect(aborted(run({
 		                         .config_fd = config.Get(),
 		                         .model_fd  = model.Get(),

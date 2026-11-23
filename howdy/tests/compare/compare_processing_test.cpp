@@ -46,6 +46,7 @@ namespace {
 		std::binary_semaphore    loop_returned{0};
 		std::thread::id          main_thread               = std::this_thread::get_id();
 		bool                     model_ready               = true;
+		bool                     seccomp_ready             = true;
 		bool                     model_throws              = false;
 		bool                     camera_throws             = false;
 		bool                     model_finished            = false;
@@ -65,6 +66,7 @@ namespace {
 		bool                     read_throws            = false;
 		bool                     loop_throws            = false;
 		bool                     simulate_encode        = true;
+		int                      seccomp_calls          = 0;
 		int                      warm_calls             = 0;
 		int                      encode_calls           = 0;
 		int                      read_calls             = 0;
@@ -113,6 +115,13 @@ namespace {
 			                     ? ""
 			                     : context.privilege_error,
 		};
+	}
+
+	auto ApplySeccomp(void *raw_context) -> bool {
+		auto &context = *static_cast<FakeContext *>(raw_context);
+		context.events.emplace_back("seccomp");
+		++context.seccomp_calls;
+		return context.seccomp_ready;
 	}
 
 	void ConstructEngine(void *raw_context) {
@@ -186,6 +195,7 @@ namespace {
 		    .initialize_model = InitializeModel,
 		    .open_capture     = OpenCapture,
 		    .drop_privileges  = DropPrivileges,
+		    .apply_seccomp    = ApplySeccomp,
 		    .construct_engine = ConstructEngine,
 		    .reset_timeout    = ResetTimeout,
 		    .warm_model       = WarmModel,
@@ -223,6 +233,9 @@ namespace {
 		dependencies                 = DependenciesFor(context);
 		dependencies.drop_privileges = nullptr;
 		expect_abort(dependencies, "missing privilege drop");
+		dependencies               = DependenciesFor(context);
+		dependencies.apply_seccomp = nullptr;
+		expect_abort(dependencies, "missing seccomp application");
 		dependencies                  = DependenciesFor(context);
 		dependencies.construct_engine = nullptr;
 		expect_abort(dependencies, "missing engine construction");
@@ -253,6 +266,7 @@ namespace {
 		                 std::vector<std::string>{
 		                     "open",
 		                     "drop",
+		                     "seccomp",
 		                     "engine",
 		                     "reset",
 		                     "first next_frame",
@@ -522,12 +536,28 @@ namespace {
 		return ok;
 	}
 
+	auto TestSeccompFailureStopsBeforeWarmAndFrameLoop() -> bool {
+		FakeContext context;
+		context.seccomp_ready = false;
+		const auto result     = Run(context);
+
+		const auto *processing_exit = std::get_if<CompareExit>(&result);
+		return Expect(processing_exit != nullptr && *processing_exit == CompareExit::kAbort,
+		              "seccomp failure aborts processing") &&
+		       Expect(context.events == std::vector<std::string>{"open", "drop", "seccomp"},
+		              "seccomp failure stops before engine, warm-up, and frame loop") &&
+		       Expect(context.seccomp_calls == 1 && context.warm_calls == 0 &&
+		                  context.read_calls == 0,
+		              "seccomp failure prevents warm-up worker and frame reads");
+	}
+
 }  // namespace
 
 auto main() -> int {
 	bool ok = true;
 	ok &= TestMissingDependenciesFailClosed();
 	ok &= TestSuccessfulPrivilegeValidationReachesProcessing();
+	ok &= TestSeccompFailureStopsBeforeWarmAndFrameLoop();
 	ok &= TestOpenFailure();
 	ok &= TestModelFailure();
 	ok &= TestStartupExceptions();

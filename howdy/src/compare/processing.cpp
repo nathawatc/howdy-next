@@ -13,9 +13,9 @@ namespace howdy::native::compare_processing_internal {
 	auto RunCompareProcessing(const CompareProcessingDependencies &dependencies)
 	    -> CompareProcessingResult {
 		if (dependencies.initialize_model == nullptr || dependencies.open_capture == nullptr ||
-		    dependencies.drop_privileges == nullptr || dependencies.construct_engine == nullptr ||
-		    dependencies.reset_timeout == nullptr || dependencies.warm_model == nullptr ||
-		    dependencies.run_frame_loop == nullptr) {
+		    dependencies.drop_privileges == nullptr || dependencies.apply_seccomp == nullptr ||
+		    dependencies.construct_engine == nullptr || dependencies.reset_timeout == nullptr ||
+		    dependencies.warm_model == nullptr || dependencies.run_frame_loop == nullptr) {
 			return CompareExit::kAbort;
 		}
 
@@ -54,6 +54,9 @@ namespace howdy::native::compare_processing_internal {
 		auto privilege_result = dependencies.drop_privileges(dependencies.context);
 		if (!ComparePrivilegeSucceeded(privilege_result)) {
 			return privilege_result;
+		}
+		if (!dependencies.apply_seccomp(dependencies.context)) {
+			return CompareExit::kAbort;
 		}
 
 		dependencies.construct_engine(dependencies.context);

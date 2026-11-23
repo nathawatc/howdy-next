@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -19,6 +20,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
@@ -75,6 +77,41 @@ namespace {
 		return 0;
 	}
 
+	auto SeccompUnavailable(howdy::native::CompareSeccompStatus status) -> bool {
+		return status == howdy::native::CompareSeccompStatus::kUnsupported ||
+		       status == howdy::native::CompareSeccompStatus::kUnsupportedArchitecture;
+	}
+
+	// mremap is denied without killing, so realloc of an mmapped block falls back to copying.
+	auto ProbeMremapDenied() -> bool {
+		constexpr std::size_t size = 1024UZ * 1024UZ;
+		void                 *block =
+		    mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (block == MAP_FAILED) {
+			return false;
+		}
+		errno             = 0;
+		const bool denied = mremap(block, size, size * 2, MREMAP_MAYMOVE) == MAP_FAILED &&
+		                    errno == ENOMEM && munmap(block, size) == 0;
+		auto      *bytes  = static_cast<unsigned char *>(malloc(size));
+		if (bytes == nullptr) {
+			return false;
+		}
+		std::memset(bytes, 0x5A, size);
+		auto *grown = static_cast<unsigned char *>(realloc(bytes, size * 8));
+		if (grown == nullptr) {
+			free(bytes);
+			return false;
+		}
+		const bool kept = std::span(grown, size).back() == 0x5A;
+		free(grown);
+		return denied && kept;
+	}
+
+	auto ProbeErrnoDenials(int ioctl_probe_fd) -> int {
+		return ProbeMremapDenied() ? ProbeIoctlFilter(ioctl_probe_fd) : 10;
+	}
+
 	auto RunSeccompChildProbe(std::string_view action) -> int {
 #ifdef PR_SET_DUMPABLE
 		(void)prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
@@ -105,7 +142,7 @@ namespace {
 			return 1;
 		}
 		const auto seccomp_result = howdy::native::ApplyCompareSeccompFilter();
-		if (seccomp_result.status == howdy::native::CompareSeccompStatus::kUnsupported) {
+		if (SeccompUnavailable(seccomp_result.status)) {
 			free(non_main_arena_block);
 			return 77;
 		}
@@ -147,8 +184,8 @@ namespace {
 			std::thread thread_probe([] -> void {});
 			thread_probe.join();
 
-			if (const int ioctl_result = ProbeIoctlFilter(ioctl_probe_fd); ioctl_result != 0) {
-				return ioctl_result;
+			if (const int denied_result = ProbeErrnoDenials(ioctl_probe_fd); denied_result != 0) {
+				return denied_result;
 			}
 			return 0;
 		}
@@ -210,7 +247,7 @@ namespace {
 		}
 
 		if (WIFEXITED(*allowed_status) && WEXITSTATUS(*allowed_status) == 77) {
-			return Expect(true, "live seccomp skipped on unsupported kernel");
+			return Expect(true, "live seccomp skipped on unsupported kernel or build");
 		}
 
 		bool ok = true;

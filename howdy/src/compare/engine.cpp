@@ -11,8 +11,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <opencv2/core/fast_math.hpp>
@@ -22,26 +24,27 @@
 
 namespace {
 
-	auto FrameValidationMessage(const std::string &subject, const cv::Mat &frame,
+	auto FrameValidationMessage(std::string_view subject, const cv::Mat &frame,
 	                            howdy::native::FrameValidationStatus status) -> std::string {
 		switch (status) {
 			case howdy::native::FrameValidationStatus::kValid:
 				return {};
 			case howdy::native::FrameValidationStatus::kEmpty:
-				return subject + " is empty";
+				return std::format("{} is empty", subject);
 			case howdy::native::FrameValidationStatus::kUnsupportedDimensions:
-				return subject + " has unsupported frame dimensions: " + std::to_string(frame.dims);
+				return std::format("{} has unsupported frame dimensions: {}", subject, frame.dims);
 			case howdy::native::FrameValidationStatus::kOversizedDimensions:
-				return subject + " has oversized frame dimensions: " + std::to_string(frame.cols) +
-				       "x" + std::to_string(frame.rows) + " (max supported dimension: " +
-				       std::to_string(howdy::native::kMaxFrameDimension) + ")";
+				return std::format("{} has oversized frame dimensions: {}x{} (max supported "
+				                   "dimension: {})",
+				                   subject, frame.cols, frame.rows,
+				                   howdy::native::kMaxFrameDimension);
 			case howdy::native::FrameValidationStatus::kUnsupportedChannelCount:
-				return subject +
-				       " has unsupported channel count: " + std::to_string(frame.channels());
+				return std::format("{} has unsupported channel count: {}", subject,
+				                   frame.channels());
 			case howdy::native::FrameValidationStatus::kUnsupportedPixelType:
-				return subject + " has unsupported pixel type: " + std::to_string(frame.type());
+				return std::format("{} has unsupported pixel type: {}", subject, frame.type());
 		}
-		return subject + " is invalid";
+		return std::format("{} is invalid", subject);
 	}
 
 }  // namespace

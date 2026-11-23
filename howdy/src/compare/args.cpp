@@ -3,6 +3,7 @@
 #include "protocol/compare_exit.hpp"
 #include "support/user_names.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <span>
 #include <string>
@@ -12,9 +13,16 @@ namespace howdy::native {
 
 	auto ParseCompareArgs(int argc, char **argv) -> CompareArgsParseResult {
 		CompareArgsParseResult result;
-		bool                   user_seen = false;
-		const auto             arguments =
-		    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
+		if (argc <= 0 || argv == nullptr) {
+			return result;
+		}
+		const auto arguments = std::span(argv, static_cast<std::size_t>(argc));
+		if (std::ranges::any_of(arguments, [](const char *argument) -> bool {
+			    return argument == nullptr;
+		    })) {
+			return result;
+		}
+		bool user_seen = false;
 
 		if (arguments.size() == 2) {
 			const std::string_view option(arguments.subspan(1, 1).front());

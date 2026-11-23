@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 
 #include <unistd.h>
 
@@ -64,32 +65,37 @@ namespace howdy::native::compare_privileges_internal {
 		_exit(request.exit_code);
 	}
 
-	auto ReadProcessIdentity(const ComparePrivilegeDependencies &dependencies,
-	                         ProcessIdentity                    *identity) -> bool {
-		return dependencies.getresuid(dependencies.context,
-		                              {
-		                                  .real      = &identity->real_uid,
-		                                  .effective = &identity->effective_uid,
-		                                  .saved     = &identity->saved_uid,
-		                              }) == 0 &&
-		       dependencies.getresgid(dependencies.context,
-		                              {
-		                                  .real      = &identity->real_gid,
-		                                  .effective = &identity->effective_gid,
-		                                  .saved     = &identity->saved_gid,
-		                              }) == 0;
+	auto ReadProcessIdentity(const ComparePrivilegeDependencies &dependencies)
+	    -> std::optional<ProcessIdentity> {
+		ProcessIdentity identity{};
+		if (dependencies.getresuid(dependencies.context,
+		                           {
+		                               .real      = &identity.real_uid,
+		                               .effective = &identity.effective_uid,
+		                               .saved     = &identity.saved_uid,
+		                           }) != 0 ||
+		    dependencies.getresgid(dependencies.context, {
+		                                                     .real      = &identity.real_gid,
+		                                                     .effective = &identity.effective_gid,
+		                                                     .saved     = &identity.saved_gid,
+		                                                 }) != 0) {
+			return std::nullopt;
+		}
+		return identity;
 	}
 
-	auto HandleUnprivilegedCaller(const ComparePrivilegeDependencies &dependencies, uid_t real_uid,
-	                              uid_t effective_uid, uid_t saved_uid, gid_t real_gid,
-	                              gid_t effective_gid, gid_t saved_gid) -> ComparePrivilegeResult {
-		if (real_uid == 0 || saved_uid == 0 || real_gid == 0 || effective_gid == 0 ||
-		    saved_gid == 0 || real_uid != effective_uid || real_uid != saved_uid ||
-		    real_gid != effective_gid || real_gid != saved_gid) {
+	auto HandleUnprivilegedCaller(const ComparePrivilegeDependencies &dependencies,
+	                              const ProcessIdentity &identity) -> ComparePrivilegeResult {
+		if (identity.real_uid == 0 || identity.saved_uid == 0 || identity.real_gid == 0 ||
+		    identity.effective_gid == 0 || identity.saved_gid == 0 ||
+		    identity.real_uid != identity.effective_uid ||
+		    identity.real_uid != identity.saved_uid ||
+		    identity.real_gid != identity.effective_gid ||
+		    identity.real_gid != identity.saved_gid) {
 			return FatalVerificationFailure(dependencies);
 		}
-		if (dependencies.query_fsuid(dependencies.context) != effective_uid ||
-		    dependencies.query_fsgid(dependencies.context) != effective_gid) {
+		if (dependencies.query_fsuid(dependencies.context) != identity.effective_uid ||
+		    dependencies.query_fsgid(dependencies.context) != identity.effective_gid) {
 			return FatalVerificationFailure(dependencies);
 		}
 		__user_cap_header_struct header{.version = _LINUX_CAPABILITY_VERSION_3, .pid = 0};

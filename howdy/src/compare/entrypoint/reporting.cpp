@@ -72,6 +72,10 @@ namespace howdy::native::compare_entrypoint_private {
 				EmitStderrWithErrno("Seccomp filter sandboxing is not supported by the kernel",
 				                    result.error_number);
 				return;
+			case howdy::native::CompareSeccompStatus::kUnsupportedArchitecture:
+				EmitStderrWithErrno("Seccomp filter sandboxing is not implemented for this build",
+				                    result.error_number);
+				return;
 			case howdy::native::CompareSeccompStatus::kFilterConstructionFailure:
 				EmitStderrWithErrno("Failed to construct compare seccomp filter",
 				                    result.error_number);

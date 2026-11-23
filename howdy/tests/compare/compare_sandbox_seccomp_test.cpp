@@ -24,12 +24,19 @@ namespace {
 	using howdy::test::Expect;
 
 	using howdy::native::CompareSeccompStatus;
+	using howdy::native::compare_sandbox_internal::kSeccompFilterFlagTsync;
+	using howdy::native::compare_sandbox_internal::kSeccompRetData;
+	using howdy::native::compare_sandbox_internal::kSeccompRetErrno;
+	using howdy::native::compare_sandbox_internal::kSeccompRetKillProcess;
+	using howdy::native::compare_sandbox_internal::kSeccompSetModeFilter;
 
-#ifdef __x86_64__
+#ifndef SYS_seccomp
+#	define HOWDY_SECCOMP_UNSUPPORTED_ARCH 1
+#elifdef __x86_64__
 	constexpr __u32 kExpectedAuditArch = AUDIT_ARCH_X86_64;
-#elifdef __aarch64__
+#elif defined(__aarch64__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
 	constexpr __u32 kExpectedAuditArch = AUDIT_ARCH_AARCH64;
-#elif defined(__riscv) && (__riscv_xlen == 64)
+#elif defined(__riscv) && (__riscv_xlen == 64) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
 	constexpr __u32 kExpectedAuditArch = AUDIT_ARCH_RISCV64;
 #else
 #	define HOWDY_SECCOMP_UNSUPPORTED_ARCH 1
@@ -41,13 +48,27 @@ namespace {
 		struct sock_fprog               prog{};
 		std::vector<struct sock_filter> recorded_filter;
 		int                             forced_errno = 0;
+		int                             stale_errno  = 0;
 		int                             return_code  = 0;
+		// Errno for the null-program filter-support probe; EFAULT models a filter-capable
+		// kernel.
+		int probe_errno = EFAULT;
+		int probe_calls = 0;
 	};
 
 	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 	auto FakeSeccomp(void *raw_context, unsigned int operation, unsigned int flags, void *args)
 	    -> int {
-		auto &context     = *static_cast<FakeSeccompContext *>(raw_context);
+		auto &context = *static_cast<FakeSeccompContext *>(raw_context);
+		if (args == nullptr) {
+			++context.probe_calls;
+			if (operation != kSeccompSetModeFilter || flags != 0) {
+				errno = EINVAL;
+				return -1;
+			}
+			errno = context.probe_errno;
+			return context.probe_errno == 0 ? 0 : -1;
+		}
 		context.operation = operation;
 		context.flags     = flags;
 		if (args != nullptr) {
@@ -60,6 +81,9 @@ namespace {
 		if (context.forced_errno != 0) {
 			errno = context.forced_errno;
 			return -1;
+		}
+		if (context.stale_errno != 0) {
+			errno = context.stale_errno;
 		}
 		return context.return_code;
 	}
@@ -82,13 +106,13 @@ namespace {
 		                 filter.at(1).jf == 0,
 		             "filter instruction 1 validates expected AUDIT_ARCH_* constant");
 		ok &= Expect(filter.at(2).code == (BPF_RET | BPF_K) &&
-		                 filter.at(2).k == SECCOMP_RET_KILL_PROCESS,
+		                 filter.at(2).k == kSeccompRetKillProcess,
 		             "filter instruction 2 kills process on architecture mismatch");
 		ok &= Expect(filter.at(3).code == (BPF_LD | BPF_W | BPF_ABS) &&
 		                 filter.at(3).k == offsetof(struct seccomp_data, nr),
 		             "filter instruction 3 loads syscall nr");
 		ok &= Expect(filter.back().code == (BPF_RET | BPF_K) &&
-		                 filter.back().k == SECCOMP_RET_KILL_PROCESS,
+		                 filter.back().k == kSeccompRetKillProcess,
 		             "filter final instruction fails closed with kill process");
 		return ok;
 #endif
@@ -358,7 +382,7 @@ namespace {
 		                 filter.at(prctl_index + 5).k == SECCOMP_RET_ALLOW,
 		             "allows PR_GET_NAME");
 		ok &= Expect(filter.at(prctl_index + 6).code == (BPF_RET | BPF_K) &&
-		                 filter.at(prctl_index + 6).k == SECCOMP_RET_KILL_PROCESS,
+		                 filter.at(prctl_index + 6).k == kSeccompRetKillProcess,
 		             "kills disallowed prctl option");
 		return ok;
 #else
@@ -389,7 +413,7 @@ namespace {
 			return actual.code == expected.code && actual.k == expected.k &&
 			       actual.jt == expected.jt && actual.jf == expected.jf;
 		};
-		constexpr __u32 denied = SECCOMP_RET_ERRNO | (static_cast<__u32>(EPERM) & SECCOMP_RET_DATA);
+		constexpr __u32 denied = kSeccompRetErrno | (static_cast<__u32>(EPERM) & kSeccompRetData);
 		constexpr __u32 allow_jump = BPF_JMP | BPF_JEQ | BPF_K;
 
 		ok &= Expect(filter.at(ioctl_index).jt == 0 && filter.at(ioctl_index).jf == 13,
@@ -442,11 +466,11 @@ namespace {
 		if (clone3_index + 1 < filter.size()) {
 			ok &= Expect(filter.at(clone3_index).jt == 0 && filter.at(clone3_index).jf == 1,
 			             "clone3 jump skips errno return on mismatch");
-			ok &= Expect(
-			    filter.at(clone3_index + 1).code == (BPF_RET | BPF_K) &&
-			        filter.at(clone3_index + 1).k ==
-			            (SECCOMP_RET_ERRNO | (static_cast<__u32>(ENOSYS) & SECCOMP_RET_DATA)),
-			    "clone3 returns ENOSYS errno");
+			ok &=
+			    Expect(filter.at(clone3_index + 1).code == (BPF_RET | BPF_K) &&
+				           filter.at(clone3_index + 1).k ==
+				               (kSeccompRetErrno | (static_cast<__u32>(ENOSYS) & kSeccompRetData)),
+				       "clone3 returns ENOSYS errno");
 		}
 #	endif
 
@@ -476,7 +500,7 @@ namespace {
 			                 filter.at(clone_index + 3).k == SECCOMP_RET_ALLOW,
 			             "allows CLONE_THREAD");
 			ok &= Expect(filter.at(clone_index + 4).code == (BPF_RET | BPF_K) &&
-			                 filter.at(clone_index + 4).k == SECCOMP_RET_KILL_PROCESS,
+			                 filter.at(clone_index + 4).k == kSeccompRetKillProcess,
 			             "kills clone without CLONE_THREAD");
 		}
 #	endif
@@ -487,6 +511,25 @@ namespace {
 #endif
 	}
 
+#ifdef HOWDY_SECCOMP_UNSUPPORTED_ARCH
+	auto TestApplySeccompUnsupportedBuild() -> bool {
+		bool ok = true;
+		for (const int error_code : {0, ENOSYS, EINVAL, EPERM}) {
+			FakeSeccompContext context;
+			context.forced_errno = error_code;
+			const auto result = howdy::native::compare_sandbox_internal::ApplyCompareSeccompFilter({
+			    .context = &context,
+			    .seccomp = FakeSeccomp,
+			});
+			ok &= Expect(result.status == CompareSeccompStatus::kUnsupportedArchitecture &&
+			                 result.error_number == 0,
+			             "build without a filter reports kUnsupportedArchitecture");
+			ok &= Expect(context.prog.len == 0 && context.probe_calls == 0,
+			             "build without a filter never calls seccomp");
+		}
+		return ok;
+	}
+#else
 	auto TestApplySeccompSuccess() -> bool {
 		FakeSeccompContext context;
 		const auto result = howdy::native::compare_sandbox_internal::ApplyCompareSeccompFilter({
@@ -496,9 +539,9 @@ namespace {
 		bool       ok     = true;
 		ok &= Expect(result.status == CompareSeccompStatus::kOk, "seccomp apply succeeds");
 		ok &= Expect(result.error_number == 0, "seccomp apply error number is 0");
-		ok &= Expect(context.operation == SECCOMP_SET_MODE_FILTER,
+		ok &= Expect(context.operation == kSeccompSetModeFilter,
 		             "operation is SECCOMP_SET_MODE_FILTER");
-		ok &= Expect(context.flags == SECCOMP_FILTER_FLAG_TSYNC,
+		ok &= Expect(context.flags == kSeccompFilterFlagTsync,
 		             "flags include SECCOMP_FILTER_FLAG_TSYNC");
 		ok &= Expect(context.prog.len > 0 && context.prog.filter != nullptr,
 		             "valid sock_fprog passed");
@@ -535,8 +578,62 @@ namespace {
 			             "installation errno maps to kInstallationFailure");
 			ok &= Expect(result.error_number == error_code, "preserves installation errno");
 		}
+		{
+			FakeSeccompContext context;
+			context.stale_errno = ENOSYS;
+			context.return_code = 1234;
+			const auto result = howdy::native::compare_sandbox_internal::ApplyCompareSeccompFilter({
+			    .context = &context,
+			    .seccomp = FakeSeccomp,
+			});
+			ok &= Expect(result.status == CompareSeccompStatus::kInstallationFailure &&
+			                 result.error_number == EAGAIN,
+			             "positive TSYNC return fails closed with EAGAIN even with stale ENOSYS");
+		}
 		return ok;
 	}
+
+	auto TestApplySeccompFilterModeUnavailable() -> bool {
+		bool ok = true;
+		{
+			FakeSeccompContext context;
+			context.forced_errno = EINVAL;
+			context.probe_errno  = EINVAL;
+			const auto result = howdy::native::compare_sandbox_internal::ApplyCompareSeccompFilter({
+			    .context = &context,
+			    .seccomp = FakeSeccomp,
+			});
+			ok &= Expect(result.status == CompareSeccompStatus::kUnsupported &&
+			                 result.error_number == EINVAL && context.probe_calls == 1,
+			             "kernel without CONFIG_SECCOMP_FILTER maps to kUnsupported");
+		}
+		for (const int probe_errno : {EFAULT, EPERM, EACCES}) {
+			FakeSeccompContext context;
+			context.forced_errno = EINVAL;
+			context.probe_errno  = probe_errno;
+			const auto result = howdy::native::compare_sandbox_internal::ApplyCompareSeccompFilter({
+			    .context = &context,
+			    .seccomp = FakeSeccomp,
+			});
+			ok &= Expect(result.status == CompareSeccompStatus::kInstallationFailure &&
+			                 result.error_number == EINVAL,
+			             "EINVAL on a filter-capable kernel stays an installation failure");
+		}
+		{
+			FakeSeccompContext context;
+			context.forced_errno = EPERM;
+			context.probe_errno  = EINVAL;
+			static_cast<void>(howdy::native::compare_sandbox_internal::ApplyCompareSeccompFilter({
+			    .context = &context,
+			    .seccomp = FakeSeccomp,
+			}));
+			ok &= Expect(context.probe_calls == 0,
+			             "filter-support probe only runs after an EINVAL installation failure");
+		}
+		return ok;
+	}
+
+#endif
 
 	auto TestApplySeccompNullDependencyFails() -> bool {
 		const auto result = howdy::native::compare_sandbox_internal::ApplyCompareSeccompFilter({
@@ -559,9 +656,14 @@ auto RunCompareSandboxSeccompTests() -> bool {
 	ok &= TestFilterPrctlArgumentFiltering();
 	ok &= TestFilterIoctlArgumentFiltering();
 	ok &= TestFilterCloneArgumentFiltering();
+#ifdef HOWDY_SECCOMP_UNSUPPORTED_ARCH
+	ok &= TestApplySeccompUnsupportedBuild();
+#else
 	ok &= TestApplySeccompSuccess();
 	ok &= TestApplySeccompUnsupportedKernel();
 	ok &= TestApplySeccompInstallationFailure();
+	ok &= TestApplySeccompFilterModeUnavailable();
+#endif
 	ok &= TestApplySeccompNullDependencyFails();
 	ok &= RunCompareSandboxSeccompExecTests();
 	return ok;

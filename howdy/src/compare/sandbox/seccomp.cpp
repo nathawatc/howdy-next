@@ -3,19 +3,24 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cerrno>
-#include <climits>
 #include <cstddef>
+#include <limits>
+#include <utility>
 #include <vector>
 
 #include <sched.h>
 #include <unistd.h>
 
+// TCGETS, TIOCGWINSZ, and _IOC_TYPE* macros resolve through ignored UAPI sub-headers.
+#include <sys/ioctl.h>  // NOLINT(misc-include-cleaner)
 #include <sys/syscall.h>
 
 #include <linux/audit.h>
 #include <linux/bpf_common.h>
 #include <linux/filter.h>
+#include <linux/ioctl.h>  // NOLINT(misc-include-cleaner)
 #include <linux/prctl.h>
 #include <linux/seccomp.h>
 
@@ -25,16 +30,22 @@ namespace {
 	using howdy::native::CompareSeccompStatus;
 	using howdy::native::compare_sandbox_internal::CompareSeccompDependencies;
 
-#ifdef __x86_64__
+#ifndef SYS_seccomp
+	// Headers without the syscall: the build, not the kernel, lacks the filter.
+#	define HOWDY_SECCOMP_UNSUPPORTED_ARCH 1
+#elifdef __x86_64__
 	constexpr __u32 kExpectedAuditArch = AUDIT_ARCH_X86_64;
-#elifdef __aarch64__
+#elif defined(__aarch64__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+	// aarch64_be reports AUDIT_ARCH_AARCH64 without the LE bit and the filter's low-word
+	// argument loads assume little-endian, so big-endian builds take the unsupported path.
 	constexpr __u32 kExpectedAuditArch = AUDIT_ARCH_AARCH64;
-#elif defined(__riscv) && (__riscv_xlen == 64)
+#elif defined(__riscv) && (__riscv_xlen == 64) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
 	constexpr __u32 kExpectedAuditArch = AUDIT_ARCH_RISCV64;
 #else
 #	define HOWDY_SECCOMP_UNSUPPORTED_ARCH 1
 #endif
 
+#ifndef HOWDY_SECCOMP_UNSUPPORTED_ARCH
 	// ioctl request layout: direction and size in the upper 16 bits, then type, then number.
 	constexpr __u32 kIoctlDirectionSizeMask = 0xffff0000U;
 	constexpr __u32 kIoctlTypeMask          = 0x0000ff00U;
@@ -46,21 +57,34 @@ namespace {
 	// structure is 44 bytes on every architecture this filter supports.
 	constexpr __u32 kIoctlTcgets2    = 0x802C542AU;
 	constexpr __u32 kIoctlTiocgwinsz = 0x5413U;
+
+	static_assert(std::endian::native == std::endian::little,
+	              "seccomp BPF arg[0]/arg[1] low-word loads assume little-endian");
+	static_assert(kIoctlTcgets == static_cast<__u32>(TCGETS));
+	static_assert(kIoctlTiocgwinsz == static_cast<__u32>(TIOCGWINSZ));
+	static_assert(kIoctlTypeShift == static_cast<__u32>(_IOC_TYPESHIFT));
+	static_assert(kIoctlTypeMask == static_cast<__u32>(_IOC_TYPEMASK << _IOC_TYPESHIFT));
+
 	// Read-only requests stdio uses to ask whether a descriptor is a terminal.
 	constexpr auto kIsattyIoctls = std::to_array<__u32>({
 	    kIoctlTcgets,
 	    kIoctlTcgets2,
 	    kIoctlTiocgwinsz,
 	});
-	// Instructions in the ioctl block after its syscall-number test: the request load, an
-	// allow pair per isatty request, then the direction test, type mask, two type tests, and
-	// the allow and deny returns. Derived so the block's skip offset cannot drift from its size.
-	constexpr std::size_t kIoctlTypeCheckInstructions = 6;
-	constexpr std::size_t kIoctlBlockInstructions =
-	    1 + (kIsattyIoctls.size() * 2) + kIoctlTypeCheckInstructions;
 
-	auto SystemSeccomp([[maybe_unused]] void *context, unsigned int operation, unsigned int flags,
-	                   void *args) -> int {
+	[[nodiscard]] auto PatchFalseJump(std::vector<struct sock_filter> &filter,
+	                                  std::size_t                      jump_index) -> bool {
+		const std::size_t offset = filter.size() - (jump_index + 1);
+		if (!std::in_range<__u8>(offset)) {
+			return false;
+		}
+		filter.at(jump_index).jf = static_cast<__u8>(offset);
+		return true;
+	}
+#endif
+
+	auto SystemSeccomp([[maybe_unused]] void *context, [[maybe_unused]] unsigned int operation,
+	                   [[maybe_unused]] unsigned int flags, [[maybe_unused]] void *args) -> int {
 #if defined(__linux__) && defined(SYS_seccomp)
 		return static_cast<int>(syscall(SYS_seccomp, operation, flags, args));
 #else
@@ -68,6 +92,22 @@ namespace {
 		return -1;
 #endif
 	}
+
+#ifndef HOWDY_SECCOMP_UNSUPPORTED_ARCH
+	// A kernel with CONFIG_SECCOMP but not CONFIG_SECCOMP_FILTER rejects filter mode with
+	// EINVAL, the same errno as a malformed filter or unknown flag. Asking for filter mode
+	// with a null program separates the two: filter-capable kernels fault copying the
+	// program (EFAULT) before installing anything, while the stub returns EINVAL. Any other
+	// probe result keeps the original failure fail-closed.
+	[[nodiscard]] auto KernelSupportsSeccompFilter(const CompareSeccompDependencies &dependencies)
+	    -> bool {
+		errno            = 0;
+		const int probed = dependencies.seccomp(
+		    dependencies.context, howdy::native::compare_sandbox_internal::kSeccompSetModeFilter, 0,
+		    nullptr);
+		return probed >= 0 || errno != EINVAL;
+	}
+#endif
 
 }  // namespace
 
@@ -217,12 +257,12 @@ namespace howdy::native::compare_sandbox_internal {
 		allowed_syscalls.erase(last, end);
 
 		std::vector<struct sock_filter> filter;
-		filter.reserve(24 + kIoctlBlockInstructions + (allowed_syscalls.size() * 2));
+		filter.reserve(40 + (allowed_syscalls.size() * 2));
 
 		filter.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 		                          static_cast<__u32>(offsetof(struct seccomp_data, arch))));
 		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kExpectedAuditArch, 1, 0));
-		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
+		filter.push_back(BPF_STMT(BPF_RET | BPF_K, kSeccompRetKillProcess));
 
 		filter.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 		                          static_cast<__u32>(offsetof(struct seccomp_data, nr))));
@@ -240,12 +280,20 @@ namespace howdy::native::compare_sandbox_internal {
 		// negative fd. Return EACCES instead of killing the process.
 		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_openat), 0, 1));
 		filter.push_back(BPF_STMT(
-		    BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (static_cast<__u32>(EACCES) & SECCOMP_RET_DATA)));
+		    BPF_RET | BPF_K, kSeccompRetErrno | (static_cast<__u32>(EACCES) & kSeccompRetData)));
 #	endif
 #	ifdef SYS_open
 		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_open), 0, 1));
 		filter.push_back(BPF_STMT(
-		    BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (static_cast<__u32>(EACCES) & SECCOMP_RET_DATA)));
+		    BPF_RET | BPF_K, kSeccompRetErrno | (static_cast<__u32>(EACCES) & kSeccompRetData)));
+#	endif
+
+#	ifdef SYS_mremap
+		// glibc realloc tries mremap for a block above the mmap threshold and falls back to
+		// allocate-and-copy when it fails. Deny it without killing the process.
+		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_mremap), 0, 1));
+		filter.push_back(BPF_STMT(
+		    BPF_RET | BPF_K, kSeccompRetErrno | (static_cast<__u32>(ENOMEM) & kSeccompRetData)));
 #	endif
 
 #	ifdef SYS_ioctl
@@ -259,27 +307,35 @@ namespace howdy::native::compare_sandbox_internal {
 		// fails with EPERM: bare legacy requests such as VT_ACTIVATE share the 'V' type but
 		// carry no direction bits. The filter cannot see which descriptor a request targets,
 		// so the permitted types are allowed on every inherited descriptor, not only the camera.
-		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_ioctl), 0,
-		                          static_cast<__u8>(kIoctlBlockInstructions)));
+		const std::size_t ioctl_jump_index = filter.size();
+		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_ioctl), 0, 0));
 		filter.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 		                          static_cast<__u32>(offsetof(struct seccomp_data, args[1]))));
 		for (const __u32 isatty_request : kIsattyIoctls) {
 			filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, isatty_request, 0, 1));
 			filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
 		}
-		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, kIoctlDirectionSizeMask, 0, 4));
+		const std::size_t ioctl_dir_jump_index = filter.size();
+		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, kIoctlDirectionSizeMask, 0, 0));
 		filter.push_back(BPF_STMT(BPF_ALU | BPF_AND | BPF_K, kIoctlTypeMask));
 		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kIoctlTypeV4l2, 1, 0));
 		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kIoctlTypeUvc, 0, 1));
 		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+		if (!PatchFalseJump(filter, ioctl_dir_jump_index)) {
+			return {};
+		}
 		filter.push_back(BPF_STMT(
-		    BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (static_cast<__u32>(EPERM) & SECCOMP_RET_DATA)));
+		    BPF_RET | BPF_K, kSeccompRetErrno | (static_cast<__u32>(EPERM) & kSeccompRetData)));
+		if (!PatchFalseJump(filter, ioctl_jump_index)) {
+			return {};
+		}
 #	endif
 
 #	ifdef SYS_prctl
 		// Narrow prctl argument filter: permit only thread naming operations (PR_SET_NAME,
 		// PR_GET_NAME) via the 32-bit option argument in args[0].
-		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_prctl), 0, 6));
+		const std::size_t prctl_jump_index = filter.size();
+		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_prctl), 0, 0));
 		filter.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 		                          static_cast<__u32>(offsetof(struct seccomp_data, args[0]))));
 		filter.push_back(
@@ -288,7 +344,10 @@ namespace howdy::native::compare_sandbox_internal {
 		filter.push_back(
 		    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(PR_GET_NAME), 0, 1));
 		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
-		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
+		filter.push_back(BPF_STMT(BPF_RET | BPF_K, kSeccompRetKillProcess));
+		if (!PatchFalseJump(filter, prctl_jump_index)) {
+			return {};
+		}
 #	endif
 
 #	ifdef SYS_clone3
@@ -297,29 +356,29 @@ namespace howdy::native::compare_sandbox_internal {
 		// where flags can be verified.
 		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_clone3), 0, 1));
 		filter.push_back(BPF_STMT(
-		    BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (static_cast<__u32>(ENOSYS) & SECCOMP_RET_DATA)));
+		    BPF_RET | BPF_K, kSeccompRetErrno | (static_cast<__u32>(ENOSYS) & kSeccompRetData)));
 #	endif
 
 #	ifdef SYS_clone
 		// Permit thread creation (e.g. OpenCV parallel worker pool, std::jthread) while
 		// forbidding process creation (fork without CLONE_THREAD).
-		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_clone), 0, 4));
+		const std::size_t clone_jump_index = filter.size();
+		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_clone), 0, 0));
 		filter.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 		                          static_cast<__u32>(offsetof(struct seccomp_data, args[0]))));
 		filter.push_back(
 		    BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, static_cast<__u32>(CLONE_THREAD), 0, 1));
 		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
-		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
+		filter.push_back(BPF_STMT(BPF_RET | BPF_K, kSeccompRetKillProcess));
+		if (!PatchFalseJump(filter, clone_jump_index)) {
+			return {};
+		}
 #	endif
 
-		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
+		filter.push_back(BPF_STMT(BPF_RET | BPF_K, kSeccompRetKillProcess));
 		return filter;
 #endif
 	}
-
-}  // namespace howdy::native::compare_sandbox_internal
-
-namespace howdy::native::compare_sandbox_internal {
 
 	auto ApplyCompareSeccompFilter(const CompareSeccompDependencies &dependencies)
 	    -> CompareSeccompResult {
@@ -332,32 +391,46 @@ namespace howdy::native::compare_sandbox_internal {
 
 #ifdef HOWDY_SECCOMP_UNSUPPORTED_ARCH
 		return {
-		    .status       = CompareSeccompStatus::kUnsupported,
-		    .error_number = ENOSYS,
+		    .status = CompareSeccompStatus::kUnsupportedArchitecture,
+		    // No syscall was made; an errno would wrongly suggest a kernel failure.
+		    .error_number = 0,
 		};
 #else
-		auto filter = BuildCompareSeccompFilter();
-		if (filter.empty() || filter.size() > USHRT_MAX) {
+		auto              filter = BuildCompareSeccompFilter();
+		struct sock_fprog prog   = {
+		    .len    = 0,
+		    .filter = filter.data(),
+		};
+		if (filter.empty() || filter.size() > std::numeric_limits<decltype(prog.len)>::max()) {
 			return {
 			    .status       = CompareSeccompStatus::kFilterConstructionFailure,
 			    .error_number = EINVAL,
 			};
 		}
-
-		struct sock_fprog prog = {
-		    .len    = 0,
-		    .filter = filter.data(),
-		};
 		prog.len = static_cast<decltype(prog.len)>(filter.size());
 
-		if (dependencies.seccomp(dependencies.context, SECCOMP_SET_MODE_FILTER,
-		                         SECCOMP_FILTER_FLAG_TSYNC, &prog) != 0) {
+		const int seccomp_rc = dependencies.seccomp(dependencies.context, kSeccompSetModeFilter,
+		                                            kSeccompFilterFlagTsync, &prog);
+		if (seccomp_rc > 0) {
+			// TSYNC returns the positive TID of a conflicting thread without setting errno.
+			return {
+			    .status       = CompareSeccompStatus::kInstallationFailure,
+			    .error_number = EAGAIN,
+			};
+		}
+		if (seccomp_rc < 0) {
 			const int err = errno;
 			if (err == ENOSYS || err == ENOTSUP
 #	if EOPNOTSUPP != ENOTSUP
 			    || err == EOPNOTSUPP
 #	endif
 			) {
+				return {
+				    .status       = CompareSeccompStatus::kUnsupported,
+				    .error_number = err,
+				};
+			}
+			if (err == EINVAL && !KernelSupportsSeccompFilter(dependencies)) {
 				return {
 				    .status       = CompareSeccompStatus::kUnsupported,
 				    .error_number = err,

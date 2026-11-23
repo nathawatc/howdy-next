@@ -3,6 +3,9 @@
 #include "compare/privileges.hpp"
 #include "compare/privileges/internal.hpp"
 
+#include <expected>
+#include <optional>
+
 #include <sys/types.h>
 
 namespace howdy::native::compare_privileges_internal {
@@ -16,30 +19,29 @@ namespace howdy::native::compare_privileges_internal {
 		gid_t saved_gid     = 0;
 	};
 
-	struct __attribute__((visibility("hidden"))) NobodyLookup {
-		uid_t                  uid = 0;
-		gid_t                  gid = 0;
-		ComparePrivilegeResult error{.status = ComparePrivilegeStatus::kOk};
+	struct __attribute__((visibility("hidden"))) NobodyIdentity {
+		uid_t uid = 0;
+		gid_t gid = 0;
 	};
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto DefaultDependencies()
 	    -> ComparePrivilegeDependencies;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	LookupNobody(const ComparePrivilegeDependencies &dependencies) -> NobodyLookup;
+	LookupNobody(const ComparePrivilegeDependencies &dependencies)
+	    -> std::expected<NobodyIdentity, ComparePrivilegeResult>;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	FatalVerificationFailure(const ComparePrivilegeDependencies &dependencies)
 	    -> ComparePrivilegeResult;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	ReadProcessIdentity(const ComparePrivilegeDependencies &dependencies, ProcessIdentity *identity)
-	    -> bool;
+	ReadProcessIdentity(const ComparePrivilegeDependencies &dependencies)
+	    -> std::optional<ProcessIdentity>;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	HandleUnprivilegedCaller(const ComparePrivilegeDependencies &dependencies, uid_t real_uid,
-	                         uid_t effective_uid, uid_t saved_uid, gid_t real_gid,
-	                         gid_t effective_gid, gid_t saved_gid) -> ComparePrivilegeResult;
+	HandleUnprivilegedCaller(const ComparePrivilegeDependencies &dependencies,
+	                         const ProcessIdentity &identity) -> ComparePrivilegeResult;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	PrepareCapabilityDrop(const ComparePrivilegeDependencies &dependencies)

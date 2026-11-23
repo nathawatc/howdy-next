@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstddef>
+#include <expected>
 #include <vector>
 
 #include <grp.h>
@@ -105,7 +106,8 @@ namespace howdy::native::compare_privileges_internal {
 		};
 	}
 
-	auto LookupNobody(const ComparePrivilegeDependencies &dependencies) -> NobodyLookup {
+	auto LookupNobody(const ComparePrivilegeDependencies &dependencies)
+	    -> std::expected<NobodyIdentity, ComparePrivilegeResult> {
 		passwd            nobody{};
 		passwd           *lookup_result = nullptr;
 		std::vector<char> buffer(kInitialPasswdBufferSize);
@@ -118,45 +120,33 @@ namespace howdy::native::compare_privileges_internal {
 				break;
 			}
 			if (lookup_error != ERANGE) {
-				return {
-				    .error =
-				        {
-				            .status        = ComparePrivilegeStatus::kLookupFailed,
-				            .error_message = "nobody account lookup failed: " +
-							                 howdy::native::SystemErrorMessage(lookup_error),
-				        },
-				};
+				return std::unexpected(ComparePrivilegeResult{
+				    .status        = ComparePrivilegeStatus::kLookupFailed,
+				    .error_message = "nobody account lookup failed: " +
+					                 howdy::native::SystemErrorMessage(lookup_error),
+				});
 			}
 			if (buffer.size() >= kMaximumPasswdBufferSize) {
-				return {
-				    .error =
-				        {
-				            .status        = ComparePrivilegeStatus::kLookupFailed,
-				            .error_message = "nobody account lookup exceeded 64 KiB",
-				        },
-				};
+				return std::unexpected(ComparePrivilegeResult{
+				    .status        = ComparePrivilegeStatus::kLookupFailed,
+				    .error_message = "nobody account lookup exceeded 64 KiB",
+				});
 			}
 			buffer.resize(std::min(buffer.size() * 2, kMaximumPasswdBufferSize));
 		}
 		if (lookup_result == nullptr) {
-			return {
-			    .error =
-			        {
-			            .status        = ComparePrivilegeStatus::kLookupFailed,
-			            .error_message = "nobody account not found",
-			        },
-			};
+			return std::unexpected(ComparePrivilegeResult{
+			    .status        = ComparePrivilegeStatus::kLookupFailed,
+			    .error_message = "nobody account not found",
+			});
 		}
 		if (lookup_result->pw_uid == 0 || lookup_result->pw_gid == 0) {
-			return {
-			    .error =
-			        {
-			            .status        = ComparePrivilegeStatus::kInvalidIdentity,
-			            .error_message = "nobody account resolves to root identity",
-			        },
-			};
+			return std::unexpected(ComparePrivilegeResult{
+			    .status        = ComparePrivilegeStatus::kInvalidIdentity,
+			    .error_message = "nobody account resolves to root identity",
+			});
 		}
-		return {.uid = lookup_result->pw_uid, .gid = lookup_result->pw_gid};
+		return NobodyIdentity{.uid = lookup_result->pw_uid, .gid = lookup_result->pw_gid};
 	}
 
 }  // namespace howdy::native::compare_privileges_internal
