@@ -61,18 +61,19 @@ namespace howdy::native::howdy_completion_internal {
 			}
 		}
 
-		void PrintCompletionCommandMaxPositionals(std::string_view command_name) {
+		auto PrintCompletionCommandMaxPositionals(std::string_view command_name) -> bool {
 			const auto *descriptor = FindCommand(command_name);
 			if (descriptor == nullptr) {
-				return;
+				return false;
 			}
 			std::cout << descriptor->max_positionals << '\n';
+			return true;
 		}
 
-		void PrintCompletionCommandOptions(std::string_view command_name) {
+		auto PrintCompletionCommandOptions(std::string_view command_name) -> bool {
 			const auto *descriptor = FindCommand(command_name);
 			if (descriptor == nullptr) {
-				return;
+				return false;
 			}
 			for (const auto &option : GlobalOptionCatalog()) {
 				if (option.id != GlobalOptionId::kHelp &&
@@ -95,6 +96,7 @@ namespace howdy::native::howdy_completion_internal {
 					}
 				}
 			}
+			return true;
 		}
 
 		auto ParseCompletionPosition(std::string_view text, std::size_t &position) -> bool {
@@ -179,12 +181,10 @@ namespace howdy::native::howdy_completion_internal {
 			return 0;
 		}
 		if (arguments.size() == 2 && arguments.front() == "command-options") {
-			PrintCompletionCommandOptions(arguments.at(1));
-			return FindCommand(arguments.at(1)) != nullptr ? 0 : 1;
+			return PrintCompletionCommandOptions(arguments.at(1)) ? 0 : 1;
 		}
 		if (arguments.size() == 2 && arguments.front() == "command-max-positionals") {
-			PrintCompletionCommandMaxPositionals(arguments.at(1));
-			return FindCommand(arguments.at(1)) != nullptr ? 0 : 1;
+			return PrintCompletionCommandMaxPositionals(arguments.at(1)) ? 0 : 1;
 		}
 		if (arguments.size() >= 3 && arguments.front() == "command-values") {
 			std::size_t position = 0;

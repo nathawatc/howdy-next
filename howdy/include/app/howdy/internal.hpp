@@ -21,7 +21,7 @@ namespace howdy::native::howdy_internal {
 	};
 
 	[[nodiscard]] auto ProductionCommandMains() -> CommandMains;
-	auto HowdyMainWithDependencies(int argc, char **argv, const HowdyDependencies &dependencies)
-	    -> int;
+	[[nodiscard]] auto HowdyMainWithDependencies(int argc, char **argv,
+	                                             const HowdyDependencies &dependencies) -> int;
 
 }  // namespace howdy::native::howdy_internal

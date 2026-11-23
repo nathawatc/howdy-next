@@ -289,6 +289,26 @@ namespace {
 		};
 		ok &= Expect(ValidateCommandCatalog(empty_name).value_or("").contains("name"),
 		             "empty command name is rejected");
+		constexpr std::array repeated_cmd_option{
+		    howdy::native::CommandOptionDescriptor{
+		        .short_name = "-d",
+		        .long_name  = "-d",
+		        .summary    = "Option",
+		    },
+		};
+		const auto repeated_cmd_option_catalog = std::array{
+		    howdy::native::CommandDescriptor{
+		        .id          = CommandId::kTest,
+		        .name        = "test",
+		        .summary     = "Summary",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		        .options     = repeated_cmd_option,
+		    },
+		};
+		ok &= Expect(
+		    ValidateCommandCatalog(repeated_cmd_option_catalog).value_or("").contains("repeats"),
+		    "command option aliases cannot repeat");
 		const auto empty_summary = std::array{
 		    CommandDescriptor{
 		        .id          = CommandId::kAdd,
