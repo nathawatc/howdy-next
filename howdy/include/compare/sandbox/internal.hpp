@@ -9,24 +9,35 @@
 
 #include <linux/filter.h>
 #include <linux/seccomp.h>
-
-#ifndef SECCOMP_SET_MODE_FILTER
-#	define SECCOMP_SET_MODE_FILTER 1
-#endif
-#ifndef SECCOMP_FILTER_FLAG_TSYNC
-#	define SECCOMP_FILTER_FLAG_TSYNC 1
-#endif
-#ifndef SECCOMP_RET_KILL_PROCESS
-#	define SECCOMP_RET_KILL_PROCESS SECCOMP_RET_KILL
-#endif
-#ifndef SECCOMP_RET_ERRNO
-#	define SECCOMP_RET_ERRNO 0x00050000U
-#endif
-#ifndef SECCOMP_RET_DATA
-#	define SECCOMP_RET_DATA 0x0000ffffU
-#endif
+#include <linux/types.h>
 
 namespace howdy::native::compare_sandbox_internal {
+
+#ifdef SECCOMP_SET_MODE_FILTER
+	inline constexpr __u32 kSeccompSetModeFilter = SECCOMP_SET_MODE_FILTER;
+#else
+	inline constexpr __u32 kSeccompSetModeFilter = 1U;
+#endif
+#ifdef SECCOMP_FILTER_FLAG_TSYNC
+	inline constexpr __u32 kSeccompFilterFlagTsync = SECCOMP_FILTER_FLAG_TSYNC;
+#else
+	inline constexpr __u32 kSeccompFilterFlagTsync = 1U;
+#endif
+#ifdef SECCOMP_RET_KILL_PROCESS
+	inline constexpr __u32 kSeccompRetKillProcess = SECCOMP_RET_KILL_PROCESS;
+#else
+	inline constexpr __u32 kSeccompRetKillProcess = 0x80000000U;
+#endif
+#ifdef SECCOMP_RET_ERRNO
+	inline constexpr __u32 kSeccompRetErrno = SECCOMP_RET_ERRNO;
+#else
+	inline constexpr __u32 kSeccompRetErrno = 0x00050000U;
+#endif
+#ifdef SECCOMP_RET_DATA
+	inline constexpr __u32 kSeccompRetData = SECCOMP_RET_DATA;
+#else
+	inline constexpr __u32 kSeccompRetData = 0x0000ffffU;
+#endif
 
 	using RlimitResource = decltype(RLIMIT_CPU);
 	using GetrlimitFn    = int (*)(void *context, RlimitResource resource, rlimit *limit);

@@ -14,12 +14,12 @@ namespace howdy::native {
 	inline constexpr auto kAverageDarknessLabel = "Average darkness: ";
 	inline constexpr auto kThresholdLabel       = ", Threshold: ";
 
-	auto TimeoutExit(int dark_tries, int valid_frames) -> CompareExit;
-	auto CompareAbortFromCvException(const cv::Exception &error, std::ostream &stream,
-	                                 std::string_view context) -> CompareExit;
-	auto CompareAbortFromException(const std::exception &error, std::ostream &stream,
-	                               std::string_view context) -> CompareExit;
-	auto CompareAbortFromUnknownException(std::ostream &stream, std::string_view context)
-	    -> CompareExit;
+	[[nodiscard]] auto TimeoutExit(int dark_tries, int valid_frames) -> CompareExit;
+	[[nodiscard]] auto CompareAbortFromCvException(const cv::Exception &error, std::ostream &stream,
+	                                               std::string_view context) -> CompareExit;
+	[[nodiscard]] auto CompareAbortFromException(const std::exception &error, std::ostream &stream,
+	                                             std::string_view context) -> CompareExit;
+	[[nodiscard]] auto CompareAbortFromUnknownException(std::ostream    &stream,
+	                                                    std::string_view context) -> CompareExit;
 
 }  // namespace howdy::native

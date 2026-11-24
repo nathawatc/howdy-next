@@ -24,4 +24,9 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related:
   `LoadUserModelsFromFd` rather than duplicating them here.
 - Preserve privilege-transition ordering, capability clearing, UID/GID/fs-ID checks, root-regain
   verification, rlimit/`PR_SET_NO_NEW_PRIVS`/seccomp-BPF ordering, and fatal fail-closed exits.
+- Install seccomp right after the privilege drop and before engine construction, warm-up, or any
+  extra thread, so `WarmUpRecognizer` runs inside the filter.
+- Seccomp is best-effort only for `CompareSeccompStatus::kUnsupported` (kernel without seccomp
+  filter mode) and `kUnsupportedArchitecture` (build without a filter for the target): warn and
+  continue. Filter construction/installation failures and missing injected hooks abort.
 - Keep engine and capture orchestration tests ONNX-free by injecting inference.

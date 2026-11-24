@@ -29,7 +29,10 @@ namespace howdy::native {
 
 	enum class CompareSeccompStatus : std::uint8_t {
 		kOk,
+		// Kernel lacks seccomp or seccomp filter mode.
 		kUnsupported,
+		// This build has no filter (target architecture or headers); the kernel may support it.
+		kUnsupportedArchitecture,
 		kFilterConstructionFailure,
 		kInstallationFailure,
 		kInvalidDependencies,

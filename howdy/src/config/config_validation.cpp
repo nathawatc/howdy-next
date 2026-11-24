@@ -6,30 +6,13 @@
 #include "support/face_metric.hpp"
 
 #include <algorithm>
-#include <charconv>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <variant>
 
 namespace howdy::native {
 	namespace {
-
-		auto ParseIntStrict(std::string_view value) -> std::optional<int> {
-			if (!value.empty() && value.front() == '+') {
-				value.remove_prefix(1);
-				if (value.empty() || value.front() == '-') {
-					return std::nullopt;
-				}
-			}
-			int        parsed = 0;
-			const auto result = std::from_chars(value.begin(), value.end(), parsed);
-			if (result.ec != std::errc{} || result.ptr != value.end() || value.empty()) {
-				return std::nullopt;
-			}
-			return parsed;
-		}
 
 		auto IsValidBoolText(std::string_view value) -> bool {
 			return config_schema::IsAcceptedBooleanText(value);
@@ -43,17 +26,13 @@ namespace howdy::native {
 
 		auto ValidateInteger(const config_schema::Option &option, std::string_view value)
 		    -> std::optional<std::string> {
-			const auto parsed = ParseIntStrict(value);
+			const auto parsed = ParseConfigIntStrict(value);
 			if (!parsed.has_value()) {
 				return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
 			}
-			if (const auto *range = std::get_if<config_schema::IntegerRange>(&option.range)) {
-				if (range->allowed_value.has_value() && *parsed == *range->allowed_value) {
-					return std::nullopt;
-				}
-				if (*parsed < range->minimum || *parsed > range->maximum) {
-					return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
-				}
+			if (const auto *range = std::get_if<config_schema::IntegerRange>(&option.range);
+			    range != nullptr && !config_schema::RangeContains(*range, *parsed)) {
+				return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
 			}
 			return std::nullopt;
 		}
@@ -91,7 +70,7 @@ namespace howdy::native {
 				}
 				return std::nullopt;
 			}
-			if (range != nullptr && (*parsed < range->minimum || *parsed > range->maximum)) {
+			if (range != nullptr && !config_schema::RangeContains(*range, *parsed)) {
 				return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
 			}
 			return std::nullopt;

@@ -4,13 +4,13 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <ranges>
 #include <span>
 
 #include <string.h>
 
 namespace {
-	void EraseResponse(void *context, std::span<char> bytes) noexcept {
-		(void)context;
+	void EraseResponse([[maybe_unused]] void *context, std::span<char> bytes) noexcept {
 		explicit_bzero(bytes.data(), bytes.size());
 	}
 
@@ -31,10 +31,8 @@ namespace howdy::pam::detail {
 		auto *owned_responses    = *responses;
 		*responses               = nullptr;
 		auto const response_view = std::span(owned_responses, lengths.size());
-		auto       length_it     = lengths.begin();
-		for (auto &owned_response : response_view) {
-			const auto length = *length_it++;
-			char      *secret = owned_response.resp;
+		for (auto &&[owned_response, length] : std::views::zip(response_view, lengths)) {
+			char *secret = owned_response.resp;
 			if (secret == nullptr) {
 				continue;
 			}

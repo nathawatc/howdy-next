@@ -32,11 +32,12 @@ public:
 	auto operator=(NativePrompt &&) -> NativePrompt &      = delete;
 	virtual ~NativePrompt()                                = default;
 
-	[[nodiscard]] virtual auto Available() const -> bool                             = 0;
-	virtual auto               Install() -> int                                      = 0;
-	virtual void               RequestAbort()                                        = 0;
-	[[nodiscard]] virtual auto TerminalRestoreFailed() const noexcept -> bool        = 0;
-	virtual auto RestoreOriginal() noexcept -> howdy::pam::ConversationRestoreResult = 0;
+	[[nodiscard]] virtual auto Available() const -> bool                      = 0;
+	[[nodiscard]] virtual auto Install() -> int                               = 0;
+	virtual void               RequestAbort()                                 = 0;
+	[[nodiscard]] virtual auto TerminalRestoreFailed() const noexcept -> bool = 0;
+	[[nodiscard]] virtual auto RestoreOriginal() noexcept
+	    -> howdy::pam::ConversationRestoreResult = 0;
 };
 
 class NativePromptConversation final : public NativePrompt {
@@ -50,10 +51,10 @@ public:
 	auto operator=(NativePromptConversation &&) -> NativePromptConversation &      = delete;
 
 	[[nodiscard]] auto Available() const -> bool override;
-	auto               Install() -> int override;
+	[[nodiscard]] auto Install() -> int override;
 	void               RequestAbort() override;
 	[[nodiscard]] auto TerminalRestoreFailed() const noexcept -> bool override;
-	auto               RestoreOriginal() noexcept -> howdy::pam::ConversationRestoreResult override;
+	[[nodiscard]] auto RestoreOriginal() noexcept -> howdy::pam::ConversationRestoreResult override;
 
 private:
 	friend class NativePromptConversationTestAccess;
@@ -137,8 +138,8 @@ struct NativePromptTtyTarget {
 
 // Canonicalizes a PAM_TTY value. Accepts only a character device whose canonical path is under
 // /dev/; the returned identity lets the caller verify that the opened descriptor is that node.
-__attribute__((visibility("hidden"))) auto ResolveNativePromptTty(std::string_view pam_tty)
-    -> std::optional<NativePromptTtyTarget>;
+[[nodiscard]] __attribute__((visibility("hidden"))) auto
+ResolveNativePromptTty(std::string_view pam_tty) -> std::optional<NativePromptTtyTarget>;
 
-__attribute__((visibility("hidden"))) auto
+[[nodiscard]] __attribute__((visibility("hidden"))) auto
 NativePromptTerminalIsInteractive(const NativeTerminalDescriptors &descriptors) -> bool;

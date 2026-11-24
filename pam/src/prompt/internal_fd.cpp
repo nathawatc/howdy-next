@@ -56,6 +56,15 @@ namespace howdy::pam::detail {
 		if (active.create_pipe(active.context, raw_fds.data(), flags) != 0) {
 			return {};
 		}
+		if (raw_fds.front() < 0 || raw_fds.back() < 0 || raw_fds.front() == raw_fds.back()) {
+			if (raw_fds.front() >= 0) {
+				(void)close(raw_fds.front());
+			}
+			if (raw_fds.back() >= 0 && raw_fds.back() != raw_fds.front()) {
+				(void)close(raw_fds.back());
+			}
+			return {};
+		}
 
 		InternalPipe pipe{.read = ScopedFd(raw_fds.front()), .write = ScopedFd(raw_fds.back())};
 		pipe.read = NormalizeInternalFd(std::move(pipe.read), operations);

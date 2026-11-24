@@ -7,8 +7,10 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <utility>
 
 #include <opencv2/core/exception.hpp>
@@ -69,9 +71,20 @@ namespace howdy::native {
 		Release();
 		error_message_.clear();
 
-		if (!std::filesystem::exists(settings_.device_path) && settings_.warn_no_device) {
-			error_message_ = "Configured camera device does not exist: " + settings_.device_path;
-			return false;
+		if (settings_.warn_no_device) {
+			std::error_code exists_error;
+			const bool      exists = std::filesystem::exists(settings_.device_path, exists_error);
+			if (exists_error) {
+				error_message_ =
+				    "Failed to inspect configured camera device: " + settings_.device_path + ": " +
+				    exists_error.message();
+				return false;
+			}
+			if (!exists) {
+				error_message_ =
+				    "Configured camera device does not exist: " + settings_.device_path;
+				return false;
+			}
 		}
 
 		if (!IsAllowedCaptureDevicePath(settings_.device_path)) {
@@ -119,6 +132,7 @@ namespace howdy::native {
 			// devices may fail the first grab immediately after open and recover on
 			// subsequent reads.
 			(void)Grab();
+			error_message_.clear();
 			return true;
 		} catch (const cv::Exception &error) {
 			Release();
@@ -162,22 +176,22 @@ namespace howdy::native {
 					error_message_ = "Camera returned an empty frame";
 					return false;
 				case FrameValidationStatus::kUnsupportedDimensions:
-					error_message_ = "Camera returned unsupported frame dimensions: " +
-					                 std::to_string(frame.dims);
+					error_message_ =
+					    std::format("Camera returned unsupported frame dimensions: {}", frame.dims);
 					return false;
 				case FrameValidationStatus::kOversizedDimensions:
 					error_message_ =
-					    "Camera returned oversized frame dimensions: " +
-					    std::to_string(frame.cols) + "x" + std::to_string(frame.rows) +
-					    " (max supported dimension: " + std::to_string(kMaxFrameDimension) + ")";
+					    std::format("Camera returned oversized frame dimensions: {}x{} (max "
+						            "supported dimension: {})",
+						            frame.cols, frame.rows, kMaxFrameDimension);
 					return false;
 				case FrameValidationStatus::kUnsupportedChannelCount:
-					error_message_ = "Camera returned unsupported frame channel count: " +
-					                 std::to_string(frame.channels());
+					error_message_ = std::format(
+					    "Camera returned unsupported frame channel count: {}", frame.channels());
 					return false;
 				case FrameValidationStatus::kUnsupportedPixelType:
-					error_message_ = "Camera returned unsupported frame pixel type: " +
-					                 std::to_string(frame.type());
+					error_message_ = std::format("Camera returned unsupported frame pixel type: {}",
+					                             frame.type());
 					return false;
 			}
 

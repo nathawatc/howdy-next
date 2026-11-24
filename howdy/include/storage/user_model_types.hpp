@@ -43,6 +43,9 @@ namespace howdy::native {
 		std::int64_t   mtime_nanosecs = 0;
 		std::int64_t   ctime_seconds  = 0;
 		std::int64_t   ctime_nanosecs = 0;
+
+		friend auto operator==(const UserModelFileSnapshot &, const UserModelFileSnapshot &)
+		    -> bool = default;
 	};
 
 	struct UserModelInspectResult {

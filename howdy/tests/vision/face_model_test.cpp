@@ -326,6 +326,45 @@ namespace {
 		return ok;
 	}
 
+	auto TestFaceModelMoveSemantics() -> bool {
+		const auto make_valid_model = [] -> howdy::native::FaceModel {
+			auto backend              = SuccessfulBackend();
+			backend.create_recognizer = [](const std::string &) -> cv::Ptr<cv::FaceRecognizerSF> {
+				return cv::makePtr<ValidFeatureRecognizer>();
+			};
+			return howdy::native::FaceModelTestAccess::Create(howdy::native::DefaultFaceConfig(),
+			                                                  std::move(backend));
+		};
+
+		auto source = make_valid_model();
+		bool ok     = Expect(source.Ok(), "source model initializes before move");
+
+		auto moved_ctor(std::move(source));
+		ok &= Expect(moved_ctor.Ok(), "move-constructed model remains ready");
+		// NOLINTBEGIN(bugprone-use-after-move,clang-analyzer-cplusplus.Move) -- intentionally
+		// verifies moved-from fail-closed state.
+		ok &= Expect(!source.Ok(), "move-constructed-from model marks itself not ready");
+		ok &= ExpectNotReadyInference(source);
+		ok &= Expect(!source.WarmUpRecognizer(),
+		             "move-constructed-from model fails WarmUpRecognizer closed");
+		// NOLINTEND(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+
+		auto moved_assign = make_valid_model();
+		ok &= Expect(moved_assign.WarmUpRecognizer(), "target model warm-up runs before overwrite");
+		moved_assign = std::move(moved_ctor);
+		ok &= Expect(moved_assign.Ok(), "move-assigned model remains ready");
+		ok &= Expect(moved_assign.WarmUpRecognizer(),
+		             "move-assigned model preserves un-warmed source state");
+		// NOLINTBEGIN(bugprone-use-after-move,clang-analyzer-cplusplus.Move) -- intentionally
+		// verifies moved-from fail-closed state.
+		ok &= Expect(!moved_ctor.Ok(), "move-assigned-from model marks itself not ready");
+		ok &= ExpectNotReadyInference(moved_ctor);
+		ok &= Expect(!moved_ctor.WarmUpRecognizer(),
+		             "move-assigned-from model fails WarmUpRecognizer closed");
+		// NOLINTEND(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -717,6 +756,7 @@ auto main() -> int {
 
 	ok &= TestFaceModelInferenceOperations();
 	ok &= TestRecognizerWarmUp();
+	ok &= TestFaceModelMoveSemantics();
 
 	return ok ? 0 : 1;
 }

@@ -75,10 +75,16 @@ namespace howdy::native {
 		explicit CompareCaptureSession(VideoConfig config);
 
 		CompareCaptureSession(VideoConfig config, CompareCaptureDependencies dependencies);
+		~CompareCaptureSession() = default;
 
-		auto Open() -> CompareCaptureOpenResult;
-		auto NextFrame() -> CompareCaptureFrameResult;
-		void ResetTimeoutClock();
+		CompareCaptureSession(const CompareCaptureSession &)                     = delete;
+		auto operator=(const CompareCaptureSession &) -> CompareCaptureSession & = delete;
+		CompareCaptureSession(CompareCaptureSession &&)                          = delete;
+		auto operator=(CompareCaptureSession &&) -> CompareCaptureSession &      = delete;
+
+		[[nodiscard]] auto Open() -> CompareCaptureOpenResult;
+		[[nodiscard]] auto NextFrame() -> CompareCaptureFrameResult;
+		void               ResetTimeoutClock();
 
 		void RecordBlackFrame();
 		void RecordDarkFrame(float darkness);

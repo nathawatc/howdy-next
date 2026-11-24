@@ -165,6 +165,9 @@ namespace howdy::pam {
 	}
 
 	void ObservedPromptConversation::RetainUnsafeContext() noexcept {
+		if (context_ == nullptr) {
+			return;
+		}
 		context_->fail_closed.store(true);
 		if (!QuarantineUnsafeCallbackContext(context_)) {
 			pam_syslog(pamh_, LOG_CRIT,
@@ -173,30 +176,16 @@ namespace howdy::pam {
 	}
 
 	auto ObservedPromptConversation::RestoreOriginal() noexcept -> ConversationRestoreResult {
-		if (!installed_) {
-			return ConversationRestoreResult::kOriginalRestored;
-		}
-		if (pamh_ != nullptr && context_ != nullptr && operations_.set_item != nullptr &&
-		    operations_.set_item(operations_.context, pamh_, PAM_CONV, &context_->original) ==
-		        PAM_SUCCESS) {
-			installed_ = false;
-			return ConversationRestoreResult::kOriginalRestored;
-		}
-
-		static const struct pam_conv kFailClosedConv{
-		    .conv        = howdy::pam::FailClosedConversationDispatch,
-		    .appdata_ptr = nullptr,
-		};
-		if (pamh_ != nullptr && operations_.set_item != nullptr &&
-		    operations_.set_item(operations_.context, pamh_, PAM_CONV, &kFailClosedConv) ==
-		        PAM_SUCCESS) {
-			installed_ = false;
-			return ConversationRestoreResult::kFailClosedInstalled;
-		}
-
-		RetainUnsafeContext();
-		installed_ = false;
-		return ConversationRestoreResult::kUnsafe;
+		return RestorePamConversation(
+		    pamh_, installed_, context_ != nullptr ? &context_->original : nullptr,
+		    [this](pam_handle_t *handle, int item_type, const void *item) noexcept -> int {
+			    return operations_.set_item == nullptr
+			               ? PAM_SYSTEM_ERR
+						   : operations_.set_item(operations_.context, handle, item_type, item);
+		    },
+		    [this] noexcept -> void {
+			    RetainUnsafeContext();
+		    });
 	}
 
 }  // namespace howdy::pam

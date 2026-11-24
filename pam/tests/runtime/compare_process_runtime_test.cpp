@@ -6,6 +6,7 @@
 #include "runtime/compare_launch.hpp"
 #include "runtime/compare_process.hpp"
 #include "runtime/compare_process_test_support.hpp"
+#include "support/bit_flags.hpp"
 #include "support/process_status.hpp"
 #include "support/process_test_support.hpp"
 #include "support/scoped_fd.hpp"
@@ -39,6 +40,10 @@ namespace {
 		int               waitid_error       = 0;
 		int               waitid_any_error   = 0;  // every waitid, by PID as well as by pidfd
 		bool              fail_pidfd_signal  = false;
+		bool              fail_kill          = false;
+		bool              signal_refused     = false;
+		int               release_fd         = -1;  // closed by the first poll after a refusal
+		pid_t             release_pid        = -1;
 		int               last_pidfd         = -1;
 		int               poll_error         = 0;
 		bool              invalid_poll_event = false;
@@ -104,6 +109,12 @@ auto TestPpoll(pollfd *fds, nfds_t count, const timespec *timeout, const sigset_
 		fds->revents                   = POLLNVAL;
 		return 1;
 	}
+	if (WaitState().signal_refused && WaitState().release_fd >= 0) {
+		close(std::exchange(WaitState().release_fd, -1));
+		siginfo_t info{};
+		(void)RealWaitid(P_PID, static_cast<id_t>(WaitState().release_pid), &info,
+		                 howdy::native::CombineBitsAs<int>(WEXITED, WNOWAIT));
+	}
 	return RealPpoll(fds, count, timeout, mask);
 }
 
@@ -124,6 +135,11 @@ namespace {
 }  // namespace
 
 auto TestKill(pid_t pid, int signal) -> int {
+	if (WaitState().fail_kill) {
+		WaitState().signal_refused = true;
+		errno                      = EPERM;
+		return -1;
+	}
 	CountSignal(signal);
 	return RealKill(pid, signal);
 }
@@ -325,6 +341,42 @@ namespace {
 		                  howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kAbort),
 		              "pidfd/ppoll failure returns abort") &&
 		       Expect(ChildReaped(child), "pidfd/ppoll failure reaps child");
+	}
+
+	// A compare that cannot be signalled but ends within the grace is still reaped.
+	auto TestUnsignallableChildIsReapedWithinGrace() -> bool {
+		std::array<int, 2> gate{-1, -1};
+		if (!Expect(pipe2(gate.data(), O_CLOEXEC) == 0, "unsignallable child gate created")) {
+			return false;
+		}
+		const pid_t child = fork();
+		if (child == 0) {
+			close(gate.at(1));
+			char byte = 0;
+			_exit(read(gate.at(0), &byte, 1) == 0 ? 17 : EXIT_FAILURE);
+		}
+		close(gate.at(0));
+		if (!Expect(child > 0, "unsignallable child spawned")) {
+			close(gate.at(1));
+			return false;
+		}
+		// The child exits exactly when the grace poll starts, so load cannot outrun the grace.
+		WaitState().release_fd        = gate.at(1);
+		WaitState().release_pid       = child;
+		WaitState().signal_refused    = false;
+		WaitState().fail_pidfd_signal = true;
+		WaitState().fail_kill         = true;
+		const int status              = howdy::test::prompt_coordinator::WaitUntilForTestChild(
+		    child, std::chrono::steady_clock::now() + 10ms, nullptr, nullptr, -1);
+		WaitState().fail_pidfd_signal = false;
+		WaitState().fail_kill         = false;
+		if (WaitState().release_fd >= 0) {
+			close(std::exchange(WaitState().release_fd, -1));
+		}
+		return Expect(status ==
+		                  howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kAbort),
+		              "unsignallable compare ends with an abort") &&
+		       Expect(ChildReaped(child), "unsignallable compare is reaped within the grace");
 	}
 
 	// A kernel or filter that rejects pidfd waits falls back to the PID and still works.
@@ -976,6 +1028,38 @@ namespace {
 		              "production spawn failure preserves the fixed descriptor-mode environment");
 	}
 
+	auto TestProductionSpawnRejectsNullCallbacks() -> bool {
+		const CompareRequestFiles                     files;
+		const howdy::pam::compare_process::Operations empty_operations{};
+		pid_t                                         child_pid      = 42;
+		int                                           raw_pidfd      = -1;
+		int                                           raw_verdict_fd = -1;
+		const int                                     result = howdy::pam::compare_process::Spawn(
+		    files.Request(), &child_pid, &raw_pidfd, &raw_verdict_fd, empty_operations);
+		return Expect(result == EINVAL, "spawn rejects missing operations callbacks") &&
+		       Expect(raw_pidfd == -1 && raw_verdict_fd == -1,
+		              "rejected spawn leaves pidfd and verdict descriptors unset");
+	}
+
+	auto TestProductionSpawnFailsClosedWithoutPidOrPidfd() -> bool {
+		const CompareRequestFiles files;
+		PosixSpawnCapture         capture;
+		auto                      operations = PosixSpawnOperations(&capture);
+		operations.spawn = [](const howdy::pam::compare_process::SpawnRequest &) -> int {
+			return 0;
+		};
+		pid_t     child_pid      = 4242;
+		int       raw_pidfd      = -1;
+		int       raw_verdict_fd = -1;
+		const int result         = howdy::pam::compare_process::Spawn(
+		    files.Request(), &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
+		return Expect(result == ECHILD,
+		              "spawn returning success without child pid or pidfd fails closed with "
+		              "ECHILD") &&
+		       Expect(child_pid == -1 && raw_pidfd == -1 && raw_verdict_fd == -1,
+		              "fail-closed spawn clears child pid, pidfd, and verdict socket");
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -990,6 +1074,7 @@ auto main() -> int {
 	ok &= TestUnusablePidfdWaitFallsBackToPid();
 	ok &= TestReapedElsewhereIsNotSignalled();
 	ok &= TestRefusedPidfdSignalFallsBackToPid();
+	ok &= TestUnsignallableChildIsReapedWithinGrace();
 	ok &= TestWatchdogTimeoutReapsBlockedChild();
 	ok &= TestWatchdogKillsSigtermIgnoringChild();
 	ok &= TestWatchdogPreservesNaturalExitStatus();
@@ -1002,6 +1087,8 @@ auto main() -> int {
 	ok &= TestProductionFileActionsInitFailure();
 	ok &= TestProductionClosefromFailure();
 	ok &= TestProductionSpawnFailure();
+	ok &= TestProductionSpawnRejectsNullCallbacks();
+	ok &= TestProductionSpawnFailsClosedWithoutPidOrPidfd();
 	ok &= TestProductionSpawnWithoutVerdictSocket();
 	ok &= TestProductionSpawnReturnsPidfd();
 	ok &= TestProductionSpawnTakesPidfdWithChild();

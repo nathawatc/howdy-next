@@ -2,8 +2,11 @@
 
 #include <cmath>
 #include <cstddef>
+#include <format>
 #include <limits>
 #include <optional>
+#include <ranges>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -14,13 +17,10 @@ namespace howdy::native {
 
 	namespace {
 		auto InvalidOutput(std::string message, const cv::Mat &rows) -> FaceDetectionResult {
-			message += " (dims=" + std::to_string(rows.dims) +
-			           ", rows=" + std::to_string(rows.rows) +
-			           ", cols=" + std::to_string(rows.cols) +
-			           ", type=" + std::to_string(rows.type()) + ")";
 			return FaceDetectionResult{
 			    .status        = FaceDetectionStatus::kInvalidOutput,
-			    .error_message = std::move(message),
+			    .error_message = std::format("{} (dims={}, rows={}, cols={}, type={})", message,
+				                             rows.dims, rows.rows, rows.cols, rows.type()),
 			};
 		}
 
@@ -35,25 +35,31 @@ namespace howdy::native {
 			       value <= static_cast<double>(std::numeric_limits<int>::max());
 		}
 
-		auto ValidateDetectionRow(const cv::Mat &rows, int row) -> std::optional<std::string> {
-			for (int column = 0; column < rows.cols; ++column) {
-				if (!std::isfinite(rows.at<float>(row, column))) {
+		template <std::size_t index>
+		[[nodiscard]] constexpr auto RowField(std::span<const float, 15> row) noexcept -> float {
+			return row.subspan<index, 1>().front();
+		}
+
+		auto ValidateDetectionRow(std::span<const float, 15> row_values)
+		    -> std::optional<std::string> {
+			for (const float value : row_values) {
+				if (!std::isfinite(value)) {
 					return "YuNet output contains a non-finite value";
 				}
 			}
-			if (rows.at<float>(row, 2) <= 0.0F || rows.at<float>(row, 3) <= 0.0F) {
+			if (RowField<2>(row_values) <= 0.0F || RowField<3>(row_values) <= 0.0F) {
 				return "YuNet detection width and height must be greater than zero";
 			}
-			for (int column = 0; column < 14; ++column) {
-				if (!IntegerRenderingValueIsSafe(rows.at<float>(row, column))) {
+			for (const float value : row_values.first<14>()) {
+				if (!IntegerRenderingValueIsSafe(value)) {
 					return "YuNet output contains geometry outside supported integer range";
 				}
 			}
 
-			const int x      = static_cast<int>(rows.at<float>(row, 0));
-			const int y      = static_cast<int>(rows.at<float>(row, 1));
-			const int width  = static_cast<int>(rows.at<float>(row, 2));
-			const int height = static_cast<int>(rows.at<float>(row, 3));
+			const int x      = static_cast<int>(RowField<0>(row_values));
+			const int y      = static_cast<int>(RowField<1>(row_values));
+			const int width  = static_cast<int>(RowField<2>(row_values));
+			const int height = static_cast<int>(RowField<3>(row_values));
 			if (width < 1 || height < 1) {
 				return "YuNet detection width and height must render as at least one pixel";
 			}
@@ -65,17 +71,15 @@ namespace howdy::native {
 			return std::nullopt;
 		}
 
-		auto MakeDetection(const cv::Mat &rows, int row) -> FaceDetection {
+		auto MakeDetection(std::span<const float, 15> row_values) -> FaceDetection {
 			FaceDetection detection{
-			    .box        = cv::Rect2f(rows.at<float>(row, 0), rows.at<float>(row, 1),
-				                         rows.at<float>(row, 2), rows.at<float>(row, 3)),
-			    .confidence = rows.at<float>(row, 14),
+			    .box        = cv::Rect2f(RowField<0>(row_values), RowField<1>(row_values),
+				                         RowField<2>(row_values), RowField<3>(row_values)),
+			    .confidence = RowField<14>(row_values),
 			};
-			int column = 4;
-			for (auto &landmark : detection.landmarks) {
-				landmark =
-				    cv::Point2f(rows.at<float>(row, column), rows.at<float>(row, column + 1));
-				column += 2;
+			for (auto &&[landmark, pair] : std::views::zip(
+			         detection.landmarks, row_values.subspan<4, 10>() | std::views::chunk(2))) {
+				landmark = cv::Point2f(pair.front(), pair.back());
 			}
 			return detection;
 		}
@@ -104,10 +108,11 @@ namespace howdy::native {
 		FaceDetectionResult result;
 		result.detections.reserve(static_cast<std::size_t>(rows.rows));
 		for (int row = 0; row < rows.rows; ++row) {
-			if (auto error = ValidateDetectionRow(rows, row); error.has_value()) {
+			const std::span<const float, 15> row_values(rows.ptr<float>(row), 15);
+			if (auto error = ValidateDetectionRow(row_values); error.has_value()) {
 				return InvalidOutput(std::move(*error), rows);
 			}
-			result.detections.push_back(MakeDetection(rows, row));
+			result.detections.push_back(MakeDetection(row_values));
 		}
 		return result;
 	}

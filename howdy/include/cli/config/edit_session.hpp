@@ -32,6 +32,7 @@ namespace howdy::native::config_internal {
 		kEditorLaunchFailed,
 		kEditorFailed,
 		kReadFailed,
+		kEditedConfigUnreadable,
 		kInvalidEditedConfig,
 		kConfigChanged,
 		kInstallFailed,
@@ -82,19 +83,26 @@ namespace howdy::native::config_internal {
 	DefaultConfigEditDependencies(file_security_internal::ValidationRoot validation_root = {})
 	    -> ConfigEditDependencies;
 
-	auto SelectEditorPreference() -> std::string;
+	[[nodiscard]] auto SelectEditorPreference() -> std::string;
 
-	auto CreateTempConfigCopy(const std::filesystem::path                      &source_path,
-	                          const std::optional<howdy::native::InvokingUser> &invoking_user,
-	                          const file_security_internal::ValidationRoot &validation_root = {})
+	[[nodiscard]] auto
+	CreateTempConfigCopy(const std::filesystem::path                      &source_path,
+	                     const std::optional<howdy::native::InvokingUser> &invoking_user,
+	                     const file_security_internal::ValidationRoot     &validation_root = {})
 	    -> std::optional<TempConfigCopy>;
 
-	// Rejects a temp file that is not a regular file owned by expected_owner.
-	auto ReadTempConfigSnapshot(const std::filesystem::path &temp_path, uid_t expected_owner,
-	                            std::string *content) -> bool;
+	enum class TempConfigReadStatus : std::uint8_t {
+		kOk,
+		kUntrusted,   // missing, or not a regular file of the expected owner
+		kUnreadable,  // may be the user's own file, but too large or failing to open or read
+	};
 
-	auto FileContentMatches(const std::filesystem::path &path, const std::string &expected,
-	                        const file_security_internal::ValidationRoot &validation_root = {})
-	    -> bool;
+	[[nodiscard]] auto ReadTempConfigSnapshot(const std::filesystem::path &temp_path,
+	                                          uid_t expected_owner, std::string *content)
+	    -> TempConfigReadStatus;
+
+	[[nodiscard]] auto
+	FileContentMatches(const std::filesystem::path &path, const std::string &expected,
+	                   const file_security_internal::ValidationRoot &validation_root = {}) -> bool;
 
 }  // namespace howdy::native::config_internal

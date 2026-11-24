@@ -89,9 +89,37 @@ namespace howdy::native {
 		}
 	}
 
-	FaceModel::~FaceModel()                                         = default;
-	FaceModel::FaceModel(FaceModel &&) noexcept                     = default;
-	auto FaceModel::operator=(FaceModel &&) noexcept -> FaceModel & = default;
+	FaceModel::~FaceModel() = default;
+
+	FaceModel::FaceModel(FaceModel &&other) noexcept
+	    : ok_(std::exchange(other.ok_, false))
+	    , recognizer_warm_up_attempted_(std::exchange(other.recognizer_warm_up_attempted_, false))
+	    , error_message_(std::exchange(other.error_message_, {}))
+	    , metric_(other.metric_)
+	    , input_size_(other.input_size_)
+	    , detector_(other.detector_)
+	    , recognizer_(other.recognizer_)
+	    , backend_(std::move(other.backend_)) {
+		other.detector_.release();
+		other.recognizer_.release();
+	}
+
+	auto FaceModel::operator=(FaceModel &&other) noexcept -> FaceModel & {
+		if (this == &other) {
+			return *this;
+		}
+		ok_                           = std::exchange(other.ok_, false);
+		recognizer_warm_up_attempted_ = std::exchange(other.recognizer_warm_up_attempted_, false);
+		error_message_                = std::exchange(other.error_message_, {});
+		metric_                       = other.metric_;
+		input_size_                   = other.input_size_;
+		detector_                     = other.detector_;
+		recognizer_                   = other.recognizer_;
+		backend_                      = std::move(other.backend_);
+		other.detector_.release();
+		other.recognizer_.release();
+		return *this;
+	}
 
 	FaceModel::FaceModel(const FaceConfig &config, Backend backend)
 	    : metric_(config.sface_metric)

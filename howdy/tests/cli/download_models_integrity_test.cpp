@@ -241,7 +241,7 @@ namespace howdy::test::download_models {
 			    howdy::native::download_models_internal::DownloadModelsWriteCallback(
 			        payload.data(), overflow_size, overflow_count, &write_context);
 			ok &= Expect(result == 0, "overflowing write callback returns 0");
-			ok &= Expect(ReadFile(overflow_staged->path).empty(),
+			ok &= Expect(ReadFile(overflow_staged->Path()).empty(),
 			             "overflowing write callback leaves staged file empty");
 			howdy::native::CleanupStagedFile(*overflow_staged);
 		}
@@ -269,7 +269,7 @@ namespace howdy::test::download_models {
 			             "write callback rejects data exceeding cumulative limit");
 			ok &= Expect(write_context.bytes_written == first_payload.size(),
 			             "write callback tracks only committed bytes");
-			ok &= Expect(ReadFile(limited_staged->path) == "xy",
+			ok &= Expect(ReadFile(limited_staged->Path()) == "xy",
 			             "write callback leaves rejected chunk unwritten");
 			howdy::native::CleanupStagedFile(*limited_staged);
 		}

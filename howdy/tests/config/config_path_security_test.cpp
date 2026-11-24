@@ -5,21 +5,94 @@
 #include "support/bit_flags.hpp"
 #include "support/file_lock.hpp"
 #include "support/file_security.hpp"
+#include "support/scoped_fd.hpp"
 #include "test_support.hpp"
 
 #include <cerrno>
+#include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <future>
+#include <iostream>
 #include <string>
+#include <string_view>
 #include <system_error>
+#include <thread>
 
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
 namespace howdy::test {
 	using howdy::native::LockFilePath;
+
+	namespace {
+
+		auto ProcLocksLists(std::string_view kind, ino_t inode) -> bool {
+			const auto    suffix = ":" + std::to_string(inode) + " ";
+			std::ifstream locks("/proc/locks");
+			for (std::string line; std::getline(locks, line);) {
+				if (line.contains(kind) && line.contains(suffix)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		// Waits until another thread's flock() on `inode` is queued behind the current holder.
+		auto WaitForBlockedFlock(ino_t inode) -> bool {
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+			while (std::chrono::steady_clock::now() < deadline) {
+				if (ProcLocksLists("-> FLOCK", inode)) {
+					return true;
+				}
+				std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			}
+			return false;
+		}
+
+		auto ExpectLockReplacedWhileWaitingFails(const ConfigUtilsTestContext &context,
+		                                         bool                          recreate) -> bool {
+			const auto             lock_path = LockFilePath(context.config_path);
+			const auto             before    = ReadFile(context.config_path);
+			native::ScopedFd const holder(
+			    open(lock_path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600));
+			struct stat lock_stat{};
+			bool        ok = Expect(holder.Valid() && fstat(holder.Get(), &lock_stat) == 0 &&
+			                            flock(holder.Get(), LOCK_EX) == 0,
+			                        "hold config lock");
+			if (ok && !ProcLocksLists("FLOCK", lock_stat.st_ino)) {
+				std::cerr << "SKIP: /proc/locks does not list the held config lock\n";
+				std::error_code ec;
+				std::filesystem::remove(lock_path, ec);
+				return true;
+			}
+			std::string error;
+			auto        waiting = std::async(std::launch::async, [&] -> bool {
+				return native::UpdateConfigValue(context.config_path, "disabled", &error, "true",
+				                                 true, false, {context.temp_root});
+			});
+			ok &= Expect(WaitForBlockedFlock(lock_stat.st_ino), "config writer waits for the lock");
+			ok &= Expect(unlink(lock_path.c_str()) == 0, "remove config lock while held");
+			native::ScopedFd replacement;
+			if (recreate) {
+				replacement.Reset(open(lock_path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600));
+				ok &= Expect(replacement.Valid(), "recreate config lock while held");
+			}
+			ok &= Expect(flock(holder.Get(), LOCK_UN) == 0, "release removed config lock");
+			ok &= Expect(!waiting.get() && error.contains("removed or replaced"),
+			             "config writer rejects a lock replaced while it waited: " + error);
+			ok &= Expect(ReadFile(context.config_path) == before,
+			             "rejected config writer leaves the config unchanged");
+			std::error_code ec;
+			std::filesystem::remove(lock_path, ec);
+			return ok;
+		}
+
+	}  // namespace
 
 	auto RunConfigLockFailureTests(ConfigUtilsTestContext &context) -> bool {
 		namespace fs = std::filesystem;
@@ -32,12 +105,37 @@ namespace howdy::test {
 		fs::create_symlink("/tmp", lock_failure_path, ec);
 		ok &= Expect(!ec, "create config lock symlink for lock failure");
 		std::string lock_error;
-		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &lock_error,
-		                                               "false", true, false, {context.temp_root}) &&
-		                 lock_error == "Failed to lock config file",
-		             "update_config_value reports config lock failure");
+		ok &=
+		    Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &lock_error,
+			                                         "false", true, false, {context.temp_root}) &&
+			           lock_error.starts_with("Failed to lock config file: "),
+			       "update_config_value reports config lock failure with a reason: " + lock_error);
 		fs::remove(lock_failure_path, ec);
 		ec.clear();
+
+		ok &= Expect(WriteConfigTestFile(lock_failure_path, ""),
+		             "create pre-existing lock file with relaxed permissions");
+		ok &= Expect(chmod(lock_failure_path.c_str(), 0644) == 0,
+		             "set config lock file group/world-readable");
+		lock_error.clear();
+		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &lock_error,
+		                                               "false", true, false, {context.temp_root}) &&
+		                 lock_error.starts_with("Failed to lock config file: ") &&
+		                 lock_error.contains("mode 0644, expected 0600"),
+		             "update_config_value rejects pre-existing 0644 lock file with a mode hint: " +
+		                 lock_error);
+		ok &= Expect(chmod(lock_failure_path.c_str(), 0664) == 0,
+		             "set config lock file group-writable");
+		lock_error.clear();
+		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &lock_error,
+		                                               "false", true, false, {context.temp_root}) &&
+		                 lock_error.contains("mode 0664, expected 0600; remove "),
+		             "update_config_value gives the same hint for a writable lock file: " +
+		                 lock_error);
+		fs::remove(lock_failure_path, ec);
+		ec.clear();
+		ok &= ExpectLockReplacedWhileWaitingFails(context, false);
+		ok &= ExpectLockReplacedWhileWaitingFails(context, true);
 
 		return ok;
 	}

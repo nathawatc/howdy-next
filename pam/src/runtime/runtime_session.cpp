@@ -9,8 +9,8 @@
 #include "support/bit_flags.hpp"
 #include "support/file_security.hpp"
 
+#include <expected>
 #include <filesystem>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -26,10 +26,9 @@ namespace {
 
 	using howdy::native::runtime_descriptor_message::ModelState;
 
-	auto OpenInProcessDependency(void *context, std::string_view username,
+	auto OpenInProcessDependency([[maybe_unused]] void *context, std::string_view username,
 	                             const howdy::pam::RuntimeSessionPaths &paths,
 	                             howdy::pam::RuntimeDescriptorSet      *descriptors) -> bool {
-		(void)context;
 		auto opened = howdy::native::auth_helper::OpenRuntimeDescriptors(
 		    std::string(username), {
 		                               .config           = paths.config_path,
@@ -50,21 +49,18 @@ namespace {
 		return true;
 	}
 
-	auto OpenThroughHelperDependency(void *context, std::string_view username,
+	auto OpenThroughHelperDependency([[maybe_unused]] void *context, std::string_view username,
 	                                 howdy::pam::RuntimeDescriptorSet *descriptors) -> bool {
-		(void)context;
 		return howdy::pam::auth_helper_process::OpenRuntimeDescriptors(username, descriptors);
 	}
 
-	auto LoadRuntimeConfigDependency(void *context, int config_fd,
+	auto LoadRuntimeConfigDependency([[maybe_unused]] void *context, int config_fd,
 	                                 const std::filesystem::path &display_path, uid_t owner_uid)
 	    -> howdy::native::RuntimeConfigLoadResult {
-		(void)context;
 		return howdy::native::LoadRuntimeConfigFromFd(config_fd, display_path, owner_uid);
 	}
 
-	auto EffectiveUidDependency(void *context) -> uid_t {
-		(void)context;
+	auto EffectiveUidDependency([[maybe_unused]] void *context) -> uid_t {
 		return geteuid();
 	}
 
@@ -72,38 +68,41 @@ namespace {
 	// other child of the application inherits it, and a read-only, regular, singly linked file
 	// that only `owner_uid` can write.
 	auto CheckDescriptor(int fd, std::string_view label, const std::filesystem::path &display_path,
-	                     uid_t owner_uid) -> std::optional<std::string> {
+	                     uid_t owner_uid) -> std::expected<void, std::string> {
 		const int descriptor_flags = fcntl(fd, F_GETFD);
 		if (descriptor_flags < 0 || !howdy::native::HasAnyBits(descriptor_flags, FD_CLOEXEC)) {
-			return std::string(label) + " is not close-on-exec: " + display_path.string();
+			return std::unexpected(std::string(label) +
+			                       " is not close-on-exec: " + display_path.string());
 		}
 		if (const auto read_only = howdy::native::CheckReadOnlyFd(fd, display_path, label);
 		    !read_only.ok) {
-			return read_only.error_message;
+			return std::unexpected(read_only.error_message);
 		}
 		if (const auto security =
 		        howdy::native::CheckSecureRootOwnedFd(fd, display_path, label, owner_uid);
 		    !security.ok) {
-			return security.error_message;
+			return std::unexpected(security.error_message);
 		}
-		return std::nullopt;
+		return {};
 	}
 
 	// `paths` and `username` only name the descriptors' sources in messages.
 	auto CheckDescriptorSet(const howdy::pam::RuntimeDescriptorSet &descriptors,
 	                        const howdy::pam::RuntimeSessionPaths &paths, std::string_view username,
-	                        uid_t owner_uid) -> std::optional<std::string> {
+	                        uid_t owner_uid) -> std::expected<void, std::string> {
 		if (!descriptors.config.Valid()) {
-			return std::string("Runtime config descriptor is missing");
+			return std::unexpected(std::string("Runtime config descriptor is missing"));
 		}
 		const bool ready = descriptors.model_state == ModelState::kReady;
 		if (ready != descriptors.model.Valid()) {
-			return std::string(ready ? "Ready user model has no descriptor"
-			                         : "User model descriptor came with a model that is not ready");
+			return std::unexpected(
+			    std::string(ready ? "Ready user model has no descriptor"
+				                  : "User model descriptor came with a model that is not ready"));
 		}
-		if (auto error = CheckDescriptor(descriptors.config.Get(), "Runtime config descriptor",
-		                                 paths.config_path, owner_uid)) {
-			return error;
+		if (auto checked = CheckDescriptor(descriptors.config.Get(), "Runtime config descriptor",
+		                                   paths.config_path, owner_uid);
+		    !checked) {
+			return checked;
 		}
 		if (ready) {
 			const std::filesystem::path models_dir(paths.user_models_dir);
@@ -112,7 +111,7 @@ namespace {
 			    howdy::native::ResolveUserModelPath(models_dir, username).value_or(models_dir),
 			    owner_uid);
 		}
-		return std::nullopt;
+		return {};
 	}
 
 }  // namespace
@@ -140,10 +139,11 @@ namespace howdy::pam {
 		if (!opened_ok) {
 			return {.status = RuntimeSessionLoadStatus::kOpenFailed};
 		}
-		if (auto error = CheckDescriptorSet(opened, paths_, username, trusted_owner_uid_)) {
+		if (auto checked = CheckDescriptorSet(opened, paths_, username, trusted_owner_uid_);
+		    !checked) {
 			return {
 			    .status        = RuntimeSessionLoadStatus::kOpenFailed,
-			    .error_message = std::move(*error),
+			    .error_message = std::move(checked.error()),
 			};
 		}
 

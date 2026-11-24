@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <expected>
-#include <iomanip>
+#include <format>
 #include <iostream>
 #include <optional>
 #include <span>
@@ -201,13 +201,11 @@ namespace howdy::native::howdy_cli_internal {
 		std::cout << "Usage: howdy [OPTIONS] <COMMAND>\n\n";
 		std::cout << "Commands:\n";
 		for (const auto &descriptor : CommandCatalog()) {
-			std::cout << "  " << std::left << std::setw(17) << descriptor.name << descriptor.summary
-			          << '\n';
+			std::cout << std::format("  {:<17}{}\n", descriptor.name, descriptor.summary);
 		}
 		std::cout << "\nOptions:\n";
 		for (const auto &option : GlobalOptionCatalog()) {
-			std::cout << "  " << std::left << std::setw(22) << FormatOptionLabel(option)
-			          << option.summary << '\n';
+			std::cout << std::format("  {:<22}{}\n", FormatOptionLabel(option), option.summary);
 		}
 	}
 
@@ -218,13 +216,11 @@ namespace howdy::native::howdy_cli_internal {
 		for (const auto &option : GlobalOptionCatalog()) {
 			if (option.id == GlobalOptionId::kHelp ||
 			    CommandAcceptsGlobalOption(command, option.id)) {
-				std::cout << "  " << std::left << std::setw(22) << FormatOptionLabel(option)
-				          << option.summary << '\n';
+				std::cout << std::format("  {:<22}{}\n", FormatOptionLabel(option), option.summary);
 			}
 		}
 		for (const auto &option : command.options) {
-			std::cout << "  " << std::left << std::setw(22) << FormatOptionLabel(option)
-			          << option.summary << '\n';
+			std::cout << std::format("  {:<22}{}\n", FormatOptionLabel(option), option.summary);
 		}
 	}
 

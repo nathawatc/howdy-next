@@ -77,8 +77,9 @@ namespace howdy::native {
 		}
 
 		ScopedFileLock config_lock;
-		if (lock && !config_utils_internal::AcquireConfigLock(config_lock, config_path)) {
-			return FailWith(error_message, config_utils_internal::kConfigFileLockFailureMessage);
+		if (lock &&
+		    !config_utils_internal::AcquireConfigLock(config_lock, config_path, error_message)) {
+			return false;
 		}
 
 		if (validate_runtime && !ValidateConfigContent(content, error_message)) {
@@ -133,8 +134,9 @@ namespace howdy::native {
 		}
 
 		ScopedFileLock config_lock;
-		if (lock && !config_utils_internal::AcquireConfigLock(config_lock, config_path)) {
-			return FailWith(error_message, config_utils_internal::kConfigFileLockFailureMessage);
+		if (lock &&
+		    !config_utils_internal::AcquireConfigLock(config_lock, config_path, error_message)) {
+			return false;
 		}
 
 		auto opened =
@@ -162,12 +164,20 @@ namespace howdy::native {
 		}
 		const auto replace_result = config_utils_internal::ReplaceLineValue(
 		    lines, {.section = option->section, .key = key, .value = value});
-		if (replace_result == config_utils_internal::ConfigLineReplaceResult::kDuplicate) {
+		if (replace_result.result == config_utils_internal::ConfigLineReplaceResult::kDuplicate) {
 			return FailWith(error_message, "Config option \"" + key +
 			                                   "\" appears more than once in section [" +
 			                                   std::string(option->section) + "]");
 		}
-		if (replace_result == config_utils_internal::ConfigLineReplaceResult::kNotFound) {
+		if (replace_result.result ==
+		    config_utils_internal::ConfigLineReplaceResult::kAmbiguousContinuation) {
+			return FailWith(error_message,
+			                "Config line " + std::to_string(replace_result.line) +
+			                    " is indented, so updating \"" + key +
+			                    "\" could drop it or change what it belongs to; edit that line, "
+			                    "then retry");
+		}
+		if (replace_result.result == config_utils_internal::ConfigLineReplaceResult::kNotFound) {
 			return FailWith(error_message, "Could not find a \"" + key + "\" config option to set");
 		}
 

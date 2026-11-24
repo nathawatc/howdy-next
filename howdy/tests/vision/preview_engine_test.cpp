@@ -217,6 +217,7 @@ namespace {
 		const auto start                    = std::chrono::steady_clock::time_point{};
 		context.now_results                 = {start, start + std::chrono::milliseconds(37)};
 		auto dependencies                   = MakePreviewDependencies(context);
+		dependencies.clock_context          = &context;
 		dependencies.now                    = Now;
 		auto const                   config = TestVideoConfig();
 		howdy::native::PreviewEngine engine(

@@ -1,5 +1,6 @@
 #include "cli/config/edit_session.hpp"
 
+#include "config/config_limits.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 #include "internal.hpp"
@@ -10,6 +11,7 @@
 #include "support/invoking_user.hpp"
 #include "support/scoped_fd.hpp"
 
+#include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
@@ -41,28 +43,50 @@ namespace howdy::native::config_internal {
 			fs::remove(path, ec);
 		}
 
+		class TempFileGuard {
+		public:
+			explicit TempFileGuard(fs::path path) noexcept
+			    : path_(std::move(path)) {}
+
+			~TempFileGuard() {
+				if (armed_) {
+					RemoveIfExists(path_);
+				}
+			}
+
+			TempFileGuard(const TempFileGuard &)                     = delete;
+			auto operator=(const TempFileGuard &) -> TempFileGuard & = delete;
+			TempFileGuard(TempFileGuard &&)                          = delete;
+			auto operator=(TempFileGuard &&) -> TempFileGuard &      = delete;
+
+			void Dismiss() noexcept {
+				armed_ = false;
+			}
+
+		private:
+			fs::path path_;
+			bool     armed_ = true;
+		};
+
 		auto ConfigEditDependenciesAvailable(const ConfigEditDependencies &dependencies) -> bool {
 			return dependencies.resolve_invoking_identity != nullptr &&
 			       dependencies.select_editor_preference != nullptr &&
 			       dependencies.run_editor != nullptr;
 		}
 
-		auto ResolveInvokingIdentityDependency(void *context)
+		auto ResolveInvokingIdentityDependency([[maybe_unused]] void *context)
 		    -> howdy::native::InvokingIdentityResult {
-			(void)context;
 			return howdy::native::ResolveInvokingIdentity();
 		}
 
-		auto SelectEditorPreferenceDependency(void *context) -> std::string {
-			(void)context;
+		auto SelectEditorPreferenceDependency([[maybe_unused]] void *context) -> std::string {
 			return SelectEditorPreference();
 		}
 
-		auto RunEditorDependency(void *context, const std::string &editor_preference,
-		                         const fs::path                                   &temp_path,
+		auto RunEditorDependency([[maybe_unused]] void *context,
+		                         const std::string &editor_preference, const fs::path &temp_path,
 		                         const std::optional<howdy::native::InvokingUser> &invoking_user)
 		    -> int {
-			(void)context;
 			return RunEditor(editor_preference, temp_path, invoking_user);
 		}
 
@@ -91,45 +115,50 @@ namespace howdy::native::config_internal {
 			return std::nullopt;
 		}
 
-		fs::path const    temp_dir      = fs::temp_directory_path();
+		std::error_code temp_dir_error;
+		fs::path const  temp_dir = fs::temp_directory_path(temp_dir_error);
+		if (temp_dir_error || temp_dir.empty()) {
+			return std::nullopt;
+		}
 		std::string       temp_template = (temp_dir / "howdy-config-XXXXXX").string();
 		std::vector<char> writable(temp_template.begin(), temp_template.end());
 		writable.push_back('\0');
 
-		const int fd = mkostemp(writable.data(), O_CLOEXEC);
-		if (fd < 0) {
+		ScopedFd temp_fd(mkostemp(writable.data(), O_CLOEXEC));
+		if (!temp_fd.Valid()) {
 			return std::nullopt;
 		}
 
-		fs::path temp_path(writable.data());
-		bool     ok = true;
+		fs::path      temp_path(writable.data());
+		TempFileGuard temp_guard(temp_path);
+		bool          ok = true;
 
-		if (fchmod(fd, S_IRUSR | S_IWUSR) != 0) {
+		if (fchmod(temp_fd.Get(), S_IRUSR | S_IWUSR) != 0) {
 			ok = false;
 		}
 
 		if (ok && invoking_user.has_value() &&
-		    fchown(fd, invoking_user->uid, invoking_user->gid) != 0) {
+		    fchown(temp_fd.Get(), invoking_user->uid, invoking_user->gid) != 0) {
 			ok = false;
 		}
 
-		if (ok && !howdy::native::WriteAllToFd(fd, *content)) {
+		if (ok && !howdy::native::WriteAllToFd(temp_fd.Get(), *content)) {
 			ok = false;
 		}
 
-		if (ok && !howdy::native::SyncFd(fd)) {
+		if (ok && !howdy::native::SyncFd(temp_fd.Get())) {
 			ok = false;
 		}
 
-		if (close(fd) != 0) {
+		if (!temp_fd.Close()) {
 			ok = false;
 		}
 
 		if (!ok) {
-			RemoveIfExists(temp_path);
 			return std::nullopt;
 		}
 
+		temp_guard.Dismiss();
 		return TempConfigCopy{
 		    .path             = std::move(temp_path),
 		    .original_content = std::move(*content),
@@ -137,29 +166,37 @@ namespace howdy::native::config_internal {
 	}
 
 	auto ReadTempConfigSnapshot(const fs::path &temp_path, uid_t expected_owner,
-	                            std::string *content) -> bool {
+	                            std::string *content) -> TempConfigReadStatus {
 		if (content == nullptr) {
-			return false;
+			return TempConfigReadStatus::kUntrusted;
 		}
-		const ScopedFd input_fd(open(temp_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+		// O_NONBLOCK: a FIFO left at the user-controlled path must not block before S_ISREG.
+		const ScopedFd input_fd(
+		    open(temp_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
 		if (!input_fd.Valid()) {
-			return false;
+			// Only these say that the path does not name the user's own file; any other failure
+			// may hide valid edits.
+			const bool untrusted =
+			    errno == ENOENT || errno == ENOTDIR || errno == ELOOP || errno == ENXIO;
+			return untrusted ? TempConfigReadStatus::kUntrusted : TempConfigReadStatus::kUnreadable;
 		}
 
 		struct stat edited_stat{};
 		// The invoking user controls the temp path; a hard link to a root-owned file fails here.
-		const bool edited_ok = fstat(input_fd.Get(), &edited_stat) == 0 &&
-		                       S_ISREG(edited_stat.st_mode) && edited_stat.st_uid == expected_owner;
+		if (fstat(input_fd.Get(), &edited_stat) != 0) {
+			return TempConfigReadStatus::kUnreadable;
+		}
+		const bool edited_ok = S_ISREG(edited_stat.st_mode) && edited_stat.st_uid == expected_owner;
 		if (!edited_ok) {
-			return false;
+			return TempConfigReadStatus::kUntrusted;
 		}
 
 		auto snapshot = howdy::native::ReadConfigFromFd(input_fd.Get());
 		if (!snapshot.has_value()) {
-			return false;
+			return TempConfigReadStatus::kUnreadable;
 		}
 		*content = std::move(*snapshot);
-		return true;
+		return TempConfigReadStatus::kOk;
 	}
 
 	auto FileContentMatches(const fs::path &path, const std::string &expected,
@@ -236,11 +273,9 @@ namespace howdy::native::config_internal {
 			return {.status = ConfigEditStatus::kTempCreateFailed, .editor = editor};
 		}
 
-		const auto cleanup = [&] -> void {
-			RemoveIfExists(temp_copy->path);
-		};
-		const auto result_base = [&](ConfigEditStatus status,
-		                             std::string      error = {}) -> ConfigEditResult {
+		TempFileGuard temp_guard(temp_copy->path);
+		const auto    result_base = [&](ConfigEditStatus status,
+		                                std::string      error = {}) -> ConfigEditResult {
 			return ConfigEditResult{
 			    .status    = status,
 			    .error     = std::move(error),
@@ -256,24 +291,32 @@ namespace howdy::native::config_internal {
 		const int status =
 		    dependencies_.run_editor(dependencies_.context, editor, temp_copy->path, invoking_user);
 		if (status == kEditorUnavailableRunResult) {
-			cleanup();
 			return result_base(ConfigEditStatus::kEditorUnavailable);
 		}
 		if (status < 0) {
-			cleanup();
 			return result_base(ConfigEditStatus::kEditorLaunchFailed);
 		}
 
 		if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-			cleanup();
 			return result_base(ConfigEditStatus::kEditorFailed);
 		}
 
+		// The file now holds the user's edits: remove it only on the explicit paths below, so an
+		// exception cannot discard them.
+		temp_guard.Dismiss();
+
 		std::string edited_content;
 		const uid_t temp_owner = invoking_user.has_value() ? invoking_user->uid : geteuid();
-		if (!ReadTempConfigSnapshot(temp_copy->path, temp_owner, &edited_content)) {
-			cleanup();
-			return result_base(ConfigEditStatus::kReadFailed);
+		switch (ReadTempConfigSnapshot(temp_copy->path, temp_owner, &edited_content)) {
+			case TempConfigReadStatus::kOk:
+				break;
+			case TempConfigReadStatus::kUnreadable:
+				return result_base(ConfigEditStatus::kEditedConfigUnreadable,
+				                   "Edited config could not be read or exceeds " +
+				                       std::to_string(kMaxConfigFileSize) + " bytes");
+			case TempConfigReadStatus::kUntrusted:
+				RemoveIfExists(temp_copy->path);
+				return result_base(ConfigEditStatus::kReadFailed);
 		}
 
 		std::string validation_error;
@@ -282,7 +325,7 @@ namespace howdy::native::config_internal {
 		}
 
 		if (FileContentMatches(config_path, edited_content, dependencies_.validation_root)) {
-			cleanup();
+			RemoveIfExists(temp_copy->path);
 			return result_base(ConfigEditStatus::kNoChanges);
 		}
 
@@ -297,7 +340,7 @@ namespace howdy::native::config_internal {
 			return result_base(result_status, std::move(install_error));
 		}
 
-		cleanup();
+		RemoveIfExists(temp_copy->path);
 		return result_base(ConfigEditStatus::kOk);
 	}
 

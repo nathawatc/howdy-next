@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <exception>
+#include <format>
 #include <optional>
 #include <string>
 #include <utility>
@@ -16,7 +17,6 @@
 
 #include <opencv2/core.hpp>
 #include <opencv2/core/mat.hpp>
-#include <opencv2/core/operations.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -103,7 +103,7 @@ namespace howdy::native::test_cli_internal {
 	                                  const TestPreviewFrameStats             &stats) -> bool {
 		const auto &gray_frame = frame_result.gray_frame;
 		cv::Mat     overlay;
-		cv::cvtColor(gray_frame.clone(), overlay, cv::COLOR_GRAY2BGR);
+		cv::cvtColor(gray_frame, overlay, cv::COLOR_GRAY2BGR);
 		const int height = gray_frame.rows;
 		const int width  = gray_frame.cols;
 
@@ -154,12 +154,12 @@ namespace howdy::native::test_cli_internal {
 					const auto &face_match = face_result.match;
 					std::string face_text;
 					if (!face_match.accepted) {
-						face_text = "no match (" + cv::format("%.3f", face_match.score) + ")";
+						face_text = std::format("no match ({:.3f})", face_match.score);
 					} else {
 						color             = cv::Scalar(0, 230, 0);
 						const auto &model = models_.at(static_cast<std::size_t>(face_match.index));
 						face_text =
-						    model.label + " (score: " + cv::format("%.3f", face_match.score) + ")";
+						    std::format("{} (score: {:.3f})", model.label, face_match.score);
 					}
 
 					cv::putText(overlay, face_text, cv::Point(x, std::max(0, y - 8)),
@@ -167,7 +167,7 @@ namespace howdy::native::test_cli_internal {
 				}
 
 				cv::rectangle(overlay, cv::Rect(x, y, w, h), color, 2);
-				cv::putText(overlay, cv::format("%.2f", face.confidence),
+				cv::putText(overlay, std::format("{:.2f}", face.confidence),
 				            cv::Point(x, std::min(height - 4, y + h + 12)),
 				            cv::FONT_HERSHEY_SIMPLEX, 0.3, color, 0, cv::LINE_AA);
 				for (const auto &point : face.landmarks) {
@@ -222,10 +222,9 @@ namespace howdy::native::test_cli_internal {
 
 	// OpenCV MouseCallback requires int, int, int, int, void *.
 	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-	void TestPreviewRenderer::MouseCallback(int event, int x, int y, int flags, void *userdata) {
-		(void)x;
-		(void)y;
-		(void)flags;
+	void TestPreviewRenderer::MouseCallback(int event, [[maybe_unused]] int x,
+	                                        [[maybe_unused]] int y, [[maybe_unused]] int flags,
+	                                        void *userdata) {
 		auto *renderer = static_cast<TestPreviewRenderer *>(userdata);
 		if (renderer != nullptr && event == cv::EVENT_LBUTTONDOWN) {
 			renderer->slow_mode_ = !renderer->slow_mode_;

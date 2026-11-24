@@ -369,5 +369,29 @@ auto main() -> int {
 	ok &= ExpectNear(in_memory.GetFloat("video", "dark_threshold", 0.0F), 42.0F, 0.0001F,
 	                 "ConfigReader(content) parses dark_threshold value");
 
+	const howdy::native::ConfigReader leading_zero_decimal("[video]\ntimeout = 010\n");
+	ok &= Expect(!howdy::native::ValidateRuntimeConfig(leading_zero_decimal).has_value(),
+	             "leading-zero integer passes validation as decimal");
+	ok &= Expect(leading_zero_decimal.GetInt("video", "timeout", 4) == 10,
+	             "ConfigReader::GetInt parses leading-zero integer as decimal 10, not octal 8");
+	ok &= Expect(howdy::native::ReadRuntimeInt(leading_zero_decimal, OptionId::kVideoTimeout) == 10,
+	             "ReadRuntimeInt loads leading-zero integer as decimal 10");
+
+	const howdy::native::ConfigReader zero_eight("[video]\ntimeout = 08\n");
+	ok &= Expect(!howdy::native::ValidateRuntimeConfig(zero_eight).has_value(),
+	             "08 integer passes validation as decimal 8");
+	ok &= Expect(zero_eight.GetInt("video", "timeout", 4) == 8,
+	             "ConfigReader::GetInt parses 08 as decimal 8");
+
+	const howdy::native::ConfigReader hex_int("[video]\ntimeout = 0x10\n");
+	ok &= Expect(howdy::native::ValidateRuntimeConfig(hex_int).has_value(),
+	             "hex integer literal fails validation");
+	ok &= Expect(hex_int.GetInt("video", "timeout", 4) == 4,
+	             "ConfigReader::GetInt rejects hex literal and returns fallback");
+
+	const howdy::native::ConfigReader double_sign_float("[video]\nclahe_clip_limit = +-0.0\n");
+	ok &= Expect(howdy::native::ValidateRuntimeConfig(double_sign_float).has_value(),
+	             "+-0.0 float fails strict validation");
+
 	return ok ? 0 : 1;
 }

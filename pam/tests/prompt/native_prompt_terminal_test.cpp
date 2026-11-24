@@ -12,8 +12,10 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <fcntl.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -29,7 +31,89 @@ namespace {
 	constexpr auto FailureBit(bool failed, unsigned shift) -> unsigned {
 		return failed ? (1U << shift) : 0U;
 	}
+
+	constexpr int kBackgroundSetupFailure  = 2;
+	constexpr int kBackgroundPromptFailure = 3;
+
+	// Signal handlers can only report through a global.
+	// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+	volatile sig_atomic_t background_signals = 0;
+
+	void CountBackgroundSignal(int /*signal*/) {
+		background_signals = background_signals + 1;
+	}
+
+	// Runs a prompt from a background process group of the terminal's session. Never returns.
+	[[noreturn]] void RunBackgroundPrompt(const char *path) {
+		struct sigaction action{};
+		action.sa_handler = CountBackgroundSignal;  // no SA_RESTART
+		std::array<ScopedFd, 2> abort_pipe;
+		ScopedFd                tty_fd(open(path, O_RDWR | O_CLOEXEC | O_NOCTTY | O_NONBLOCK));
+		if (setpgid(0, 0) != 0 || sigemptyset(&action.sa_mask) != 0 ||
+		    sigaction(SIGTTOU, &action, nullptr) != 0 || signal(SIGALRM, SIG_DFL) == SIG_ERR ||
+		    !tty_fd.Valid() || !OpenPipe(&abort_pipe) || tcgetpgrp(tty_fd.Get()) == getpgrp()) {
+			_exit(kBackgroundSetupFailure);
+		}
+		auto const               conversation = CreateConversation({
+		    .tty_fd         = std::move(tty_fd),
+		    .abort_read_fd  = std::move(abort_pipe.at(0)),
+		    .abort_write_fd = std::move(abort_pipe.at(1)),
+		});
+		const struct pam_message message{.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "P: "};
+		char                    *response = nullptr;
+		alarm(5);  // a spinning prompt dies here instead of hanging the suite
+		const int result = NativePromptConversationTestAccess::PromptInput(*conversation, message,
+		                                                                   &response, true);
+		_exit(result == PAM_CONV_ERR && response == nullptr && background_signals == 1
+		          ? EXIT_SUCCESS
+				  : kBackgroundPromptFailure);
+	}
+
+	// Owns the terminal as session leader so the prompt child's group is background but not
+	// orphaned (an orphaned group gets EIO instead of SIGTTOU). Never returns.
+	[[noreturn]] void RunBackgroundSession(const char *path) {
+		if (setsid() < 0 || open(path, O_RDWR | O_CLOEXEC) < 0) {
+			_exit(kBackgroundSetupFailure);
+		}
+		const pid_t prompt_child = fork();
+		if (prompt_child == 0) {
+			RunBackgroundPrompt(path);
+		}
+		int status = 0;
+		if (prompt_child < 0 || howdy::native::RetryOnEintr([&] -> pid_t {
+			                        return waitpid(prompt_child, &status, 0);
+		                        }) != prompt_child) {
+			_exit(kBackgroundSetupFailure);
+		}
+		_exit(WIFEXITED(status) ? WEXITSTATUS(status) : kBackgroundPromptFailure);
+	}
 }  // namespace
+
+auto ExpectBackgroundTerminalSetupDoesNotSpin() -> bool {
+	ScopedFd master_fd;
+	ScopedFd slave_fd;
+	if (!Expect(OpenPtyPair(&master_fd, &slave_fd), "background prompt test opens pty")) {
+		return false;
+	}
+	char const *path = ptsname(master_fd.Get());
+	if (!Expect(path != nullptr, "background prompt test resolves pty")) {
+		return false;
+	}
+	const pid_t session = fork();
+	if (session == 0) {
+		RunBackgroundSession(path);
+	}
+	if (!Expect(session > 0, "background prompt test forks session")) {
+		return false;
+	}
+	int         status = 0;
+	const pid_t waited = howdy::native::RetryOnEintr([&] -> pid_t {
+		return waitpid(session, &status, 0);
+	});
+	return Expect(waited == session && WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS,
+	              "background prompt fails closed after one SIGTTOU instead of spinning, status=" +
+	                  std::to_string(status));
+}
 
 auto ExpectNativeTerminalEligibility() -> bool {
 	ScopedFd                first_master;

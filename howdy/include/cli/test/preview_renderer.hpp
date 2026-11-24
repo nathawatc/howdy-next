@@ -30,12 +30,17 @@ namespace howdy::native::test_cli_internal {
 		TestPreviewRenderer(howdy::native::VideoConfig                    config,
 		                    std::vector<howdy::native::EncodingModelInfo> models,
 		                    TestPreviewRendererDependencies               dependencies = {});
+		~TestPreviewRenderer() noexcept                                      = default;
+		TestPreviewRenderer(const TestPreviewRenderer &)                     = delete;
+		auto operator=(const TestPreviewRenderer &) -> TestPreviewRenderer & = delete;
+		TestPreviewRenderer(TestPreviewRenderer &&)                          = delete;
+		auto operator=(TestPreviewRenderer &&) -> TestPreviewRenderer &      = delete;
 
 		void Initialize();
 		void Shutdown();
 
-		auto Present(const howdy::native::PreviewFrameResult &frame_result,
-		             const TestPreviewFrameStats             &stats) -> bool;
+		[[nodiscard]] auto Present(const howdy::native::PreviewFrameResult &frame_result,
+		                           const TestPreviewFrameStats             &stats) -> bool;
 
 		[[nodiscard]] auto SlowMode() const -> bool;
 

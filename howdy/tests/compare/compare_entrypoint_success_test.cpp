@@ -150,6 +150,14 @@ namespace {
 		};
 	}
 
+	auto UnsupportedArchitectureSeccomp(void *raw_context) -> howdy::native::CompareSeccompResult {
+		++static_cast<FixtureContext *>(raw_context)->seccomp_calls;
+		return {
+		    .status       = howdy::native::CompareSeccompStatus::kUnsupportedArchitecture,
+		    .error_number = 0,
+		};
+	}
+
 	auto FailedSeccomp(void *raw_context) -> howdy::native::CompareSeccompResult {
 		++static_cast<FixtureContext *>(raw_context)->seccomp_calls;
 		return {
@@ -325,6 +333,23 @@ auto main() -> int {
 	        unsupported_error.str().contains("Seccomp filter sandboxing is not supported"),
 	    "best-effort seccomp logs warning and continues authentication on unsupported kernel");
 
+	FixtureContext unsupported_arch;
+	auto           unsupported_arch_dependencies = DependenciesFor(unsupported_arch);
+	unsupported_arch_dependencies.apply_seccomp  = UnsupportedArchitectureSeccomp;
+	const std::ostringstream unsupported_arch_error;
+	const std::ostringstream unsupported_arch_report;
+	{
+		const howdy::test::StreamRedirect redirect(std::cout, unsupported_arch_report.rdbuf(),
+		                                           std::cerr, unsupported_arch_error.rdbuf());
+		result = run(geteuid(), unsupported_arch_dependencies);
+	}
+	ok &= Expect(result == static_cast<int>(howdy::native::CompareExit::kSuccess) &&
+	                 unsupported_arch.seccomp_calls == 1 &&
+	                 unsupported_arch_error.str().contains("not implemented for this build") &&
+	                 !unsupported_arch_error.str().contains("Function not implemented"),
+	             "unsupported-architecture build warns that the build, not the kernel, lacks a "
+	             "filter and continues");
+
 	FixtureContext failed;
 	auto           failed_dependencies = DependenciesFor(failed);
 	failed_dependencies.apply_seccomp  = FailedSeccomp;
@@ -334,8 +359,9 @@ auto main() -> int {
 		result = run(geteuid(), failed_dependencies);
 	}
 	ok &= Expect(result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
-	                 failed.seccomp_calls == 1 && failed.read_calls == 0,
-	             "seccomp installation failure aborts before reading any frame");
+	                 failed.seccomp_calls == 1 && failed.warm_calls.load() == 0 &&
+	                 failed.read_calls == 0,
+	             "seccomp installation failure aborts before warm-up or reading any frame");
 
 	FixtureContext invalid;
 	auto           invalid_dependencies = DependenciesFor(invalid);
@@ -346,9 +372,10 @@ auto main() -> int {
 		result = run(geteuid(), invalid_dependencies);
 	}
 	ok &= Expect(result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
-	                 invalid.seccomp_calls == 1 && invalid.read_calls == 0 &&
+	                 invalid.seccomp_calls == 1 && invalid.warm_calls.load() == 0 &&
+	                 invalid.read_calls == 0 &&
 	                 invalid_error.str().contains("Invalid compare seccomp dependencies"),
-	             "seccomp invalid dependencies abort before reading any frame");
+	             "seccomp invalid dependencies abort before warm-up or reading any frame");
 
 	// Each fail-closed case must abort before any capture read.
 	const auto expect_abort = [&](const char *label, uid_t owner, auto configure,
@@ -376,11 +403,17 @@ auto main() -> int {
 			};
 		};
 	};
+	const auto missing_seccomp =
+	    [](howdy::native::CompareEntrypointDependencies &case_dependencies) -> void {
+		case_dependencies.apply_seccomp = nullptr;
+	};
 	const auto config_file = root / "config.ini";
 	const auto model_file  = root / "models" / "fixture-user.dat";
 
 	ok &= expect_abort("failing privilege drop aborts before reading any frame", geteuid(),
 	                   fail_drop, "Failed to drop compare privileges: injected");
+	ok &= expect_abort("missing injected seccomp hook aborts instead of running unsandboxed",
+	                   geteuid(), missing_seccomp, "Invalid compare seccomp dependencies");
 	ok &= expect_abort("untrusted config owner aborts", geteuid() + 1, keep,
 	                   "Config file must be owned by UID");
 	ok &= Expect(chmod(config_file.c_str(), 0666) == 0, "make config world-writable");

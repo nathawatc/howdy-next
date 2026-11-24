@@ -48,9 +48,10 @@ namespace howdy::native {
 		return "path";
 	}
 
-	inline auto CheckSecurePathStat(const struct stat &stat, SecurePathKind kind,
-	                                const std::filesystem::path &path, const std::string_view label,
-	                                const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid())
+	[[nodiscard]] inline auto
+	CheckSecurePathStat(const struct stat &stat, SecurePathKind kind,
+	                    const std::filesystem::path &path, const std::string_view label,
+	                    const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid())
 	    -> SecurePathCheckResult {
 		const bool type_ok =
 		    kind == SecurePathKind::kRegularFile ? S_ISREG(stat.st_mode) : S_ISDIR(stat.st_mode);
@@ -101,9 +102,10 @@ namespace howdy::native {
 		return SecurePathCheckResult{.ok = true, .error_message = {}, .error_code = 0};
 	}
 
-	inline auto CheckSecureFd(int fd, SecurePathKind kind, const std::filesystem::path &path,
-	                          const std::string_view     label,
-	                          const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid())
+	[[nodiscard]] inline auto
+	CheckSecureFd(int fd, SecurePathKind kind, const std::filesystem::path &path,
+	              const std::string_view     label,
+	              const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid())
 	    -> SecurePathCheckResult {
 		struct stat stat{};
 		if (fd < 0 || fstat(fd, &stat) != 0) {
@@ -118,7 +120,7 @@ namespace howdy::native {
 		return CheckSecurePathStat(stat, kind, path, label, owner_uid);
 	}
 
-	inline auto
+	[[nodiscard]] inline auto
 	CheckSecureRootOwnedFd(int fd, const std::filesystem::path &path, const std::string_view label,
 	                       const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid())
 	    -> SecurePathCheckResult {
@@ -127,8 +129,9 @@ namespace howdy::native {
 
 	// A descriptor received from another process carries no path to walk; its open flags are the
 	// only sign of whether it can write or is an O_PATH handle that cannot be read.
-	inline auto CheckReadOnlyFd(int fd, const std::filesystem::path &path,
-	                            const std::string_view label) -> SecurePathCheckResult {
+	[[nodiscard]] inline auto CheckReadOnlyFd(int fd, const std::filesystem::path &path,
+	                                          const std::string_view label)
+	    -> SecurePathCheckResult {
 		const int flags = fd < 0 ? -1 : fcntl(fd, F_GETFL);
 		if (flags < 0) {
 			const int error_code = fd < 0 ? EBADF : errno;
@@ -150,10 +153,9 @@ namespace howdy::native {
 		return SecurePathCheckResult{.ok = true, .error_message = {}, .error_code = 0};
 	}
 
-	inline auto CheckSecurePath(const std::filesystem::path &path, SecurePathKind kind,
-	                            const std::string_view     label,
-	                            const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid())
-	    -> SecurePathCheckResult {
+	[[nodiscard]] inline auto CheckSecurePath(
+	    const std::filesystem::path &path, SecurePathKind kind, const std::string_view label,
+	    const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid()) -> SecurePathCheckResult {
 		struct stat stat{};
 		if (lstat(path.c_str(), &stat) != 0) {
 			const int error_code = errno;
@@ -167,14 +169,14 @@ namespace howdy::native {
 		return CheckSecurePathStat(stat, kind, path, label, owner_uid);
 	}
 
-	inline auto
+	[[nodiscard]] inline auto
 	CheckSecureRootOwnedFile(const std::filesystem::path &path, const std::string_view label,
 	                         const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid())
 	    -> SecurePathCheckResult {
 		return CheckSecurePath(path, SecurePathKind::kRegularFile, label, owner_uid);
 	}
 
-	inline auto
+	[[nodiscard]] inline auto
 	CheckSecureRootOwnedDirectory(const std::filesystem::path &path, const std::string_view label,
 	                              const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid())
 	    -> SecurePathCheckResult {
@@ -203,7 +205,7 @@ namespace howdy::native {
 
 	}  // namespace file_security_internal
 
-	inline auto CheckSecureRootOwnedDirectoryTree(
+	[[nodiscard]] inline auto CheckSecureRootOwnedDirectoryTree(
 	    const std::filesystem::path &path, const std::string_view label,
 	    const std::optional<uid_t>                    owner_uid       = DefaultSecureOwnerUid(),
 	    const file_security_internal::ValidationRoot &validation_root = {})
@@ -400,7 +402,7 @@ namespace howdy::native {
 
 	}  // namespace file_security_internal
 
-	inline auto
+	[[nodiscard]] inline auto
 	CreateSecureDirectoryTree(const std::filesystem::path &path, const std::string_view label,
 	                          const mode_t leaf_mode, const mode_t ancestor_mode = 0700,
 	                          const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid(),
@@ -487,7 +489,7 @@ namespace howdy::native {
 
 	}  // namespace file_security_internal
 
-	inline auto CheckSecureRootOwnedFileWithDirectory(
+	[[nodiscard]] inline auto CheckSecureRootOwnedFileWithDirectory(
 	    const std::filesystem::path &path, const SecurePathLabels labels,
 	    const std::optional<uid_t>                    owner_uid       = DefaultSecureOwnerUid(),
 	    const file_security_internal::ValidationRoot &validation_root = {})
@@ -501,7 +503,7 @@ namespace howdy::native {
 		return CheckSecureRootOwnedFile(path, labels.file, owner_uid);
 	}
 
-	inline auto CheckSecureRootOwnedFdWithDirectory(
+	[[nodiscard]] inline auto CheckSecureRootOwnedFdWithDirectory(
 	    int fd, const std::filesystem::path &path, const SecurePathLabels labels,
 	    const std::optional<uid_t>                    owner_uid       = DefaultSecureOwnerUid(),
 	    const file_security_internal::ValidationRoot &validation_root = {})

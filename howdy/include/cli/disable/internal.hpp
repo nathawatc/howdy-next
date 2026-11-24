@@ -25,8 +25,8 @@ namespace howdy::native::disable_internal {
 		UpdateConfigValueFn update_config_value = nullptr;
 	};
 
-	auto DisableMainWithDependencies(const CommandInvocation   &invocation,
-	                                 const DisableDependencies &dependencies) -> int;
+	[[nodiscard]] auto DisableMainWithDependencies(const CommandInvocation   &invocation,
+	                                               const DisableDependencies &dependencies) -> int;
 
 	auto DisableMainWithValidationRoot(const CommandInvocation               &invocation,
 	                                   file_security_internal::ValidationRoot validation_root)

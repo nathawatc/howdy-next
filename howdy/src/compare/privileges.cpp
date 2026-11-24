@@ -22,25 +22,23 @@ namespace howdy::native::compare_privileges_internal {
 			};
 		}
 
-		ProcessIdentity identity;
-		if (!ReadProcessIdentity(dependencies, &identity)) {
+		const auto identity = ReadProcessIdentity(dependencies);
+		if (!identity.has_value()) {
 			return FatalVerificationFailure(dependencies);
 		}
 
-		if (identity.effective_uid != 0) {
+		if (identity->effective_uid != 0) {
 			// Non-root compare preserves caller supplementary groups for PAM compatibility.
 			// Filesystem and device access therefore remains limited by caller group membership.
-			return HandleUnprivilegedCaller(dependencies, identity.real_uid, identity.effective_uid,
-			                                identity.saved_uid, identity.real_gid,
-			                                identity.effective_gid, identity.saved_gid);
+			return HandleUnprivilegedCaller(dependencies, *identity);
 		}
 
 		const auto nobody = LookupNobody(dependencies);
-		if (nobody.error.status != ComparePrivilegeStatus::kOk) {
-			return nobody.error;
+		if (!nobody.has_value()) {
+			return nobody.error();
 		}
-		const uid_t target_uid = nobody.uid;
-		const gid_t target_gid = nobody.gid;
+		const uid_t target_uid = nobody->uid;
+		const gid_t target_gid = nobody->gid;
 
 		auto capability_result = PrepareCapabilityDrop(dependencies);
 		if (!ComparePrivilegeSucceeded(capability_result)) {

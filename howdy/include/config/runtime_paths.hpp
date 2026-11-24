@@ -16,9 +16,9 @@ namespace howdy::native {
 	    kLogPathEnvVar,
 	};
 
-	auto ResolveConfigPath() -> std::filesystem::path;
-	auto ResolveModelsDir() -> std::filesystem::path;
-	auto ResolveUserModelsDir() -> std::filesystem::path;
-	auto ResolveLogPath() -> std::filesystem::path;
+	[[nodiscard]] auto ResolveConfigPath() -> std::filesystem::path;
+	[[nodiscard]] auto ResolveModelsDir() -> std::filesystem::path;
+	[[nodiscard]] auto ResolveUserModelsDir() -> std::filesystem::path;
+	[[nodiscard]] auto ResolveLogPath() -> std::filesystem::path;
 
 }  // namespace howdy::native

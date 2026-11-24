@@ -17,14 +17,14 @@ namespace howdy::pam::native_prompt_input {
 		auto operator=(const SensitiveBuffer &) -> SensitiveBuffer & = delete;
 		SensitiveBuffer(SensitiveBuffer &&)                          = delete;
 		auto operator=(SensitiveBuffer &&) -> SensitiveBuffer &      = delete;
-		~SensitiveBuffer();
+		~SensitiveBuffer() noexcept;
 
-		[[nodiscard]] auto Full() const -> bool;
+		[[nodiscard]] auto Full() const noexcept -> bool;
 		void               PushBack(char value);
 		// Removes one character: with `utf8`, its continuation bytes too.
-		void               PopCharacter(bool utf8);
-		[[nodiscard]] auto Data() const -> const char *;
-		[[nodiscard]] auto Size() const -> std::size_t;
+		void               PopCharacter(bool utf8) noexcept;
+		[[nodiscard]] auto Data() const noexcept -> const char *;
+		[[nodiscard]] auto Size() const noexcept -> std::size_t;
 
 	private:
 		std::array<char, kMaxPromptResponseBytes> data_{};
@@ -39,7 +39,7 @@ namespace howdy::pam::native_prompt_input {
 
 	// Takes bytes of a line the kernel already edited (canonical mode); `terminal` supplies the
 	// user's signal characters, which arrive as data because the prompt turns ISIG off.
-	__attribute__((visibility("hidden"))) auto
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	ProcessCharacter(char ch, const struct termios &terminal, SensitiveBuffer &password,
 	                 bool &response_too_long) -> CharacterResult;
 

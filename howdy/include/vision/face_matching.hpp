@@ -6,7 +6,9 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <numeric>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <utility>
 #include <vector>
@@ -59,11 +61,8 @@ namespace howdy::native {
 			if (candidate.size() != probe.size()) {
 				return std::nullopt;
 			}
-			float dot      = 0.0F;
-			auto  probe_it = probe.begin();
-			for (const float value : candidate) {
-				dot += value * *probe_it++;
-			}
+			const float dot =
+			    std::inner_product(candidate.begin(), candidate.end(), probe.begin(), 0.0F);
 			if (!std::isfinite(dot)) {
 				return std::nullopt;
 			}
@@ -79,19 +78,17 @@ namespace howdy::native {
 			if (!probe_norm.has_value() || cosine_norms.size() != known.size()) {
 				return {.score = -1.0F};
 			}
-			FaceMatch   match{.score = -1.0F};
-			std::size_t index          = 0;
-			auto        cosine_norm_it = cosine_norms.begin();
-			for (const auto &candidate : known) {
+			FaceMatch match{.score = -1.0F};
+			for (const auto &[index, candidate, norm] :
+			     std::views::zip(std::views::iota(std::size_t{0}), known, cosine_norms)) {
 				std::optional<float> score;
-				if (const auto norm = *cosine_norm_it++; norm.has_value()) {
+				if (norm.has_value()) {
 					score = PreparedCosineScore(candidate, probe, *norm, *probe_norm);
 				}
 				if (score.has_value() && (match.index < 0 || *score > match.score)) {
 					match.index = static_cast<int>(index);
 					match.score = *score;
 				}
-				++index;
 			}
 			match.accepted = match.index >= 0 && match.score >= threshold;
 			return match;
@@ -104,13 +101,16 @@ namespace howdy::native {
 			if (candidate.size() != probe.size()) {
 				return std::nullopt;
 			}
-			float sum      = 0.0F;
-			auto  probe_it = probe.cbegin();
-			for (const float candidate_value : candidate) {
-				const float delta = candidate_value - *probe_it++;
+			float sum = 0.0F;
+			for (const auto [candidate_value, probe_value] : std::views::zip(candidate, probe)) {
+				const float delta = candidate_value - probe_value;
 				sum += delta * delta;
 			}
-			return std::sqrt(sum);
+			if (!std::isfinite(sum)) {
+				return std::nullopt;
+			}
+			const float distance = std::sqrt(sum);
+			return std::isfinite(distance) ? std::optional<float>{distance} : std::nullopt;
 		}
 
 		[[nodiscard]] inline auto DistanceMatch(std::span<const std::vector<float>> known,
@@ -124,18 +124,16 @@ namespace howdy::native {
 			    })) {
 				return match;
 			}
-			std::size_t index        = 0;
-			auto        validated_it = validated.begin();
-			for (const auto &candidate : known) {
+			for (const auto &[index, candidate, is_valid] :
+			     std::views::zip(std::views::iota(std::size_t{0}), known, validated)) {
 				std::optional<float> score;
-				if (*validated_it++ != 0U) {
+				if (is_valid != 0U) {
 					score = DistanceScore(candidate, probe);
 				}
 				if (score.has_value() && *score < match.score) {
 					match.index = static_cast<int>(index);
 					match.score = *score;
 				}
-				++index;
 			}
 			match.accepted = match.index >= 0 && match.score <= threshold;
 			return match;

@@ -6,6 +6,7 @@
 #include "model_assets/model_file.hpp"
 #include "model_assets/opencv_model_manifest.hpp"
 #include "support/atomic_files.hpp"
+#include "support/eintr.hpp"
 #include "support/error_message.hpp"
 #include "support/fd_io.hpp"
 #include "support/file_security.hpp"
@@ -18,12 +19,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
-#include <iomanip>
+#include <format>
 #include <iostream>
+#include <iterator>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <span>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -79,6 +81,46 @@ namespace {
 		return static_cast<uid_t>(0);
 	}
 
+	struct EvpMdCtxDeleter {
+		void operator()(EVP_MD_CTX *ctx) const noexcept {
+			EVP_MD_CTX_free(ctx);
+		}
+	};
+
+	using ScopedEvpMdCtx = std::unique_ptr<EVP_MD_CTX, EvpMdCtxDeleter>;
+
+	struct CurlEasyDeleter {
+		void operator()(CURL *curl) const noexcept {
+			curl_easy_cleanup(curl);
+		}
+	};
+
+	using ScopedCurlEasy = std::unique_ptr<CURL, CurlEasyDeleter>;
+
+	class CurlGlobalGuard {
+	public:
+		CurlGlobalGuard() noexcept
+		    : ok_(curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK) {}
+
+		~CurlGlobalGuard() {
+			if (ok_) {
+				curl_global_cleanup();
+			}
+		}
+
+		CurlGlobalGuard(const CurlGlobalGuard &)                     = delete;
+		auto operator=(const CurlGlobalGuard &) -> CurlGlobalGuard & = delete;
+		CurlGlobalGuard(CurlGlobalGuard &&)                          = delete;
+		auto operator=(CurlGlobalGuard &&) -> CurlGlobalGuard &      = delete;
+
+		[[nodiscard]] auto Ok() const noexcept -> bool {
+			return ok_;
+		}
+
+	private:
+		bool ok_ = false;
+	};
+
 }  // namespace
 
 auto howdy::native::download_models_internal::ConfigureTransferPolicy(
@@ -116,49 +158,41 @@ auto howdy::native::download_models_internal::Sha256FileDescriptor(const int fd)
 		return std::nullopt;
 	}
 
-	EVP_MD_CTX *context = EVP_MD_CTX_new();
-	if (context == nullptr) {
-		return std::nullopt;
-	}
-	if (EVP_DigestInit_ex(context, EVP_sha256(), nullptr) != 1) {
-		EVP_MD_CTX_free(context);
+	const ScopedEvpMdCtx context(EVP_MD_CTX_new());
+	if (!context || EVP_DigestInit_ex(context.get(), EVP_sha256(), nullptr) != 1) {
 		return std::nullopt;
 	}
 
 	std::array<unsigned char, 8192> buffer{};
 	while (true) {
-		const auto bytes_read = read(fd, buffer.data(), buffer.size());
+		const auto bytes_read = howdy::native::RetryOnEintr([&] -> ssize_t {
+			return read(fd, buffer.data(), buffer.size());
+		});
 		if (bytes_read == 0) {
 			break;
 		}
 		if (bytes_read < 0) {
-			if (errno == EINTR) {
-				continue;
-			}
-			EVP_MD_CTX_free(context);
 			return std::nullopt;
 		}
-		if (EVP_DigestUpdate(context, buffer.data(), static_cast<std::size_t>(bytes_read)) != 1) {
-			EVP_MD_CTX_free(context);
+		if (EVP_DigestUpdate(context.get(), buffer.data(), static_cast<std::size_t>(bytes_read)) !=
+		    1) {
 			return std::nullopt;
 		}
 	}
 
 	std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
 	unsigned int                               digest_length = 0;
-	const bool                                 digest_ok =
-	    EVP_DigestFinal_ex(context, digest.data(), &digest_length) == 1 && digest_length == 32U;
-	EVP_MD_CTX_free(context);
-	if (!digest_ok) {
+	if (EVP_DigestFinal_ex(context.get(), digest.data(), &digest_length) != 1 ||
+	    digest_length != 32U) {
 		return std::nullopt;
 	}
 
-	std::ostringstream output;
-	output << std::hex << std::setfill('0');
+	std::string hex;
+	hex.reserve(static_cast<std::size_t>(digest_length) * 2);
 	for (const unsigned char byte : std::span(digest).first(digest_length)) {
-		output << std::setw(2) << static_cast<unsigned int>(byte);
+		std::format_to(std::back_inserter(hex), "{:02x}", byte);
 	}
-	return output.str();
+	return hex;
 }
 
 auto howdy::native::download_models_internal::DownloadModelsWriteCallback(void  *contents,
@@ -179,7 +213,7 @@ auto howdy::native::download_models_internal::DownloadModelsWriteCallback(void  
 		return 0;
 	}
 
-	if (!howdy::native::WriteAllToFd(context->staged->fd.Get(), data, total)) {
+	if (!howdy::native::WriteAllToFd(context->staged->Fd().Get(), data, total)) {
 		return 0;
 	}
 	context->bytes_written += total;
@@ -206,32 +240,30 @@ namespace {
 	}
 
 	auto DownloadFile(const std::string &url, StagedDownloadFile &staged) -> bool {
-		CURL *curl = curl_easy_init();
-		if (curl == nullptr) {
+		const ScopedCurlEasy curl(curl_easy_init());
+		if (!curl) {
 			return false;
 		}
 
-		if (curl_easy_setopt(curl, CURLOPT_URL, url.c_str()) != CURLE_OK ||
+		if (curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str()) != CURLE_OK ||
 		    !howdy::native::download_models_internal::ConfigureTransferPolicy(
-		        curl, kCurlSetoptOperations)) {
-			curl_easy_cleanup(curl);
+		        curl.get(), kCurlSetoptOperations)) {
 			return false;
 		}
 		howdy::native::download_models_internal::DownloadWriteContext write_context{
 		    .staged = &staged,
 		};
 		if (curl_easy_setopt(
-		        curl, CURLOPT_WRITEFUNCTION,
+		        curl.get(), CURLOPT_WRITEFUNCTION,
 		        howdy::native::download_models_internal::DownloadModelsWriteCallback) != CURLE_OK ||
-		    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &write_context) != CURLE_OK) {
-			curl_easy_cleanup(curl);
+		    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &write_context) != CURLE_OK) {
 			return false;
 		}
-		const CURLcode result = curl_easy_perform(curl);
+		const CURLcode result = curl_easy_perform(curl.get());
 
 		CurlLong       status_code = 0;
-		const CURLcode info_result = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-		curl_easy_cleanup(curl);
+		const CURLcode info_result =
+		    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
 		return result == CURLE_OK && info_result == CURLE_OK && status_code >= 200 &&
 		       status_code < 400;
 	}
@@ -285,30 +317,26 @@ namespace {
 			return false;
 		}
 		if (!dependencies.download_file(std::string(model.url), *staged)) {
-			howdy::native::CleanupStagedFile(*staged);
 			std::cout << "Failed to download model: " << model.url << "\n";
 			return false;
 		}
 
 		struct stat staged_stat{};
-		if (dependencies.fstat_file(staged->fd.Get(), &staged_stat) != 0) {
+		if (dependencies.fstat_file(staged->Fd().Get(), &staged_stat) != 0) {
 			const int  error_number = errno;
-			const auto staged_path  = staged->path;
-			howdy::native::CleanupStagedFile(*staged);
+			const auto staged_path  = staged->Path();
 			std::cout << "Failed to fstat staged model '" << staged_path.string()
 			          << "': " << howdy::native::SystemErrorMessage(error_number) << "\n";
 			return false;
 		}
 		if (staged_stat.st_size < 0 || std::cmp_not_equal(staged_stat.st_size, model.size)) {
-			howdy::native::CleanupStagedFile(*staged);
 			std::cout << "Size mismatch for " << model.filename << ": expected " << model.size
 			          << ", actual " << staged_stat.st_size << "\n";
 			return false;
 		}
 
-		const auto actual_sha256 = dependencies.sha256_file(staged->fd.Get());
+		const auto actual_sha256 = dependencies.sha256_file(staged->Fd().Get());
 		if (!actual_sha256.has_value() || model.sha256 != *actual_sha256) {
-			howdy::native::CleanupStagedFile(*staged);
 			std::cout << (actual_sha256.has_value() ? "Checksum mismatch for "
 			                                        : "Failed to calculate SHA-256 for ")
 			          << model.filename << "\n";
@@ -331,9 +359,8 @@ namespace {
 }  // namespace
 
 auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies(
-    const howdy::native::CommandInvocation &invocation,
-    const DownloadModelsDependencies       &dependencies) -> int {
-	(void)invocation;
+    [[maybe_unused]] const howdy::native::CommandInvocation &invocation,
+    const DownloadModelsDependencies                        &dependencies) -> int {
 	if (dependencies.download_file == nullptr || dependencies.model_file_owner_uid == nullptr ||
 	    dependencies.sha256_file == nullptr || dependencies.fstat_file == nullptr) {
 		return kDownloadModelsExitAbort;
@@ -350,7 +377,8 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 		return kDownloadModelsExitAbort;
 	}
 
-	if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
+	const CurlGlobalGuard curl_guard;
+	if (!curl_guard.Ok()) {
 		std::cout << "Failed to initialize download backend\n";
 		return kDownloadModelsExitAbort;
 	}
@@ -359,7 +387,6 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 		const auto readiness   = howdy::native::CheckOpencvModelReadiness(
 		    destination, "Model file", owner_uid, dependencies.validation_root);
 		if (readiness.status == howdy::native::OpenCvModelStatus::kInsecure) {
-			curl_global_cleanup();
 			std::cout << readiness.error_message << "\n";
 			return kDownloadModelsExitAbort;
 		}
@@ -368,7 +395,6 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 		if (readiness.status == howdy::native::OpenCvModelStatus::kOk) {
 			const auto action = InspectExistingModel(destination, model, dependencies);
 			if (action == ExistingModelAction::kAbort) {
-				curl_global_cleanup();
 				return kDownloadModelsExitAbort;
 			}
 			replace_existing = action == ExistingModelAction::kDownload;
@@ -381,11 +407,9 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 			std::cout << "Replacing invalid model download: " << destination.string() << "\n";
 		}
 		if (!DownloadModel(model, destination, owner_uid, dependencies)) {
-			curl_global_cleanup();
 			return kDownloadModelsExitAbort;
 		}
 	}
-	curl_global_cleanup();
 
 	std::cout << "OpenCV face models ready in: " << models_dir.string() << "\n";
 	return kDownloadModelsExitOk;

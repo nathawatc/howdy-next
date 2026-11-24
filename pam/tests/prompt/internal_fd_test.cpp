@@ -590,8 +590,9 @@ namespace {
 		{
 			auto const identical_pipe =
 			    howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &identical_operations);
-			ok &= Expect(!howdy::pam::detail::InternalPipeValid(identical_pipe),
-			             "identical final pipe endpoints fail closed");
+			ok &= Expect(!howdy::pam::detail::InternalPipeValid(identical_pipe) &&
+			                 identical_context.duplicate_calls == 0,
+			             "identical pipe endpoints fail closed before normalization");
 		}
 		return ok && Expect(RecordedPipeDescriptorsAreClosed(identical_context),
 		                    "identical final pipe endpoints do not leak");

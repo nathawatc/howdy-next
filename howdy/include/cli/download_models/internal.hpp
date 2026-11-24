@@ -50,18 +50,19 @@ namespace howdy::native::download_models_internal {
 	    -> bool;
 
 	struct DownloadModelsDependencies {
-		DownloadFileFn                         download_file;
-		ModelFileOwnerUidFn                    model_file_owner_uid;
-		Sha256FileFn                           sha256_file = Sha256FileDescriptor;
-		FstatFn                                fstat_file  = ::fstat;
-		std::span<const OpenCvModelDescriptor> models      = OfficialOpencvModels();
-		file_security_internal::ValidationRoot validation_root;
+		DownloadFileFn                         download_file        = nullptr;
+		ModelFileOwnerUidFn                    model_file_owner_uid = nullptr;
+		Sha256FileFn                           sha256_file          = Sha256FileDescriptor;
+		FstatFn                                fstat_file           = ::fstat;
+		std::span<const OpenCvModelDescriptor> models               = OfficialOpencvModels();
+		file_security_internal::ValidationRoot validation_root{};
 	};
 
-	auto DownloadModelsWriteCallback(void *contents, std::size_t size, std::size_t nmemb,
-	                                 void *userp) -> std::size_t;
+	[[nodiscard]] auto DownloadModelsWriteCallback(void *contents, std::size_t size,
+	                                               std::size_t nmemb, void *userp) -> std::size_t;
 
-	auto DownloadModelsMainWithDependencies(const CommandInvocation          &invocation,
-	                                        const DownloadModelsDependencies &dependencies) -> int;
+	[[nodiscard]] auto
+	DownloadModelsMainWithDependencies(const CommandInvocation          &invocation,
+	                                   const DownloadModelsDependencies &dependencies) -> int;
 
 }  // namespace howdy::native::download_models_internal

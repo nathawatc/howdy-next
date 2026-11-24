@@ -25,7 +25,7 @@ namespace howdy::pam::compare_process {
 		int (*spawn)(const SpawnRequest &)                                             = nullptr;
 	};
 
-	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
 	// Spawns compare in descriptor mode: the verdict socket at fd 3, the request's config and
 	// model at fds 4 and 5 (protocol/compare_descriptors.hpp), nothing above. All three are
 	// required, so a socket or file action that cannot be set up fails the spawn. On success
@@ -34,10 +34,9 @@ namespace howdy::pam::compare_process {
 	// code on (protocol/compare_verdict.hpp); the caller passes both to the wait. All
 	// out-parameters, the username and both descriptors are required (EINVAL otherwise). When no
 	// pidfd can be taken, the child is stopped and Spawn returns the error.
-	__attribute__((visibility("hidden"))) auto Spawn(const CompareLaunchRequest &request,
-	                                                 pid_t *child_pid, int *child_pidfd,
-	                                                 int *verdict_fd, const Operations &operations)
-	    -> int;
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	Spawn(const CompareLaunchRequest &request, pid_t *child_pid, int *child_pidfd, int *verdict_fd,
+	      const Operations &operations) -> int;
 	// `child_pidfd` is the borrowed pidfd from Spawn and is required: with -1 the child is
 	// stopped by PID and the wait fails closed. `verdict_fd` is the borrowed verdict socket from
 	// Spawn, or -1 for none; it is read only when the PAM application reaped compare and took
@@ -46,11 +45,11 @@ namespace howdy::pam::compare_process {
 	// wait or the application reaped it.
 	// cancellation_fd is borrowed until return; signal it whenever cancellation becomes true. The
 	// callback preserves the initial cancellation/exit race and is not polled.
-	__attribute__((visibility("hidden"))) auto
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	WaitUntil(pid_t child_pid, int child_pidfd, int verdict_fd,
 	          std::chrono::steady_clock::time_point deadline, void *cancellation_context,
 	          CompareCancellationRequestedFn cancellation_requested, int cancellation_fd) -> int;
-	__attribute__((visibility("hidden"))) auto
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	Wait(void *context, pid_t child_pid, int child_pidfd, int verdict_fd,
 	     std::chrono::steady_clock::time_point deadline, void *cancellation_context,
 	     CompareCancellationRequestedFn cancellation_requested, int cancellation_fd) -> int;

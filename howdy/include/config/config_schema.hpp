@@ -3,6 +3,7 @@
 #include "support/face_metric.hpp"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -69,6 +70,19 @@ namespace howdy::native::config_schema {
 		float maximum = 0.0F;
 	};
 
+	[[nodiscard]] constexpr auto RangeContains(const IntegerRange &range, int value) noexcept
+	    -> bool {
+		if (range.allowed_value.has_value() && value == *range.allowed_value) {
+			return true;
+		}
+		return value >= range.minimum && value <= range.maximum;
+	}
+
+	[[nodiscard]] constexpr auto RangeContains(const FloatRange &range, float value) noexcept
+	    -> bool {
+		return std::isfinite(value) && value >= range.minimum && value <= range.maximum;
+	}
+
 	using NumericRange = std::variant<std::monostate, IntegerRange, FloatRange>;
 
 	using RuntimeDefault = std::variant<std::monostate, bool, int, float, std::string_view>;
@@ -104,24 +118,25 @@ namespace howdy::native::config_schema {
 
 	inline constexpr FaceMetric kSfaceDefaultMetric = FaceMetric::kCosine;
 
-	auto IsAcceptedBooleanText(std::string_view value) -> bool;
+	[[nodiscard]] auto IsAcceptedBooleanText(std::string_view value) -> bool;
 
 	[[nodiscard]] inline auto OptionName(const Option &option) -> std::string {
 		return std::string(option.section) + "." + std::string(option.key);
 	}
 
-	auto FormatIntegerValue(int value) -> std::optional<std::string>;
-	auto FormatFloatingPointValue(float value) -> std::optional<std::string>;
+	[[nodiscard]] auto FormatIntegerValue(int value) -> std::optional<std::string>;
+	[[nodiscard]] auto FormatFloatingPointValue(float value) -> std::optional<std::string>;
 	// Accepted sface_threshold values for one metric, for example "0..4" or "above 0 up to 1".
-	auto FormatSfaceThresholdRange(const FaceMetricPolicy &policy) -> std::string;
-	auto FormatFallbackValue(const Option &option) -> std::optional<std::string>;
+	[[nodiscard]] auto FormatSfaceThresholdRange(const FaceMetricPolicy &policy) -> std::string;
+	[[nodiscard]] auto FormatFallbackValue(const Option &option) -> std::optional<std::string>;
 
-	auto ValidateOptions(std::span<const Option> options) -> std::optional<std::string>;
-	auto RuntimeConfigOptions() -> std::span<const Option>;
-	auto RuntimeConfigOption(OptionId id) -> const Option &;
-	auto RuntimeDefaultBool(OptionId id) -> bool;
-	auto RuntimeDefaultInt(OptionId id) -> int;
-	auto RuntimeDefaultFloat(OptionId id) -> float;
-	auto RuntimeDefaultString(OptionId id) -> std::string_view;
+	[[nodiscard]] auto ValidateOptions(std::span<const Option> options)
+	    -> std::optional<std::string>;
+	[[nodiscard]] auto RuntimeConfigOptions() -> std::span<const Option>;
+	[[nodiscard]] auto RuntimeConfigOption(OptionId id) -> const Option &;
+	[[nodiscard]] auto RuntimeDefaultBool(OptionId id) -> bool;
+	[[nodiscard]] auto RuntimeDefaultInt(OptionId id) -> int;
+	[[nodiscard]] auto RuntimeDefaultFloat(OptionId id) -> float;
+	[[nodiscard]] auto RuntimeDefaultString(OptionId id) -> std::string_view;
 
 }  // namespace howdy::native::config_schema

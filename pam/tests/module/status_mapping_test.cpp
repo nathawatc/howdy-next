@@ -186,7 +186,17 @@ auto main() -> int {
 		const auto decision = MapCompareWaitStatus(SIGTERM);
 		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "signal exit has no conversation");
-		ok &= Expect(decision.log_message.starts_with("Child killed by signal"), "signal exit log");
+		ok &= Expect(decision.log_message == "Child killed by signal Terminated",
+		             "signal exit logs English signal description");
+	}
+
+	{
+		const auto decision =
+		    MapCompareWaitStatus(howdy::native::EncodeWaitSignalStatus(SIGRTMIN, false));
+		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
+		             "realtime signal exit has no conversation");
+		ok &= Expect(decision.log_message == "Child killed by signal " + std::to_string(SIGRTMIN),
+		             "unknown signal falls back to signal number");
 	}
 
 	{

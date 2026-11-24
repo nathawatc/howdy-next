@@ -11,20 +11,21 @@ namespace howdy::pam::native_prompt_input {
 		constexpr cc_t kDelete = 0x7f;
 	}  // namespace
 
-	SensitiveBuffer::~SensitiveBuffer() {
+	SensitiveBuffer::~SensitiveBuffer() noexcept {
 		explicit_bzero(data_.data(), data_.size());
 		length_ = 0;
 	}
 
-	auto SensitiveBuffer::Full() const -> bool {
+	auto SensitiveBuffer::Full() const noexcept -> bool {
 		return length_ == data_.size();
 	}
 
 	void SensitiveBuffer::PushBack(char value) {
-		data_.at(length_++) = value;
+		data_.at(length_) = value;
+		++length_;
 	}
 
-	void SensitiveBuffer::PopCharacter(bool utf8) {
+	void SensitiveBuffer::PopCharacter(bool utf8) noexcept {
 		while (length_ > 0) {
 			const auto byte   = static_cast<unsigned char>(data_.at(--length_));
 			data_.at(length_) = '\0';
@@ -34,11 +35,11 @@ namespace howdy::pam::native_prompt_input {
 		}
 	}
 
-	auto SensitiveBuffer::Data() const -> const char * {
+	auto SensitiveBuffer::Data() const noexcept -> const char * {
 		return data_.data();
 	}
 
-	auto SensitiveBuffer::Size() const -> std::size_t {
+	auto SensitiveBuffer::Size() const noexcept -> std::size_t {
 		return length_;
 	}
 

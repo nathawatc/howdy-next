@@ -30,9 +30,66 @@ namespace howdy::native {
 
 	inline constexpr mode_t kDefaultAtomicFileMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 
-	struct StagedFile {
-		ScopedFd              fd;
-		std::filesystem::path path;
+	class StagedFile {
+	public:
+		StagedFile() noexcept = default;
+
+		StagedFile(ScopedFd staged_fd, std::filesystem::path staged_path) noexcept
+		    : fd_(std::move(staged_fd))
+		    , path_(std::move(staged_path)) {}
+
+		StagedFile(const StagedFile &)                     = delete;
+		auto operator=(const StagedFile &) -> StagedFile & = delete;
+
+		StagedFile(StagedFile &&other) noexcept
+		    : fd_(std::move(other.fd_))
+		    , path_(std::move(other.path_)) {
+			other.path_.clear();
+		}
+
+		auto operator=(StagedFile &&other) noexcept -> StagedFile & {
+			if (this != &other) {
+				Cleanup();
+				fd_   = std::move(other.fd_);
+				path_ = std::move(other.path_);
+				other.path_.clear();
+			}
+			return *this;
+		}
+
+		// Only unlinks an uncommitted staging path; commit clears `path_` immediately after rename.
+		~StagedFile() {
+			Cleanup();
+		}
+
+		[[nodiscard]] auto Fd() noexcept -> ScopedFd & {
+			return fd_;
+		}
+
+		[[nodiscard]] auto Fd() const noexcept -> const ScopedFd & {
+			return fd_;
+		}
+
+		[[nodiscard]] auto Path() const noexcept -> const std::filesystem::path & {
+			return path_;
+		}
+
+		void Disarm() noexcept {
+			path_.clear();
+		}
+
+		void Cleanup() noexcept {
+			fd_.Reset();
+			if (!path_.empty()) {
+				std::error_code ec;
+				std::filesystem::remove(path_, ec);
+				path_.clear();
+			}
+		}
+
+	private:
+		ScopedFd              fd_;
+		std::filesystem::path path_;
 	};
 
 	enum class StagedFileMetadataPolicy : std::uint8_t {
@@ -157,10 +214,8 @@ namespace howdy::native {
 		return dir_fd.Close();
 	}
 
-	inline void CleanupStagedFile(StagedFile &staged) {
-		staged.fd.Reset();
-		std::error_code ec;
-		std::filesystem::remove(staged.path, ec);
+	inline void CleanupStagedFile(StagedFile &staged) noexcept {
+		staged.Cleanup();
 	}
 
 	inline auto PrepareStagedFile(
@@ -200,23 +255,17 @@ namespace howdy::native {
 			return std::nullopt;
 		}
 
-		const std::filesystem::path temp_path(writable.data());
+		StagedFile staged(std::move(fd), writable.data());
 		if (have_current_stat && metadata_policy == StagedFileMetadataPolicy::kPreserveExisting) {
-			if (fchown(fd.Get(), current_stat.st_uid, current_stat.st_gid) != 0 ||
-			    fchmod(fd.Get(), MaskedBitsAs<mode_t>(current_stat.st_mode, 07777)) != 0) {
-				fd.Reset();
-				std::error_code ec;
-				std::filesystem::remove(temp_path, ec);
+			if (fchown(staged.Fd().Get(), current_stat.st_uid, current_stat.st_gid) != 0 ||
+			    fchmod(staged.Fd().Get(), MaskedBitsAs<mode_t>(current_stat.st_mode, 07777)) != 0) {
 				return std::nullopt;
 			}
-		} else if (fchmod(fd.Get(), default_mode) != 0) {
-			fd.Reset();
-			std::error_code ec;
-			std::filesystem::remove(temp_path, ec);
+		} else if (fchmod(staged.Fd().Get(), default_mode) != 0) {
 			return std::nullopt;
 		}
 
-		return StagedFile{.fd = std::move(fd), .path = temp_path};
+		return staged;
 	}
 
 	// `sync_parent` and `atomic_rename` may be function pointers or callables that carry their own
@@ -230,40 +279,41 @@ namespace howdy::native {
 	    SyncParent              sync_parent    = SyncParentDirectory,
 	    AtomicFileInstallPolicy install_policy = AtomicFileInstallPolicy::kReplaceExisting,
 	    Rename                  atomic_rename  = AtomicRename) -> AtomicFileCommitResult {
-		if (staged.path.empty()) {
-			staged.fd.Reset();
+		if (staged.Path().empty()) {
+			staged.Fd().Reset();
 			return AtomicFileCommitResult::kNotCommitted;
 		}
-		if (staged.fd.Get() < 0) {
+		if (staged.Fd().Get() < 0) {
 			CleanupStagedFile(staged);
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
-		if (!SyncFd(staged.fd.Get())) {
+		if (!SyncFd(staged.Fd().Get())) {
 			CleanupStagedFile(staged);
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
-		if (!staged.fd.Close()) {
+		if (!staged.Fd().Close()) {
 			CleanupStagedFile(staged);
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
 		if (install_policy == AtomicFileInstallPolicy::kReplaceExisting) {
 			std::error_code ec;
-			std::filesystem::rename(staged.path, destination, ec);
+			std::filesystem::rename(staged.Path(), destination, ec);
 			if (ec) {
 				CleanupStagedFile(staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}
 		} else {
 			const auto rename_result =
-			    atomic_rename(staged.path, destination, AtomicRenameMode::kNoReplace);
+			    atomic_rename(staged.Path(), destination, AtomicRenameMode::kNoReplace);
 			if (rename_result != AtomicRenameResult::kSuccess) {
 				CleanupStagedFile(staged);
 				return FailedAtomicRenameCommitResult(rename_result);
 			}
 		}
+		staged.Disarm();
 		bool parent_synced = false;
 		if constexpr (std::is_null_pointer_v<SyncParent>) {
 			parent_synced = false;
@@ -272,7 +322,6 @@ namespace howdy::native {
 		} else {
 			parent_synced = sync_parent(destination);
 		}
-		staged.path.clear();
 		return parent_synced ? AtomicFileCommitResult::kCommitted
 		                     : AtomicFileCommitResult::kCommittedSyncFailed;
 	}
@@ -285,7 +334,7 @@ namespace howdy::native {
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
-		if (!WriteAllToFd(staged->fd.Get(), content)) {
+		if (!WriteAllToFd(staged->Fd().Get(), content)) {
 			CleanupStagedFile(*staged);
 			return AtomicFileCommitResult::kNotCommitted;
 		}

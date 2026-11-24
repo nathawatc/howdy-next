@@ -71,6 +71,30 @@ namespace howdy::native {
 			return std::string{"missing "} + std::string(kind) + " id: " + std::to_string(id);
 		}
 
+		auto ValidateCommandOptions(const CommandDescriptor &command, const std::string &name)
+		    -> std::optional<std::string> {
+			std::size_t option_index = 0;
+			for (const auto &option : command.options) {
+				if (option.short_name.empty() && option.long_name.empty()) {
+					return "command option has no spelling: " + name;
+				}
+				if (!option.short_name.empty() && option.short_name == option.long_name) {
+					return "command option repeats its spelling: " + std::string(option.short_name);
+				}
+				if (option.summary.empty()) {
+					return "command option summary is empty: " + OptionLabel(option);
+				}
+				if (std::ranges::any_of(command.options.first(option_index),
+				                        [&option](const auto &previous) -> bool {
+					                        return OptionSpellingsCollide(option, previous);
+				                        })) {
+					return "duplicate command option spelling: " + OptionLabel(option);
+				}
+				++option_index;
+			}
+			return std::nullopt;
+		}
+
 		auto ValidateCommandDescriptor(
 		    const CommandDescriptor &command, std::span<const CommandDescriptor> previous_commands,
 		    std::array<bool, static_cast<std::size_t>(CommandId::kCount)> &seen_ids)
@@ -107,21 +131,8 @@ namespace howdy::native {
 			if ((command.global_options & known_global_options) != command.global_options) {
 				return "command has unknown global option mask: " + name;
 			}
-			std::size_t option_index = 0;
-			for (const auto &option : command.options) {
-				if (option.short_name.empty() && option.long_name.empty()) {
-					return "command option has no spelling: " + name;
-				}
-				if (option.summary.empty()) {
-					return "command option summary is empty: " + OptionLabel(option);
-				}
-				if (std::ranges::any_of(command.options.first(option_index),
-				                        [&option](const auto &previous) -> bool {
-					                        return OptionSpellingsCollide(option, previous);
-				                        })) {
-					return "duplicate command option spelling: " + OptionLabel(option);
-				}
-				++option_index;
+			if (const auto error = ValidateCommandOptions(command, name)) {
+				return error;
 			}
 
 			if (command.kind == CommandKind::kVersion &&

@@ -476,6 +476,11 @@ auto main() -> int {
 	             "format_floating_point_value formats zero");
 	ok &= Expect(howdy::native::config_schema::FormatFloatingPointValue(1.25F) == "1.25",
 	             "format_floating_point_value formats 1.25");
+	ok &=
+	    Expect(howdy::native::config_schema::FormatFloatingPointValue(0.0005F) == "0.0005" &&
+		           howdy::native::config_schema::FormatFloatingPointValue(0.00005F) == "0.00005" &&
+		           howdy::native::config_schema::FormatFloatingPointValue(1000000.0F) == "1000000",
+		       "float formatting keeps plain decimals instead of scientific notation");
 	ok &= Expect(howdy::native::config_schema::FormatFloatingPointValue(0.6942F) == "0.6942",
 	             "format_floating_point_value formats 0.6942");
 	ok &= Expect(!howdy::native::config_schema::FormatFloatingPointValue(

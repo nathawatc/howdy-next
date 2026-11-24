@@ -4,16 +4,21 @@
 #include "config/config_utils.hpp"
 #include "internal.hpp"
 #include "support/atomic_files.hpp"
+#include "support/bit_flags.hpp"
 #include "support/eintr.hpp"
+#include "support/error_message.hpp"
 #include "support/fd_io.hpp"
 #include "support/file_lock.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "support/scoped_fd.hpp"
 
+#include <cerrno>
 #include <filesystem>
+#include <format>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <fcntl.h>
@@ -26,18 +31,65 @@ namespace howdy::native::config_utils_internal {
 	namespace {
 
 		constexpr auto kConfigTempPrefix = ".howdy-config-";
+		constexpr auto kLockReplacedMessage =
+		    "Config lock file was removed or replaced while waiting for it; retry";
 
 	}  // namespace
 
-	auto AcquireConfigLock(ScopedFileLock &guard, const std::filesystem::path &config_path)
-	    -> bool {
-		ScopedFd fd(open(LockFilePath(config_path).c_str(),
-		                 O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR));
-		if (!fd.Valid() || RetryOnEintr([&] -> int {
-			                   return flock(fd.Get(), LOCK_EX);
-		                   }) != 0) {
+	auto AcquireConfigLock(ScopedFileLock &guard, const std::filesystem::path &config_path,
+	                       std::string *error_message) -> bool {
+		// Carry the specific rejection so an admin can tell a lock file with the wrong
+		// owner/mode apart from an I/O failure; both still fail closed.
+		const auto fail = [&](std::string_view reason) -> bool {
+			const auto message =
+			    std::string(kConfigFileLockFailureMessage) + ": " + std::string(reason);
 			guard.Release();
-			return false;
+			return FailWith(error_message, message);
+		};
+		const auto lock_path = LockFilePath(config_path);
+		ScopedFd   fd(
+		    open(lock_path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR));
+		if (!fd.Valid()) {
+			return fail(SystemErrorMessageWithNumber(errno));
+		}
+		struct stat lock_stat{};
+		if (fstat(fd.Get(), &lock_stat) != 0) {
+			return fail(SystemErrorMessageWithNumber(errno));
+		}
+		if (lock_stat.st_nlink == 0) {
+			return fail(kLockReplacedMessage);
+		}
+		// Checked before CheckSecurePathStat, whose write-bit rejection lacks the mode and remedy.
+		// Read access alone is enough to open the lock and hold flock(LOCK_EX), letting an
+		// unprivileged user block every config write, so read bits are rejected too rather
+		// than silently repaired. chmod would not revoke a descriptor opened earlier, so the
+		// hint is to remove the file and let O_CREAT make a fresh 0600 inode.
+		if (S_ISREG(lock_stat.st_mode) && HasAnyBits(lock_stat.st_mode, S_IRWXG, S_IRWXO)) {
+			return fail(std::format("Config lock file must not be accessible by group or others "
+			                        "(mode {:04o}, expected 0600; remove {} while no howdy config "
+			                        "write is running)",
+			                        lock_stat.st_mode & 07777U, lock_path.string()));
+		}
+		const auto security =
+		    CheckSecurePathStat(lock_stat, SecurePathKind::kRegularFile, lock_path,
+			                    "Config lock file", DefaultSecureOwnerUid());
+		if (!security.ok) {
+			return fail(security.error_message);
+		}
+		if (RetryOnEintr([&] -> int {
+			    return flock(fd.Get(), LOCK_EX);
+		    }) != 0) {
+			return fail(SystemErrorMessageWithNumber(errno));
+		}
+		// The lock serializes writers only while its path still names the locked file: one
+		// removed or replaced during the wait leaves the next writer locking another inode.
+		struct stat path_stat{};
+		if (lstat(lock_path.c_str(), &path_stat) != 0) {
+			return fail(errno == ENOENT ? std::string(kLockReplacedMessage)
+			                            : SystemErrorMessageWithNumber(errno));
+		}
+		if (path_stat.st_dev != lock_stat.st_dev || path_stat.st_ino != lock_stat.st_ino) {
+			return fail(kLockReplacedMessage);
 		}
 		guard = ScopedFileLock(std::move(fd));
 		return true;
@@ -74,7 +126,7 @@ namespace howdy::native::config_utils_internal {
 		if (!staged.has_value()) {
 			return std::nullopt;
 		}
-		if (!WriteAllToFd(staged->fd.Get(), content)) {
+		if (!WriteAllToFd(staged->Fd().Get(), content)) {
 			CleanupStagedFile(*staged);
 			return AtomicFileCommitResult::kNotCommitted;
 		}

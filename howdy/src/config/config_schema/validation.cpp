@@ -6,9 +6,11 @@
 #include <cmath>
 #include <cstddef>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 
 namespace howdy::native::config_schema_internal {
@@ -55,10 +57,7 @@ namespace howdy::native::config_schema_internal {
 			if (fallback == nullptr) {
 				return "fallback type mismatch: " + OptionName(option);
 			}
-			if (range.allowed_value.has_value() && *fallback == *range.allowed_value) {
-				return std::nullopt;
-			}
-			if (*fallback < range.minimum || *fallback > range.maximum) {
+			if (!RangeContains(range, *fallback)) {
 				return "integer fallback is outside range: " + OptionName(option);
 			}
 			return std::nullopt;
@@ -98,7 +97,7 @@ namespace howdy::native::config_schema_internal {
 				    range->minimum > range->maximum) {
 					return "invalid numeric range: " + name;
 				}
-				if (*fallback < range->minimum || *fallback > range->maximum) {
+				if (!RangeContains(*range, *fallback)) {
 					return "floating-point fallback is outside range: " + name;
 				}
 			}
@@ -113,16 +112,15 @@ namespace howdy::native::config_schema_internal {
 			if (option.type != ValueType::kString) {
 				return "choices are incompatible with option type: " + name;
 			}
-			std::size_t choice_index = 0;
-			for (const auto choice : option.choices) {
+			for (const auto [choice_index, choice] : std::views::enumerate(option.choices)) {
 				if (choice.empty()) {
 					return "choice is empty: " + name;
 				}
-				const auto previous_choices = option.choices.first(choice_index);
+				const auto previous_choices =
+				    option.choices.first(static_cast<std::size_t>(choice_index));
 				if (std::ranges::find(previous_choices, choice) != previous_choices.end()) {
 					return "duplicate choice: " + name;
 				}
-				++choice_index;
 			}
 			const auto *fallback_str = std::get_if<std::string_view>(&option.fallback);
 			if (option.special_rule != SpecialRule::kDevicePath && fallback_str != nullptr &&
@@ -191,7 +189,7 @@ namespace howdy::native::config_schema_internal {
 		auto ValidateIdentity(const Option &option, std::span<const Option> previous_options)
 		    -> std::optional<std::string> {
 			const auto name = OptionName(option);
-			if (static_cast<std::size_t>(option.id) >= static_cast<std::size_t>(OptionId::kCount)) {
+			if (std::to_underlying(option.id) >= std::to_underlying(OptionId::kCount)) {
 				return "option has invalid id: " + name;
 			}
 			if (option.section.empty()) {
@@ -217,10 +215,10 @@ namespace howdy::native::config_schema_internal {
 	}  // namespace
 
 	auto ValidateSchemaOptions(std::span<const Option> options) -> std::optional<std::string> {
-		std::size_t index = 0;
-		for (const auto &option : options) {
+		for (const auto [index, option] : std::views::enumerate(options)) {
 			const auto name = OptionName(option);
-			if (const auto error = ValidateIdentity(option, options.first(index))) {
+			if (const auto error =
+			        ValidateIdentity(option, options.first(static_cast<std::size_t>(index)))) {
 				return error;
 			}
 			if (!IsKnownValueType(option.type)) {
@@ -238,7 +236,6 @@ namespace howdy::native::config_schema_internal {
 			if (const auto error = ValidateSpecialRule(option)) {
 				return error;
 			}
-			++index;
 		}
 		if (const auto error = ValidateSpecialFallbacks(options)) {
 			return error;

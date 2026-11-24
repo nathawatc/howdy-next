@@ -7,9 +7,9 @@
 #include "storage/user_model_types.hpp"
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
 #include <ctime>
+#include <format>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -52,17 +52,13 @@ namespace {
 	}
 
 	void PrintModelEntry(const howdy::native::UserModelEntry &model, bool plain) {
-		std::cout << model.id;
 		if (plain) {
-			std::cout << ",";
-		} else {
-			constexpr std::size_t id_column_width = 4;
-			const auto            id_size         = std::to_string(model.id).size();
-			std::cout << std::string(id_size < id_column_width ? id_column_width - id_size : 0,
-			                         ' ');
+			std::cout << std::format("{},{},{}\n", model.id, FormatModelTimestamp(model.time),
+			                         CsvField(model.label));
+			return;
 		}
-		std::cout << FormatModelTimestamp(model.time) << (plain ? "," : "  ")
-		          << (plain ? CsvField(model.label) : model.label) << "\n";
+		std::cout << std::format("{:<4}{}  {}\n", model.id, FormatModelTimestamp(model.time),
+		                         model.label);
 	}
 
 	auto ListUserModelEntriesFromStore(void *context, const std::string &user)

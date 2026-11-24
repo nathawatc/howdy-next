@@ -71,6 +71,13 @@ howdy_add_native_test(
 target_link_libraries(howdy_test_cli_test PRIVATE howdy_cli howdy_opencv)
 
 howdy_add_native_test(
+ howdy_test_gui_probe_test
+ native-test-gui-probe
+ tests/cli/test_gui_probe_test.cpp
+)
+target_link_libraries(howdy_test_gui_probe_test PRIVATE howdy_cli)
+
+howdy_add_native_test(
  howdy_test_preview_session_test
  native-test-preview-session
  tests/cli/test_preview_session_test.cpp

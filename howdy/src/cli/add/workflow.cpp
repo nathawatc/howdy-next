@@ -8,7 +8,6 @@
 #include "storage/user_model_types.hpp"
 #include "vision/face_model.hpp"
 
-#include <algorithm>
 #include <cstddef>
 #include <iostream>
 #include <string>
@@ -115,13 +114,7 @@ auto howdy::native::add_internal::AddMainWithDependencies(
 		std::string input;
 		std::getline(std::cin, input);
 		if (!input.empty()) {
-			// Cut on a UTF-8 code point boundary so a long multibyte label stays valid.
-			std::size_t cut = std::min(input.size(), kMaxLabelBytes);
-			while (cut > 0 && cut < input.size() &&
-			       howdy::native::user_model_label_detail::IsUtf8Continuation(input.at(cut))) {
-				--cut;
-			}
-			label = input.substr(0, cut);
+			label = std::string(howdy::native::TruncateUtf8ToMaxBytes(input, kMaxLabelBytes));
 		}
 	}
 	if (!howdy::native::IsValidModelLabel(label)) {

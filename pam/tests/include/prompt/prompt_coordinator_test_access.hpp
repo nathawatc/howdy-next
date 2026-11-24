@@ -42,19 +42,21 @@ namespace howdy::pam {
 		}
 
 		static void RequestShutdown(PromptCoordinator &coordinator) {
+			bool should_signal = false;
 			{
 				std::scoped_lock const lock(coordinator.mutex_);
 				coordinator.state_.shutdown_requested     = true;
 				coordinator.state_.cancellation_requested = true;
-				if (coordinator.cancellation_fd_.Valid()) {
-					coordinator.SignalCancellation();
-				}
+				should_signal                             = coordinator.cancellation_fd_.Valid();
 				if (coordinator.state_.submission ==
 				    PromptCoordinator::PromptSubmissionState::kClaimed) {
 					coordinator.state_.submission =
 					    PromptCoordinator::PromptSubmissionState::kPending;
 					coordinator.state_.claimed_generation = 0;
 				}
+			}
+			if (should_signal) {
+				coordinator.SignalCancellation();
 			}
 			coordinator.condition_.notify_all();
 		}

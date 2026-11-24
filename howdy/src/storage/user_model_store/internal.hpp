@@ -18,9 +18,6 @@
 
 namespace howdy::native::user_model_store_internal {
 
-	[[nodiscard]] auto InspectRegularFileStatus(const std::filesystem::path &path,
-	                                            std::string *message) -> UserModelStatus;
-
 	struct UserModelExpectations {
 		std::string backend;
 		std::string model;

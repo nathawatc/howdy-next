@@ -21,30 +21,52 @@
 
 namespace {
 
-	auto ResolveInvokingIdentityDependency(void *context) -> howdy::native::InvokingIdentityResult {
-		(void)context;
+	auto ResolveInvokingIdentityDependency([[maybe_unused]] void *context)
+	    -> howdy::native::InvokingIdentityResult {
 		return howdy::native::ResolveInvokingIdentity();
 	}
 
-	auto EffectiveUid(void *context) -> uid_t {
-		(void)context;
+	auto EffectiveUid([[maybe_unused]] void *context) -> uid_t {
 		return geteuid();
+	}
+
+	constexpr auto MainForCommand(howdy::native::CommandId id) noexcept
+	    -> howdy::native::howdy_internal::CommandMain {
+		switch (id) {
+			case howdy::native::CommandId::kAdd:
+				return AddMain;
+			case howdy::native::CommandId::kClear:
+				return ClearMain;
+			case howdy::native::CommandId::kConfig:
+				return ConfigMain;
+			case howdy::native::CommandId::kDisable:
+				return DisableMain;
+			case howdy::native::CommandId::kDownloadModels:
+				return DownloadModelsMain;
+			case howdy::native::CommandId::kList:
+				return ListMain;
+			case howdy::native::CommandId::kRemove:
+				return RemoveMain;
+			case howdy::native::CommandId::kSet:
+				return SetMain;
+			case howdy::native::CommandId::kSnapshot:
+				return SnapshotMain;
+			case howdy::native::CommandId::kTest:
+				return TestMain;
+			case howdy::native::CommandId::kVersion:
+			case howdy::native::CommandId::kCount:
+				return nullptr;
+		}
+		return nullptr;
 	}
 
 }  // namespace
 
 auto howdy::native::howdy_internal::ProductionCommandMains() -> CommandMains {
 	CommandMains command_mains{};
-	command_mains.at(static_cast<std::size_t>(CommandId::kAdd))            = AddMain;
-	command_mains.at(static_cast<std::size_t>(CommandId::kClear))          = ClearMain;
-	command_mains.at(static_cast<std::size_t>(CommandId::kConfig))         = ConfigMain;
-	command_mains.at(static_cast<std::size_t>(CommandId::kDisable))        = DisableMain;
-	command_mains.at(static_cast<std::size_t>(CommandId::kDownloadModels)) = DownloadModelsMain;
-	command_mains.at(static_cast<std::size_t>(CommandId::kList))           = ListMain;
-	command_mains.at(static_cast<std::size_t>(CommandId::kRemove))         = RemoveMain;
-	command_mains.at(static_cast<std::size_t>(CommandId::kSet))            = SetMain;
-	command_mains.at(static_cast<std::size_t>(CommandId::kSnapshot))       = SnapshotMain;
-	command_mains.at(static_cast<std::size_t>(CommandId::kTest))           = TestMain;
+	for (std::size_t index = 0; index < command_mains.size(); ++index) {
+		command_mains.at(index) = MainForCommand(static_cast<CommandId>(index));
+	}
 	return command_mains;
 }
 

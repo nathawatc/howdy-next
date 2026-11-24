@@ -9,10 +9,9 @@
 #include "support/capture_exposure.hpp"
 #include "vision/video_capture.hpp"
 
-#include <array>
 #include <chrono>
-#include <ctime>
 #include <filesystem>
+#include <format>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -27,29 +26,20 @@ namespace {
 
 	namespace snapshot_internal = howdy::native::snapshot_internal;
 
-	auto SnapshotPath() -> std::filesystem::path {
-		const auto now  = std::chrono::system_clock::now();
-		const auto time = std::chrono::system_clock::to_time_t(now);
-		std::tm    buffer{};
-		if (gmtime_r(&time, &buffer) == nullptr) {
-			return {};
-		}
-		std::array<char, 32> filename{};
-		if (std::strftime(filename.data(), filename.size(), "%Y%m%dT%H%M%S.jpg", &buffer) == 0) {
-			return {};
-		}
-		return howdy::native::ResolveLogPath() / "snapshots" / filename.data();
+	auto SnapshotPath(std::chrono::sys_seconds timestamp) -> std::filesystem::path {
+		return howdy::native::ResolveLogPath() / "snapshots" /
+		       std::format("{:%Y%m%dT%H%M%S}.jpg", timestamp);
 	}
 
-	auto EncodeImageDependency(void *context, std::string_view extension, const cv::Mat &image,
-	                           std::vector<uchar> *encoded) -> bool {
-		(void)context;
+	auto EncodeImageDependency([[maybe_unused]] void *context, std::string_view extension,
+	                           const cv::Mat &image, std::vector<uchar> *encoded) -> bool {
 		return cv::imencode(std::string(extension), image, *encoded);
 	}
 
 	auto GenerateSnapshot(const std::vector<cv::Mat>     &frames,
-	                      const std::vector<std::string> &text_lines) -> std::filesystem::path {
-		const auto base_path = SnapshotPath();
+	                      const std::vector<std::string> &text_lines,
+	                      std::chrono::sys_seconds        timestamp) -> std::filesystem::path {
+		const auto base_path = SnapshotPath(timestamp);
 		if (base_path.empty()) {
 			return {};
 		}
@@ -71,16 +61,14 @@ namespace {
 		return filepath;
 	}
 
-	auto SnapshotCliLoadRuntimeConfigDependency(void *context)
+	auto SnapshotCliLoadRuntimeConfigDependency([[maybe_unused]] void *context)
 	    -> howdy::native::RuntimeConfigLoadResult {
-		(void)context;
 		return howdy::native::LoadRuntimeConfig();
 	}
 
-	auto CaptureFramesDependency(void *context, const howdy::native::RuntimeConfig &config)
+	auto CaptureFramesDependency([[maybe_unused]] void              *context,
+	                             const howdy::native::RuntimeConfig &config)
 	    -> snapshot_internal::SnapshotCaptureResult {
-		(void)context;
-
 		howdy::native::VideoCapture capture(howdy::native::LoadCaptureSettings(config.video));
 		if (!howdy::native::OpenCaptureWithExposure(capture, config.video.exposure)) {
 			return snapshot_internal::SnapshotCaptureResult{
@@ -109,29 +97,21 @@ namespace {
 		};
 	}
 
-	auto WriteSnapshotDependency(void *context, const std::vector<cv::Mat> &frames,
+	auto WriteSnapshotDependency([[maybe_unused]] void *context, const std::vector<cv::Mat> &frames,
 	                             const howdy::native::RuntimeConfig &config)
 	    -> snapshot_internal::SnapshotWriteResult {
-		(void)context;
-
-		const auto now  = std::chrono::system_clock::now();
-		const auto time = std::chrono::system_clock::to_time_t(now);
-		std::tm    buffer{};
-		if (gmtime_r(&time, &buffer) == nullptr) {
-			return {};
-		}
-		std::array<char, 64> timestr{};
-		if (std::strftime(timestr.data(), timestr.size(), "%Y/%m/%d %H:%M:%S UTC", &buffer) == 0) {
-			return {};
-		}
+		const auto timestamp =
+		    std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
 
 		const auto filepath = GenerateSnapshot(
-		    frames, {
-		                "GENERATED SNAPSHOT",
-		                std::string("Date: ") + timestr.data(),
-		                "Dark threshold config: " + std::to_string(config.video.dark_threshold),
-		                "SFace threshold config: " + std::to_string(config.face.sface_threshold),
-		            });
+		    frames,
+		    {
+		        "GENERATED SNAPSHOT",
+		        std::format("Date: {:%Y/%m/%d %H:%M:%S} UTC", timestamp),
+		        "Dark threshold config: " + std::to_string(config.video.dark_threshold),
+		        "SFace threshold config: " + std::to_string(config.face.sface_threshold),
+		    },
+		    timestamp);
 		if (filepath.empty()) {
 			return snapshot_internal::SnapshotWriteResult{};
 		}

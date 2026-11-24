@@ -14,7 +14,7 @@ namespace howdy::pam {
 		Workaround workaround = Workaround::kOff;
 	};
 
-	__attribute__((visibility("hidden"))) auto ParsePamOptions(PamModuleArguments arguments)
-	    -> PamOptions;
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	ParsePamOptions(PamModuleArguments arguments) -> PamOptions;
 
 }  // namespace howdy::pam

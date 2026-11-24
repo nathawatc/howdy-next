@@ -19,7 +19,7 @@ namespace howdy::native::set_internal {
 		UpdateConfigValueFn update_config_value = nullptr;
 	};
 
-	auto SetMainWithDependencies(const CommandInvocation &invocation,
-	                             const SetDependencies   &dependencies) -> int;
+	[[nodiscard]] auto SetMainWithDependencies(const CommandInvocation &invocation,
+	                                           const SetDependencies   &dependencies) -> int;
 
 }  // namespace howdy::native::set_internal

@@ -31,19 +31,19 @@ namespace howdy::pam::auth_helper_process {
 		LogObserver log_observer                                                       = nullptr;
 	};
 
-	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
 	// Runs the setuid helper's `open` for `username` (the calling user) and receives its one
 	// message (protocol/runtime_descriptor_message.hpp). The result comes only from that message
 	// followed by end of file; the helper's exit status is reaped and logged, never used to
 	// decide. On success `descriptors` owns the config and, when ready, the model descriptor.
-	__attribute__((visibility("hidden"))) auto
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	OpenRuntimeDescriptors(std::string_view username, RuntimeDescriptorSet *descriptors,
 	                       const Operations                     &operations,
 	                       std::chrono::steady_clock::time_point deadline) -> bool;
-	__attribute__((visibility("hidden"))) auto
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	OpenRuntimeDescriptors(std::string_view username, RuntimeDescriptorSet *descriptors,
 	                       const Operations &operations) -> bool;
-	__attribute__((visibility("hidden"))) auto
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	OpenRuntimeDescriptors(std::string_view username, RuntimeDescriptorSet *descriptors) -> bool;
 
 }  // namespace howdy::pam::auth_helper_process

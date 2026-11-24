@@ -112,11 +112,10 @@ namespace howdy::native::config_internal {
 
 		[[noreturn]] auto ReportEditorLaunch(int report_fd, EditorLaunchReport report,
 		                                     int exit_code) -> void {
-			const auto    report_byte = static_cast<unsigned char>(report);
-			const ssize_t written     = howdy::native::RetryOnEintr([&] -> ssize_t {
+			const auto                     report_byte = static_cast<unsigned char>(report);
+			[[maybe_unused]] const ssize_t written = howdy::native::RetryOnEintr([&] -> ssize_t {
 				return write(report_fd, &report_byte, sizeof(report_byte));
 			});
-			(void)written;
 			_exit(exit_code);
 		}
 

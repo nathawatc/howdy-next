@@ -3,4 +3,4 @@
 #include <string>
 #include <string_view>
 
-auto BuildConfirmationMessage(std::string_view username) -> std::string;
+[[nodiscard]] auto BuildConfirmationMessage(std::string_view username) -> std::string;

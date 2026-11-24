@@ -27,7 +27,8 @@ namespace howdy::native {
 	struct PreviewDependencies {
 		FaceInferenceOperations inference;
 		FaceMatchingOperations  matching;
-		PreviewNowFn            now = PreviewSteadyClockNow;
+		void                   *clock_context = nullptr;
+		PreviewNowFn            now           = PreviewSteadyClockNow;
 	};
 
 	enum class PreviewFrameStatus : std::uint8_t {
@@ -73,7 +74,7 @@ namespace howdy::native {
 		              PreparedFaceMatcher matcher, std::size_t known_model_count,
 		              bool matching_enabled);
 
-		auto ProcessGrayFrame(cv::Mat gray_frame) -> PreviewFrameResult;
+		[[nodiscard]] auto ProcessGrayFrame(cv::Mat gray_frame) -> PreviewFrameResult;
 
 	private:
 		struct EncodedFace {
@@ -82,11 +83,13 @@ namespace howdy::native {
 		};
 
 		[[nodiscard]] auto DependenciesValid() const -> bool;
-		auto EncodeFaces(const cv::Mat &prepared, const std::vector<FaceDetection> &detections,
-		                 std::vector<PreviewFaceResult> &faces, std::string &first_error) const
-		    -> std::vector<EncodedFace>;
-		auto MatchFaces(const std::vector<EncodedFace> &encodings,
-		                std::vector<PreviewFaceResult> &faces) -> std::optional<bool>;
+		[[nodiscard]] auto EncodeFaces(const cv::Mat                    &prepared,
+		                               const std::vector<FaceDetection> &detections,
+		                               std::vector<PreviewFaceResult>   &faces,
+		                               std::string &first_error) const -> std::vector<EncodedFace>;
+		[[nodiscard]] auto MatchFaces(const std::vector<EncodedFace> &encodings,
+		                              std::vector<PreviewFaceResult> &faces) const
+		    -> std::optional<bool>;
 
 		VideoConfig         config_;
 		cv::Ptr<cv::CLAHE>  clahe_;

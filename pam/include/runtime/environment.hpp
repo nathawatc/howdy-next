@@ -20,10 +20,10 @@ namespace howdy::pam::runtime {
 		const char *(*process_environment)(void *context, const char *name) = nullptr;
 	};
 
-	auto ProductionEnvironmentLookupDependencies() -> EnvironmentLookupDependencies;
+	[[nodiscard]] auto ProductionEnvironmentLookupDependencies() -> EnvironmentLookupDependencies;
 
-	auto FindEnvironmentVariable(pam_handle_t *pamh, std::string_view name,
-	                             const EnvironmentLookupDependencies &dependencies)
+	[[nodiscard]] auto FindEnvironmentVariable(pam_handle_t *pamh, std::string_view name,
+	                                           const EnvironmentLookupDependencies &dependencies)
 	    -> EnvironmentSource;
 
 }  // namespace howdy::pam::runtime

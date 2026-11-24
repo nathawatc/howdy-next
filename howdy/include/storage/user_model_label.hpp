@@ -1,7 +1,8 @@
 #pragma once
 
+#include "support/ascii.hpp"
+
 #include <algorithm>
-#include <cctype>
 #include <cstddef>
 #include <string_view>
 
@@ -16,7 +17,8 @@ namespace howdy::native {
 		};
 
 		// RFC 3629 lead byte table; second-byte bounds reject overlongs, surrogates, > U+10FFFF.
-		inline auto ClassifyUtf8Lead(const unsigned char lead) -> Utf8Lead {
+		[[nodiscard]] constexpr auto ClassifyUtf8Lead(const unsigned char lead) noexcept
+		    -> Utf8Lead {
 			if (lead < 0x80) {
 				return {.length = 1};
 			}
@@ -40,14 +42,14 @@ namespace howdy::native {
 			return {};
 		}
 
-		inline auto IsUtf8Continuation(const char raw) -> bool {
+		[[nodiscard]] constexpr auto IsUtf8Continuation(const char raw) noexcept -> bool {
 			return (static_cast<unsigned char>(raw) & 0xC0U) == 0x80U;
 		}
 
 	}  // namespace user_model_label_detail
 
 	// Strict UTF-8 check; matches what yyjson accepts on read and write.
-	inline auto IsValidUtf8(std::string_view text) -> bool {
+	[[nodiscard]] constexpr auto IsValidUtf8(std::string_view text) noexcept -> bool {
 		while (!text.empty()) {
 			const auto lead =
 			    user_model_label_detail::ClassifyUtf8Lead(static_cast<unsigned char>(text.front()));
@@ -69,10 +71,22 @@ namespace howdy::native {
 		return true;
 	}
 
-	inline auto IsValidModelLabel(const std::string_view label) -> bool {
+	[[nodiscard]] constexpr auto TruncateUtf8ToMaxBytes(std::string_view value,
+	                                                    std::size_t      max_bytes) noexcept
+	    -> std::string_view {
+		if (value.size() <= max_bytes) {
+			return value;
+		}
+		std::size_t length = max_bytes;
+		while (length > 0 && user_model_label_detail::IsUtf8Continuation(value.at(length))) {
+			--length;
+		}
+		return value.substr(0, length);
+	}
+
+	[[nodiscard]] constexpr auto IsValidModelLabel(const std::string_view label) noexcept -> bool {
 		return IsValidUtf8(label) && std::ranges::all_of(label, [](const char raw) -> bool {
-			       const auto ch = static_cast<unsigned char>(raw);
-			       return raw != '/' && raw != '\\' && std::iscntrl(ch) == 0;
+			       return raw != '/' && raw != '\\' && !IsAsciiControl(raw);
 		       });
 	}
 

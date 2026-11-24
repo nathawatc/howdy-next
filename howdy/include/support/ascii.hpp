@@ -1,10 +1,19 @@
 #pragma once
 
 #include <algorithm>
-#include <ranges>
 #include <string_view>
 
 namespace howdy::native {
+
+	[[nodiscard]] constexpr auto IsAsciiControl(char character) noexcept -> bool {
+		const auto code = static_cast<unsigned char>(character);
+		return code < 0x20U || code == 0x7FU;
+	}
+
+	[[nodiscard]] constexpr auto IsAsciiSpace(char character) noexcept -> bool {
+		return character == ' ' || character == '\t' || character == '\n' || character == '\r' ||
+		       character == '\v' || character == '\f';
+	}
 
 	[[nodiscard]] constexpr auto ToLowerAscii(char character) noexcept -> char {
 		if (character >= 'A' && character <= 'Z') {

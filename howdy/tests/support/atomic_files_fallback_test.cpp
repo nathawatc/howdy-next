@@ -36,7 +36,7 @@ namespace {
 		auto       staged      = howdy::native::PrepareStagedFile(destination, ".howdy-fallback-");
 		ok &= howdy::test::Expect(staged.has_value(), "prepares staged fallback file");
 		if (staged.has_value()) {
-			const auto staged_path = staged->path;
+			const auto staged_path = staged->Path();
 			const auto result      = howdy::native::InstallStagedFile(
 			    *staged, destination, howdy::native::SyncParentDirectory,
 			    howdy::native::AtomicFileInstallPolicy::kNoReplaceExisting);

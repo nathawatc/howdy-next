@@ -3,6 +3,7 @@
 #include "support/user_names.hpp"
 #include "test_support.hpp"
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -155,6 +156,30 @@ auto main() -> int {
 	             "slash in user name is rejected with message");
 	expect_error({"howdy-compare", "../alice"}, std::string(howdy::native::kInvalidUserNameMessage),
 	             "path traversal user reports invalid user message");
+
+	{
+		for (const auto bad_argc : {0, -1, 2}) {
+			const auto result = howdy::native::ParseCompareArgs(bad_argc, nullptr);
+			ok &= Expect(result.status == howdy::native::CompareArgsStatus::kError &&
+			                 result.exit_code == howdy::native::CompareExit::kAbort,
+			             "null argv fails closed");
+		}
+		std::string           help_flag    = "--help";
+		std::array<char *, 2> null_program = {nullptr, help_flag.data()};
+		const auto            null_argv0   = howdy::native::ParseCompareArgs(
+		    static_cast<int>(null_program.size()), null_program.data());
+		ok &= Expect(null_argv0.status == howdy::native::CompareArgsStatus::kError &&
+		                 null_argv0.exit_code == howdy::native::CompareExit::kAbort,
+		             "null argv[0] fails closed");
+
+		std::string           prog_name     = "howdy-compare";
+		std::array<char *, 2> null_user_arg = {prog_name.data(), nullptr};
+		const auto            null_argv1    = howdy::native::ParseCompareArgs(
+		    static_cast<int>(null_user_arg.size()), null_user_arg.data());
+		ok &= Expect(null_argv1.status == howdy::native::CompareArgsStatus::kError &&
+		                 null_argv1.exit_code == howdy::native::CompareExit::kAbort,
+		             "null argv[1] fails closed");
+	}
 
 	return ok ? 0 : 1;
 }

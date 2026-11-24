@@ -25,6 +25,6 @@ namespace howdy::native {
 
 	// Compare takes one argument, the user; its config and model come as descriptors
 	// (protocol/compare_descriptors.hpp).
-	auto ParseCompareArgs(int argc, char **argv) -> CompareArgsParseResult;
+	[[nodiscard]] auto ParseCompareArgs(int argc, char **argv) -> CompareArgsParseResult;
 
 }  // namespace howdy::native

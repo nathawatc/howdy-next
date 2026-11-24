@@ -224,14 +224,29 @@ namespace {
 		return CompareExit::kAbort;
 	}
 
-	auto ApplySeccomp(const CompareProductionContext &context)
-	    -> howdy::native::CompareSeccompResult {
-		if (context.dependencies != nullptr) {
-			return context.dependencies->apply_seccomp == nullptr
-			           ? howdy::native::CompareSeccompResult{}
-					   : context.dependencies->apply_seccomp(context.dependencies->context);
+	auto ApplySeccomp(void *raw_context) -> bool {
+		auto const &context = *static_cast<CompareProductionContext *>(raw_context);
+		howdy::native::CompareSeccompResult seccomp_result;
+		if (context.dependencies == nullptr) {
+			seccomp_result = howdy::native::ApplyCompareSeccompFilter();
+		} else if (context.dependencies->apply_seccomp != nullptr) {
+			seccomp_result = context.dependencies->apply_seccomp(context.dependencies->context);
+		} else {
+			// A missing injected hook is a harness bug, not a kernel without seccomp; mirror
+			// DropPrivileges and fail closed instead of scanning with no filter.
+			seccomp_result.status = howdy::native::CompareSeccompStatus::kInvalidDependencies;
 		}
-		return howdy::native::ApplyCompareSeccompFilter();
+		if (seccomp_result.status != howdy::native::CompareSeccompStatus::kOk) {
+			entrypoint_private::ReportSeccompFailure(seccomp_result);
+			// Only a kernel or build without seccomp filter support is tolerated; a filter
+			// that failed to build or install must not leave the scan running unsandboxed.
+			if (seccomp_result.status != howdy::native::CompareSeccompStatus::kUnsupported &&
+			    seccomp_result.status !=
+			        howdy::native::CompareSeccompStatus::kUnsupportedArchitecture) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	auto RunFrameLoop(void *raw_context, std::function<void()> &before_first_encode)
@@ -242,16 +257,6 @@ namespace {
 		}
 		auto &capture_session = context.capture_session.get();
 		auto &compare_engine  = *context.compare_engine;
-
-		const auto seccomp_result = ApplySeccomp(context);
-		if (seccomp_result.status != howdy::native::CompareSeccompStatus::kOk) {
-			entrypoint_private::ReportSeccompFailure(seccomp_result);
-			// Only a kernel without seccomp is tolerated; a filter that failed to build or
-			// install must not leave the scan running unsandboxed.
-			if (seccomp_result.status != howdy::native::CompareSeccompStatus::kUnsupported) {
-				return CompareExit::kAbort;
-			}
-		}
 
 		while (true) {
 			auto capture_result = capture_session.NextFrame();
@@ -344,20 +349,38 @@ namespace {
 			}
 
 			auto loaded_models = LoadCompareModels(descriptors, trusted_owner_uid);
-			if (loaded_models.status == howdy::native::UserModelStatus::kIncompatibleBackend) {
-				std::cerr << loaded_models.error_message << "\n";
-				return static_cast<int>(CompareExit::kNoFaceModel);
+			switch (loaded_models.status) {
+				case howdy::native::UserModelStatus::kOk:
+					break;
+				case howdy::native::UserModelStatus::kNoModel:
+				case howdy::native::UserModelStatus::kNoModelDirectory:
+					return static_cast<int>(CompareExit::kNoFaceModel);
+				case howdy::native::UserModelStatus::kIncompatibleBackend:
+				case howdy::native::UserModelStatus::kIncompatibleModel:
+					std::cerr << loaded_models.error_message << "\n";
+					return static_cast<int>(CompareExit::kNoFaceModel);
+				case howdy::native::UserModelStatus::kParseError:
+				case howdy::native::UserModelStatus::kInvalidShape:
+				case howdy::native::UserModelStatus::kOversized:
+				case howdy::native::UserModelStatus::kInsecurePath:
+				case howdy::native::UserModelStatus::kInvalidUser:
+				case howdy::native::UserModelStatus::kLockFailed:
+				case howdy::native::UserModelStatus::kWriteFailed:
+				case howdy::native::UserModelStatus::kAtomicExchangeUnsupported:
+				case howdy::native::UserModelStatus::kDeleteFailed:
+				case howdy::native::UserModelStatus::kDurabilityUncertain:
+				case howdy::native::UserModelStatus::kCommitStateUncertain:
+				case howdy::native::UserModelStatus::kDirectoryCreateFailed:
+				case howdy::native::UserModelStatus::kModelChanged:
+					if (!loaded_models.error_message.empty()) {
+						std::cerr << loaded_models.error_message << "\n";
+					}
+					return static_cast<int>(CompareExit::kAbort);
 			}
-			if (loaded_models.status == howdy::native::UserModelStatus::kParseError) {
-				std::cerr << loaded_models.error_message << "\n";
-				return static_cast<int>(CompareExit::kAbort);
-			}
-			if (loaded_models.status == howdy::native::UserModelStatus::kInsecurePath) {
-				std::cerr << loaded_models.error_message << "\n";
-				return static_cast<int>(CompareExit::kAbort);
-			}
+			// No default above so -Wswitch still flags new enumerators; an out-of-range value
+			// at runtime fails closed here instead of falling through to the scan.
 			if (loaded_models.status != howdy::native::UserModelStatus::kOk) {
-				return static_cast<int>(CompareExit::kNoFaceModel);
+				return static_cast<int>(CompareExit::kAbort);
 			}
 
 			if (!howdy::native::ConfigureFaceModelEnvironment()) {
@@ -390,6 +413,7 @@ namespace {
 			        .initialize_model = InitializeModel,
 			        .open_capture     = OpenCapture,
 			        .drop_privileges  = DropPrivileges,
+			        .apply_seccomp    = ApplySeccomp,
 			        .construct_engine = ConstructEngine,
 			        .reset_timeout    = ResetTimeout,
 			        .warm_model       = WarmModel,

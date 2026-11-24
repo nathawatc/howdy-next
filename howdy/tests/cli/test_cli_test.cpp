@@ -400,6 +400,33 @@ namespace {
 		return ok;
 	}
 
+	auto GuiProbeCredentialFailurePrintsSpecificError() -> bool {
+		auto context      = MakeSuccessContext();
+		auto dependencies = TestDependencies(context);
+		dependencies.run_preview =
+		    [](void *, const howdy::native::RuntimeConfig &, const std::string &,
+			   const std::string &) -> howdy::native::test_cli_internal::TestPreviewResult {
+			return {
+			    .status        = howdy::native::test_cli_internal::TestPreviewStatus::kGuiUserError,
+			    .error_message = "Loading invoking user groups for GUI probe failed: injected",
+			};
+		};
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
+
+		const int result = RunTestWithDependencies(dependencies, {});
+
+		const auto error_text = error.str();
+		bool       ok         = true;
+		ok &= Expect(result == 1, "GUI probe credential failure returns 1");
+		ok &= Expect(error_text.contains(
+		                 "Error: Loading invoking user groups for GUI probe failed: injected"),
+		             "GUI probe credential failure prints the specific error");
+		ok &= Expect(!error_text.contains("Run this command from your desktop session"),
+		             "GUI probe credential failure omits invocation advice");
+		return ok;
+	}
+
 	auto SuccessfulPreviewReturnsZero() -> bool {
 		auto                     context = MakeSuccessContext();
 		std::ostringstream const error;
@@ -619,6 +646,7 @@ auto main() -> int {
 	ok &= CameraOpenFailurePrintsDeviceAndCaptureError();
 	ok &= CameraReadFailurePrintsDiagnostic();
 	ok &= GuiUserSwitchFailurePrintsDiagnostic();
+	ok &= GuiProbeCredentialFailurePrintsSpecificError();
 	ok &= SuccessfulPreviewReturnsZero();
 	ok &= ConfiguredDeviceDefaultIsUsedForCameraOpen();
 	ok &= UnconfiguredCameraErrorIsPrinted();

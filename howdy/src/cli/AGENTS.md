@@ -22,3 +22,6 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related: [`../app/AGENTS.md`](../a
 - Validate BGR frame batches in the snapshot writer and report commit-sync uncertainty without
   destructive retry.
 - Route enrollment capture diagnostics through `ClassifyEnrollmentCaptureFailure()`.
+- `howdy test` never probes the invoking user's home or runtime dir as root: probe under that
+  user's temporary effective IDs before the permanent drop, and fail closed if switching or
+  restoring credentials fails.

@@ -17,6 +17,6 @@ namespace howdy::pam {
 		virtual void SubmitPrompt() = 0;
 	};
 
-	auto CreateUinputPromptSubmitter() -> std::unique_ptr<PromptSubmitter>;
+	[[nodiscard]] auto CreateUinputPromptSubmitter() -> std::unique_ptr<PromptSubmitter>;
 
 }  // namespace howdy::pam

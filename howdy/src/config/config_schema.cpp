@@ -10,12 +10,17 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <concepts>
+#include <cstddef>
 #include <cstdlib>
+#include <format>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
+#include <utility>
 #include <variant>
 
 namespace howdy::native::config_schema {
@@ -308,6 +313,16 @@ namespace howdy::native::config_schema {
 		    },
 		});
 
+		static_assert(kRuntimeConfigOptions.size() == std::to_underlying(OptionId::kCount));
+		static_assert([] -> bool {
+			for (std::size_t index = 0; index < kRuntimeConfigOptions.size(); ++index) {
+				if (std::to_underlying(kRuntimeConfigOptions.at(index).id) != index) {
+					return false;
+				}
+			}
+			return true;
+		}());
+
 	}  // namespace
 
 	auto ValidateOptions(std::span<const Option> options) -> std::optional<std::string> {
@@ -319,12 +334,11 @@ namespace howdy::native::config_schema {
 	}
 
 	auto RuntimeConfigOption(OptionId id) -> const Option & {
-		for (const auto &option : kRuntimeConfigOptions) {
-			if (option.id == id) {
-				return option;
-			}
+		const auto index = static_cast<std::size_t>(std::to_underlying(id));
+		if (index >= kRuntimeConfigOptions.size()) {
+			std::abort();
 		}
-		std::abort();
+		return kRuntimeConfigOptions.at(index);
 	}
 
 	auto IsAcceptedBooleanText(std::string_view value) -> bool {
@@ -335,21 +349,19 @@ namespace howdy::native::config_schema {
 	}
 
 	auto FormatIntegerValue(int value) -> std::optional<std::string> {
-		std::array<char, 32> buffer{};
-		const auto           result = std::to_chars(buffer.begin(), buffer.end(), value, 10);
-		if (result.ec != std::errc{}) {
-			return std::nullopt;
-		}
-		return std::string(buffer.data(), result.ptr);
+		return std::format("{}", value);
 	}
 
 	auto FormatFloatingPointValue(float value) -> std::optional<std::string> {
 		if (!std::isfinite(value)) {
 			return std::nullopt;
 		}
+		// std::format("{}") and chars_format::general both switch to scientific notation
+		// (0.0005 -> "5e-04", 1e6 -> "1e+06"), which would leak into the generated template
+		// and man page; fixed without a precision is still the shortest round-trip form.
 		std::array<char, 64> buffer{};
 		const auto           result =
-		    std::to_chars(buffer.begin(), buffer.end(), value, std::chars_format::general);
+		    std::to_chars(buffer.begin(), buffer.end(), value, std::chars_format::fixed);
 		if (result.ec != std::errc{}) {
 			return std::nullopt;
 		}
@@ -366,30 +378,22 @@ namespace howdy::native::config_schema {
 	namespace {
 
 		auto FormatRuntimeDefault(const RuntimeDefault &value) -> std::optional<std::string> {
-			struct Visitor {
-				auto operator()(std::monostate unused) const -> std::optional<std::string> {
-					(void)unused;
-					return std::nullopt;
-				}
-
-				auto operator()(bool val) const -> std::optional<std::string> {
-					return val ? "true" : "false";
-				}
-
-				auto operator()(int val) const -> std::optional<std::string> {
-					return FormatIntegerValue(val);
-				}
-
-				auto operator()(float val) const -> std::optional<std::string> {
-					return FormatFloatingPointValue(val);
-				}
-
-				auto operator()(std::string_view val) const -> std::optional<std::string> {
-					return std::string(val);
-				}
-			};
-
-			return std::visit(Visitor{}, value);
+			return std::visit(
+			    [](const auto &val) -> std::optional<std::string> {
+				    using Value = std::decay_t<decltype(val)>;
+				    if constexpr (std::same_as<Value, std::monostate>) {
+					    return std::nullopt;
+				    } else if constexpr (std::same_as<Value, bool>) {
+					    return val ? "true" : "false";
+				    } else if constexpr (std::same_as<Value, int>) {
+					    return FormatIntegerValue(val);
+				    } else if constexpr (std::same_as<Value, float>) {
+					    return FormatFloatingPointValue(val);
+				    } else {
+					    return std::string(val);
+				    }
+			    },
+			    value);
 		}
 
 	}  // namespace
