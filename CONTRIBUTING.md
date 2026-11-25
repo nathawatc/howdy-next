@@ -39,7 +39,7 @@ configure time to disable it).
   [`update-translations`](.agents/skills/update-translations/SKILL.md).
 - **Privileged installed PAM/setuid E2E (`run0`)**: follow
   [`run-privileged-e2e`](.agents/skills/run-privileged-e2e/SKILL.md).
-- **Protocol libFuzzer targets (Clang)**: follow
+- **Protocol and INI editor libFuzzer targets (Clang)**: follow
   [`run-fuzzers`](.agents/skills/run-fuzzers/SKILL.md).
 
 ### Cross-Compilation

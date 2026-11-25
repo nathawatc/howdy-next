@@ -13,6 +13,7 @@ changing tests for a subsystem.
   host side effects.
 - Cover success, malformed input, partial failure, rollback/cleanup, and uncertain-commit paths on
   security-sensitive code.
-- Protocol decoders have fuzz targets (`tests/protocol/runtime_descriptor_message_fuzz*.cpp`):
-  fixed-input replay runs in every build; libFuzzer targets build automatically when
-  `HOWDY_ENABLE_FUZZING` (`AUTO`) finds Clang libFuzzer.
+- Protocol decoders (`tests/protocol/runtime_descriptor_message_fuzz*.cpp`) and the INI editor
+  (`tests/config/config_key_file_fuzz*.cpp`, differential against inih) have fuzz targets: fixed-input
+  replay runs in every build; libFuzzer targets build automatically when `HOWDY_ENABLE_FUZZING`
+  (`AUTO`) finds Clang libFuzzer.

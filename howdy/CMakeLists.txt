@@ -383,6 +383,14 @@ if(BUILD_TESTING)
     add_test(NAME ${test_name} COMMAND ${target})
   endfunction()
 
+  # Compile the code under test in, so libFuzzer's coverage instrumentation reaches it.
+  function(howdy_add_native_fuzzer target)
+    add_executable(${target} ${ARGN})
+    howdy_configure_native_test_target(${target})
+    target_compile_options(${target} PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_options(${target} PRIVATE -fsanitize=fuzzer,address,undefined)
+  endfunction()
+
   include(cmake/tests/app.cmake)
   include(cmake/tests/auth_helper.cmake)
   include(cmake/tests/compare.cmake)

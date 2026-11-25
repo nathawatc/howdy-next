@@ -25,7 +25,9 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md).
 - Validate the config `.lock` with `fstat` before `flock`: a regular file owned by the trusted
   owner with `st_nlink == 1` and no group/other permission bits. Fail closed with a reason instead
   of repairing it. After `flock`, fail closed unless the path still names the locked file.
-- Match inih continuation rules when replacing a value, and refuse the update when a continuation
+- Match inih line rules when changing `key_file.cpp`; the differential fuzz
+  (`tests/config/config_key_file_fuzz*.cpp`) checks every update through `ConfigReader`. Match inih
+  continuation rules when replacing a value, and refuse the update when a continuation
   line looks like an assignment or section header instead of erasing it.
 - Refuse a value inih would not read back unchanged (surrounding whitespace, an inline comment)
   instead of storing something else than was asked for.
