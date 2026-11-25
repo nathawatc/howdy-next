@@ -31,9 +31,7 @@ Parent: [`../AGENTS.md`](../AGENTS.md). Related:
 - Lock only `.howdy-writers.lock` (`0600`, root-only) via `LockModelNamespace`. Never lock a model
   file (auth helper gives users read-only fds that can stall root writers) or the models directory
   (safety relies on `0750`).
-- Apply any new file-validation rule to `ValidateOpenedModelFd` (backing `OpenRuntimeDescriptor`,
-  `LoadDocumentFromFd`, and `LoadUserModelsFromFd`) and to `CheckSecurePathStat` in both
-  `LockNamespaceAndOpenModelFile` (used by writers, including `clear` which loads no document) and
-  `UserModelStore::InspectFile`. Enforce non-empty size on readers only so `clear` can remove damaged
-  empty files.
+- Check every opened model file through `ValidateOpenedModelFd` and add new file-validation rules
+  there. Readers pass `EmptyModelPolicy::kReject`; writers and `InspectFile` pass `kAccept` so `clear`
+  can remove damaged empty files.
 - Keep `CheckReadiness` and `OpenRuntimeDescriptor` path-based (`lstat`) and fail closed.

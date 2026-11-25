@@ -56,8 +56,8 @@ namespace howdy::native::user_model_store_internal {
 		};
 	}
 
-	auto ValidateOpenedModelFd(int fd, const std::filesystem::path &path, uid_t owner_uid)
-	    -> ValidatedModelFd {
+	auto ValidateOpenedModelFd(int fd, const std::filesystem::path &path, uid_t owner_uid,
+	                           EmptyModelPolicy empty_policy) -> ValidatedModelFd {
 		struct stat opened_file{};
 		if (fd < 0 || fstat(fd, &opened_file) != 0) {
 			const int error_number = fd < 0 ? EBADF : errno;
@@ -77,7 +77,7 @@ namespace howdy::native::user_model_store_internal {
 		// No writer leaves an empty model: a first model is linked in whole at commit, and
 		// commits never truncate. An empty file is damaged storage, such as a placeholder an
 		// older version left behind, and is reported by name rather than as unparsable JSON.
-		if (opened_file.st_size == 0) {
+		if (opened_file.st_size == 0 && empty_policy == EmptyModelPolicy::kReject) {
 			return {
 			    .status        = UserModelStatus::kParseError,
 			    .error_message = std::string(kUserModelFileEmptyMessage) + path.string(),
@@ -167,7 +167,8 @@ namespace howdy::native::user_model_store_internal {
 			};
 		}
 		// The walk checked the path; this checks the file the descriptor actually names.
-		auto validated = ValidateOpenedModelFd(model.Get(), readiness.path, config.owner_uid);
+		auto validated = ValidateOpenedModelFd(model.Get(), readiness.path, config.owner_uid,
+		                                       EmptyModelPolicy::kReject);
 		if (validated.status != UserModelStatus::kOk) {
 			return {
 			    .status        = UserModelDescriptorStatus::kInvalidStorage,

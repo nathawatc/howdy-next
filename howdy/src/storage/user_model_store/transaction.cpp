@@ -464,17 +464,10 @@ namespace howdy::native::user_model_store_internal {
 				    UserModelStatus::kLockFailed,
 				    WithErrno("Failed to open user model file: " + path.string(), error_number));
 			}
-			struct stat opened_file{};
-			if (fstat(fd.Get(), &opened_file) != 0) {
-				const int error_number = errno;
-				// An inspection failure, as RecheckOpenedPath and ResolvePath report one.
-				return OpenFailure(UserModelStatus::kParseError,
-				                   UserModelInspectionFailedMessage(path, error_number));
-			}
-			const auto security = CheckSecurePathStat(opened_file, SecurePathKind::kRegularFile,
-			                                          path, kUserModelFileLabel, owner_uid);
-			if (!security.ok) {
-				return OpenFailure(UserModelStatus::kInsecurePath, security.error_message);
+			auto validated =
+			    ValidateOpenedModelFd(fd.Get(), path, owner_uid, EmptyModelPolicy::kAccept);
+			if (validated.status != UserModelStatus::kOk) {
+				return OpenFailure(validated.status, std::move(validated.error_message));
 			}
 			opened.file = std::move(fd);
 			return opened;
