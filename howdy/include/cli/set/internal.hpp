@@ -1,17 +1,17 @@
 #pragma once
 
 #include "app/command_invocation.hpp"
+#include "config/config_utils.hpp"
 
 #include <filesystem>
-#include <string>
 
 namespace howdy::native::set_internal {
 
 	using ResolveConfigPathFn = std::filesystem::path (*)(void *context);
 
-	using UpdateConfigValueFn = bool (*)(void *context, const std::filesystem::path &config_path,
-	                                     const std::string &key, const std::string &value,
-	                                     std::string *error_message, bool lock);
+	using UpdateConfigValueFn = ConfigWriteResult (*)(void                        *context,
+	                                                  const std::filesystem::path &config_path,
+	                                                  const ConfigValueUpdate     &update);
 
 	struct SetDependencies {
 		void               *context             = nullptr;

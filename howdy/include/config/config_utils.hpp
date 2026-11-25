@@ -9,6 +9,7 @@
 
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <limits>
 #include <optional>
@@ -20,10 +21,7 @@
 
 namespace howdy::native {
 	inline constexpr auto kConfigFileLabel                  = "Config file";
-	inline constexpr auto kUpdatedConfigInvalidMessage      = "Updated config is invalid";
 	inline constexpr auto kEditedConfigInstallFailedMessage = "Failed to install edited config";
-	inline constexpr auto kStaleEditedConfigMessage =
-	    "Config changed while editing; not installing stale edited config";
 
 	using ConfigPathCheckResult = SecurePathCheckResult;
 
@@ -95,18 +93,72 @@ namespace howdy::native {
 		return result.output;
 	}
 
-	[[nodiscard]] auto ValidateConfigContent(const std::string &content, std::string *error_message)
-	    -> bool;
-	[[nodiscard]] auto ReplaceConfigContentAtomically(
-	    const std::filesystem::path &config_path, const std::string &content,
-	    std::string *error_message = nullptr, bool lock = true, bool validate_runtime = true,
-	    const std::string                            *expected_current_content = nullptr,
-	    SyncParentDirectoryFn                         sync_parent     = SyncParentDirectory,
-	    const file_security_internal::ValidationRoot &validation_root = {}) -> bool;
-	[[nodiscard]] auto
-	UpdateConfigValue(const std::filesystem::path &config_path, const std::string &key,
-	                  std::string *error_message, const std::string &value, bool lock = false,
-	                  bool                                          validate_runtime = true,
-	                  const file_security_internal::ValidationRoot &validation_root  = {}) -> bool;
+	// Messages in the results below are for display only; decide on the status.
+	enum class ConfigValidationStatus : std::uint8_t {
+		kOk,
+		kTooLarge,
+		kUnparsable,
+		kInvalidSetting,
+	};
+
+	// Fail closed: a result that names no status never passes as a valid config.
+	struct ConfigValidationResult {
+		ConfigValidationStatus status = ConfigValidationStatus::kUnparsable;
+		std::string            message;
+	};
+
+	enum class ConfigWriteStatus : std::uint8_t {
+		kOk,
+		// The option cannot be set, or not to this value.
+		kInvalidRequest,
+		// The content to install is too large, does not parse, or holds an invalid setting.
+		kInvalidConfig,
+		kInsecurePath,
+		// The current config could not be opened, inspected or read.
+		kReadFailed,
+		kLockFailed,
+		// The current config is no longer the content the caller started from.
+		kStale,
+		kStagingFailed,
+		kInstallFailed,
+		// Installed, but its directory was not synced: potentially committed.
+		kDurabilityUncertain,
+	};
+
+	// Fail closed: a result that names no status is a failure.
+	struct ConfigWriteResult {
+		ConfigWriteStatus status = ConfigWriteStatus::kInstallFailed;
+		std::string       message;
+	};
+
+	struct ConfigReplaceOptions {
+		bool lock             = true;
+		bool validate_runtime = true;
+		// When set, the install is refused as kStale unless the current config still matches.
+		const std::string                     *expected_current_content = nullptr;
+		SyncParentDirectoryFn                  sync_parent              = SyncParentDirectory;
+		file_security_internal::ValidationRoot validation_root{};
+	};
+
+	struct ConfigUpdateOptions {
+		bool                                   lock             = true;
+		bool                                   validate_runtime = true;
+		file_security_internal::ValidationRoot validation_root{};
+	};
+
+	struct ConfigValueUpdate {
+		std::string key;
+		std::string value;
+	};
+
+	[[nodiscard]] auto ValidateConfigContent(const std::string &content) -> ConfigValidationResult;
+	[[nodiscard]] auto ReplaceConfigContentAtomically(const std::filesystem::path &config_path,
+	                                                  const std::string           &content,
+	                                                  const ConfigReplaceOptions  &options = {})
+	    -> ConfigWriteResult;
+	[[nodiscard]] auto UpdateConfigValue(const std::filesystem::path &config_path,
+	                                     const ConfigValueUpdate     &update,
+	                                     const ConfigUpdateOptions   &options = {})
+	    -> ConfigWriteResult;
 
 }  // namespace howdy::native

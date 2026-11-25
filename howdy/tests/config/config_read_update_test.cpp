@@ -27,40 +27,46 @@ namespace howdy::test {
 			auto const expect_float_write_path = [&](const std::string &label) -> bool {
 				bool ok = true;
 				ok &= Expect(write_float_config(), label + ": write baseline float config");
-				ok &= Expect(howdy::native::UpdateConfigValue(config_path, "clahe_clip_limit",
-				                                              nullptr, "1.25", false, true,
-				                                              {config_path.parent_path()}),
+				ok &= Expect(howdy::native::UpdateConfigValue(
+				                 config_path, {.key = "clahe_clip_limit", .value = "1.25"},
+				                 {.lock = false, .validation_root = {config_path.parent_path()}})
+				                     .status == howdy::native::ConfigWriteStatus::kOk,
 				             label + ": update_config_value accepts clahe_clip_limit dot decimal");
 				ok &= Expect(ReadFile(config_path).contains("clahe_clip_limit = 1.25\n"),
 				             label + ": clahe_clip_limit written unchanged");
-				ok &= Expect(howdy::native::UpdateConfigValue(config_path, "yunet_score_threshold",
-				                                              nullptr, "0.8845", false, true,
-				                                              {config_path.parent_path()}),
+				ok &= Expect(howdy::native::UpdateConfigValue(
+				                 config_path, {.key = "yunet_score_threshold", .value = "0.8845"},
+				                 {.lock = false, .validation_root = {config_path.parent_path()}})
+				                     .status == howdy::native::ConfigWriteStatus::kOk,
 				             label +
 				                 ": update_config_value accepts yunet_score_threshold dot decimal");
 				ok &= Expect(ReadFile(config_path).contains("yunet_score_threshold = 0.8845\n"),
 				             label + ": yunet_score_threshold written unchanged");
 				ok &=
-				    Expect(howdy::native::UpdateConfigValue(config_path, "yunet_nms_threshold",
-					                                        nullptr, "0.3", false, true,
-					                                        {config_path.parent_path()}),
+				    Expect(howdy::native::UpdateConfigValue(
+				               config_path, {.key = "yunet_nms_threshold", .value = "0.3"},
+				               {.lock = false, .validation_root = {config_path.parent_path()}})
+					               .status == howdy::native::ConfigWriteStatus::kOk,
 					       label + ": update_config_value accepts yunet_nms_threshold dot decimal");
 				ok &= Expect(ReadFile(config_path).contains("yunet_nms_threshold = 0.3\n"),
 				             label + ": yunet_nms_threshold written unchanged");
-				ok &= Expect(howdy::native::UpdateConfigValue(config_path, "sface_threshold",
-				                                              nullptr, "0.6942", false, true,
-				                                              {config_path.parent_path()}),
+				ok &= Expect(howdy::native::UpdateConfigValue(
+				                 config_path, {.key = "sface_threshold", .value = "0.6942"},
+				                 {.lock = false, .validation_root = {config_path.parent_path()}})
+				                     .status == howdy::native::ConfigWriteStatus::kOk,
 				             label + ": update_config_value accepts sface_threshold dot decimal");
 				ok &= Expect(ReadFile(config_path).contains("sface_threshold = 0.6942\n"),
 				             label + ": sface_threshold written unchanged");
 
 				for (const auto *const value : {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf"}) {
 					const auto before_invalid = ReadFile(config_path);
-					ok &= Expect(!howdy::native::UpdateConfigValue(config_path, "clahe_clip_limit",
-					                                               nullptr, value, false, true,
-					                                               {config_path.parent_path()}),
-					             label + ": update_config_value rejects invalid float " +
-					                 std::string(value));
+					ok &=
+					    Expect(howdy::native::UpdateConfigValue(
+					               config_path, {.key = "clahe_clip_limit", .value = value},
+					               {.lock = false, .validation_root = {config_path.parent_path()}})
+						               .status != howdy::native::ConfigWriteStatus::kOk,
+						       label + ": update_config_value rejects invalid float " +
+						           std::string(value));
 					ok &= Expect(ReadFile(config_path) == before_invalid,
 					             label + ": invalid float update leaves config unchanged for " +
 					                 std::string(value));
@@ -109,22 +115,24 @@ namespace howdy::test {
 
 		ok &= Expect(WriteConfigTestFile(context.config_path, context.config_at_limit),
 		             "write config exactly at size limit");
-		std::string size_error;
 		// The padding-only fixture has no "disabled" key, so the update must get past the read
 		// and the size limit and fail only on the missing option.
-		const bool at_limit_updated =
-		    howdy::native::UpdateConfigValue(context.config_path, "disabled", &size_error, "true",
-			                                 false, false, {context.temp_root});
-		ok &= Expect(
-		    !at_limit_updated && size_error == "Could not find a \"disabled\" config option to set",
-		    "config exactly at size limit is read before the missing option fails: " + size_error);
-		size_error.clear();
+		auto size_result = howdy::native::UpdateConfigValue(
+		    context.config_path, {.key = "disabled", .value = "true"},
+		    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+		ok &=
+		    Expect(size_result.status == howdy::native::ConfigWriteStatus::kInvalidRequest &&
+			           size_result.message == "Could not find a \"disabled\" config option to set",
+			       "config exactly at size limit is read before the missing option fails: " +
+			           size_result.message);
 		ok &= Expect(WriteConfigTestFile(context.config_path, context.config_over_limit),
 		             "write oversized config");
-		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &size_error,
-		                                               "true", false, false, {context.temp_root}),
+		size_result = howdy::native::UpdateConfigValue(
+		    context.config_path, {.key = "disabled", .value = "true"},
+		    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+		ok &= Expect(size_result.status == howdy::native::ConfigWriteStatus::kReadFailed,
 		             "update_config_value rejects oversized current config");
-		ok &= Expect(size_error == "Failed to read config file",
+		ok &= Expect(size_result.message == "Failed to read config file",
 		             "oversized update reports config read failure");
 		ok &= Expect(ReadFile(context.config_path) == context.config_over_limit,
 		             "oversized update leaves current config unchanged");
@@ -135,8 +143,10 @@ namespace howdy::test {
 		                                                      "dark_threshold = 60\n"),
 		             "restore initial config after size-limit reads");
 
-		ok &= Expect(howdy::native::UpdateConfigValue(context.config_path, "disabled", nullptr,
-		                                              "true", false, true, {context.temp_root}),
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 context.config_path, {.key = "disabled", .value = "true"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                     .status == howdy::native::ConfigWriteStatus::kOk,
 		             "update_config_value succeeds for existing key");
 		const auto after_disabled = ReadFile(context.config_path);
 		ok &= Expect(after_disabled.contains("disabled = true\n"), "disabled key updated");
@@ -151,38 +161,43 @@ namespace howdy::test {
 		         std::string("true\n[video]\ntimeout = 0"),
 		         std::string("[video]"),
 		     }) {
-			std::string error;
-			ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &error,
-			                                               unsafe_value, false, false,
-			                                               {context.temp_root}),
+			const auto result = howdy::native::UpdateConfigValue(
+			    context.config_path, {.key = "disabled", .value = unsafe_value},
+			    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+			ok &= Expect(result.status == howdy::native::ConfigWriteStatus::kInvalidRequest,
 			             "update_config_value rejects unsafe scalar value");
-			ok &= Expect(error == expected_scalar_error,
+			ok &= Expect(result.message == expected_scalar_error,
 			             "update_config_value returns exact scalar diagnostic");
 			ok &= Expect(ReadFile(context.config_path) == before_unsafe,
 			             "unsafe scalar update leaves config file unchanged");
 		}
 
-		std::string nonexistent_path_error;
-		ok &= Expect(!howdy::native::UpdateConfigValue(
-		                 context.temp_root / "nonexistent.ini", "disabled", &nonexistent_path_error,
-		                 "[section]", false, false, {context.temp_root}),
+		const auto nonexistent_path_result = howdy::native::UpdateConfigValue(
+		    context.temp_root / "nonexistent.ini", {.key = "disabled", .value = "[section]"},
+		    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+		ok &= Expect(nonexistent_path_result.status ==
+		                 howdy::native::ConfigWriteStatus::kInvalidRequest,
 		             "unsafe scalar fails before filesystem/path checks");
-		ok &= Expect(nonexistent_path_error == expected_scalar_error,
+		ok &= Expect(nonexistent_path_result.message == expected_scalar_error,
 		             "unsafe scalar on nonexistent path returns scalar diagnostic");
 
 		const auto empty_scalar_path = context.temp_root / "empty-scalar.ini";
 		ok &= Expect(WriteConfigTestFile(empty_scalar_path, "[video]\ndevice_path = none\n"),
 		             "write config for empty scalar update");
-		ok &= Expect(howdy::native::UpdateConfigValue(empty_scalar_path, "device_path", nullptr, "",
-		                                              false, false, {context.temp_root}),
-		             "update_config_value accepts empty scalar value");
+		ok &= Expect(
+		    howdy::native::UpdateConfigValue(
+		        empty_scalar_path, {.key = "device_path", .value = ""},
+		        {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}})
+		            .status == howdy::native::ConfigWriteStatus::kOk,
+		    "update_config_value accepts empty scalar value");
 		ok &= Expect(ReadFile(empty_scalar_path) == "[video]\ndevice_path = \n",
 		             "empty scalar value is written unchanged");
 
-		ok &=
-		    Expect(howdy::native::UpdateConfigValue(context.config_path, "dark_threshold", nullptr,
-			                                        "42", false, true, {context.temp_root}),
-			       "update_config_value succeeds in later section");
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 context.config_path, {.key = "dark_threshold", .value = "42"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                     .status == howdy::native::ConfigWriteStatus::kOk,
+		             "update_config_value succeeds in later section");
 		const auto after_threshold = ReadFile(context.config_path);
 		ok &=
 		    Expect(after_threshold.contains("dark_threshold = 42\n"), "dark_threshold key updated");
@@ -190,33 +205,45 @@ namespace howdy::test {
 		const auto whitespace_path = context.temp_root / "whitespace.ini";
 		ok &= Expect(WriteConfigTestFile(whitespace_path, "   \n\t  "),
 		             "write whitespace-only config lines");
-		ok &= Expect(!howdy::native::UpdateConfigValue(whitespace_path, "missing_key", nullptr, "x",
-		                                               false, false, {context.temp_root}),
-		             "update_config_value ignores whitespace-only lines");
+		ok &= Expect(
+		    howdy::native::UpdateConfigValue(
+		        whitespace_path, {.key = "missing_key", .value = "x"},
+		        {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}})
+		            .status != howdy::native::ConfigWriteStatus::kOk,
+		    "update_config_value ignores whitespace-only lines");
 		const auto alternate_syntax_path = context.temp_root / "alternate-syntax.ini";
 		ok &= Expect(WriteConfigTestFile(alternate_syntax_path, "[core]\ndisabled true\n"),
 		             "write space-separated config option");
-		ok &= Expect(howdy::native::UpdateConfigValue(alternate_syntax_path, "disabled", nullptr,
-		                                              "false", false, false, {context.temp_root}),
-		             "update_config_value accepts space-separated option syntax");
+		ok &= Expect(
+		    howdy::native::UpdateConfigValue(
+		        alternate_syntax_path, {.key = "disabled", .value = "false"},
+		        {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}})
+		            .status == howdy::native::ConfigWriteStatus::kOk,
+		    "update_config_value accepts space-separated option syntax");
 		ok &= Expect(ReadFile(alternate_syntax_path) == "[core]\ndisabled = false\n",
 		             "space-separated option is normalized");
 
 		const auto mixed_case_path = context.temp_root / "mixed-case.ini";
 		ok &= Expect(WriteConfigTestFile(mixed_case_path, "[CORE]\nDISABLED=false\n"),
 		             "write mixed-case config identifiers");
-		ok &= Expect(howdy::native::UpdateConfigValue(mixed_case_path, "disabled", nullptr, "true",
-		                                              false, false, {context.temp_root}),
-		             "update_config_value matches config identifiers case-insensitively");
+		ok &= Expect(
+		    howdy::native::UpdateConfigValue(
+		        mixed_case_path, {.key = "disabled", .value = "true"},
+		        {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}})
+		            .status == howdy::native::ConfigWriteStatus::kOk,
+		    "update_config_value matches config identifiers case-insensitively");
 		ok &= Expect(ReadFile(mixed_case_path) == "[CORE]\ndisabled = true\n",
 		             "mixed-case option is updated in matching section");
 
 		const auto bom_path = context.temp_root / "bom.ini";
 		ok &= Expect(WriteConfigTestFile(bom_path, "\xEF\xBB\xBF[core]\ndisabled=false\n"),
 		             "write config with UTF-8 BOM");
-		ok &= Expect(howdy::native::UpdateConfigValue(bom_path, "disabled", nullptr, "true", false,
-		                                              false, {context.temp_root}),
-		             "update_config_value recognizes BOM-prefixed section");
+		ok &= Expect(
+		    howdy::native::UpdateConfigValue(
+		        bom_path, {.key = "disabled", .value = "true"},
+		        {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}})
+		            .status == howdy::native::ConfigWriteStatus::kOk,
+		    "update_config_value recognizes BOM-prefixed section");
 		ok &= Expect(ReadFile(bom_path) == "\xEF\xBB\xBF[core]\ndisabled = true\n",
 		             "BOM-prefixed config option is updated");
 
@@ -228,9 +255,12 @@ namespace howdy::test {
 		                                                      "disabled backup = false\n"
 		                                                      "disabled=false\n"),
 		             "write same option name in unrelated section");
-		ok &= Expect(howdy::native::UpdateConfigValue(duplicate_name_path, "disabled", nullptr,
-		                                              "true", false, false, {context.temp_root}),
-		             "update_config_value targets schema-owned section");
+		ok &= Expect(
+		    howdy::native::UpdateConfigValue(
+		        duplicate_name_path, {.key = "disabled", .value = "true"},
+		        {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}})
+		            .status == howdy::native::ConfigWriteStatus::kOk,
+		    "update_config_value targets schema-owned section");
 		const auto duplicate_name_content = ReadFile(duplicate_name_path);
 		ok &= Expect(duplicate_name_content == "[other]\n"
 		                                       "disabled = false\n"
@@ -254,33 +284,41 @@ namespace howdy::test {
 		ok &= Expect(duplicate_target_reader.Ok() &&
 		                 !duplicate_target_reader.GetBool("core", "disabled", true),
 		             "duplicate target fixture has effective false value before update");
-		std::string duplicate_target_error;
-		ok &= Expect(!howdy::native::UpdateConfigValue(duplicate_target_path, "disabled",
-		                                               &duplicate_target_error, "true", false,
-		                                               false, {context.temp_root}),
+		const auto duplicate_target_result = howdy::native::UpdateConfigValue(
+		    duplicate_target_path, {.key = "disabled", .value = "true"},
+		    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+		ok &= Expect(duplicate_target_result.status ==
+		                 howdy::native::ConfigWriteStatus::kInvalidRequest,
 		             "update_config_value rejects duplicate target options");
-		ok &= Expect(duplicate_target_error.contains("appears more than once"),
+		ok &= Expect(duplicate_target_result.message.contains("appears more than once"),
 		             "duplicate target update reports duplicate option");
 		ok &= Expect(ReadFile(duplicate_target_path) == duplicate_target_content,
 		             "rejected duplicate target update leaves config unchanged");
 
-		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "missing_key", nullptr,
-		                                               "x", false, true, {context.temp_root}),
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 context.config_path, {.key = "missing_key", .value = "x"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                     .status != howdy::native::ConfigWriteStatus::kOk,
 		             "update_config_value fails for missing key");
-		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "dark_threshold",
-		                                               nullptr, "0\n[core]\ndisabled = true", false,
-		                                               true, {context.temp_root}),
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 context.config_path,
+		                 {.key = "dark_threshold", .value = "0\n[core]\ndisabled = true"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                     .status != howdy::native::ConfigWriteStatus::kOk,
 		             "update_config_value rejects newline injection");
 		ok &= Expect(ReadFile(context.config_path) == after_threshold,
 		             "rejected injection leaves config unchanged");
-		ok &=
-		    Expect(!howdy::native::UpdateConfigValue(context.config_path, "dark_threshold", nullptr,
-			                                         "1000", false, true, {context.temp_root}),
-			       "update_config_value rejects semantically invalid values");
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 context.config_path, {.key = "dark_threshold", .value = "1000"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                     .status == howdy::native::ConfigWriteStatus::kInvalidRequest,
+		             "update_config_value rejects semantically invalid values as the request");
 		ok &= Expect(ReadFile(context.config_path) == after_threshold,
 		             "semantic validation failure leaves config unchanged");
-		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "device_fps", nullptr,
-		                                               "-1", false, true, {context.temp_root}),
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 context.config_path, {.key = "device_fps", .value = "-1"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                     .status != howdy::native::ConfigWriteStatus::kOk,
 		             "update_config_value rejects invalid device_fps values");
 		ok &= Expect(ReadFile(context.config_path) == after_threshold,
 		             "invalid device_fps update leaves config unchanged");
@@ -293,9 +331,17 @@ namespace howdy::test {
 		                                                      "[video]\n"
 		                                                      "timeout = 0\n"),
 		             "write config with invalid timeout");
-		ok &= Expect(howdy::native::UpdateConfigValue(context.config_path, "disabled", nullptr,
-		                                              "true", false, false, {context.temp_root}),
-		             "update_config_value can bypass runtime validation for recovery writes");
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 context.config_path, {.key = "disabled", .value = "true"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                     .status == howdy::native::ConfigWriteStatus::kInvalidConfig,
+		             "an update that leaves another setting invalid blames the config");
+		ok &= Expect(
+		    howdy::native::UpdateConfigValue(
+		        context.config_path, {.key = "disabled", .value = "true"},
+		        {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}})
+		            .status == howdy::native::ConfigWriteStatus::kOk,
+		    "update_config_value can bypass runtime validation for recovery writes");
 		const auto after_disable_recovery = ReadFile(context.config_path);
 		ok &= Expect(after_disable_recovery.contains("disabled = true\n"),
 		             "recovery write updates disabled key");
@@ -312,8 +358,10 @@ namespace howdy::test {
 		                                                 "  continued_line\n"
 		                                                 "timeout = 4\n"),
 		             "write multiline INI option fixture");
-		ok &= Expect(howdy::native::UpdateConfigValue(multiline_path, "device_path", nullptr,
-		                                              "none", false, true, {context.temp_root}),
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 multiline_path, {.key = "device_path", .value = "none"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                     .status == howdy::native::ConfigWriteStatus::kOk,
 		             "update_config_value replaces multiline INI option");
 		ok &= Expect(ReadFile(multiline_path) == "[video]\n"
 		                                         "device_path = none\n"
@@ -328,8 +376,10 @@ namespace howdy::test {
 		                                                 "\n"
 		                                                 "timeout = 4\n"),
 		             "write continuation-after-blank-and-comment fixture");
-		ok &= Expect(howdy::native::UpdateConfigValue(multiline_path, "device_path", nullptr,
-		                                              "none", false, true, {context.temp_root}),
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 multiline_path, {.key = "device_path", .value = "none"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                     .status == howdy::native::ConfigWriteStatus::kOk,
 		             "update_config_value replaces value continued across blank/comment lines");
 		const auto after_gap_update = ReadFile(multiline_path);
 		ok &= Expect(after_gap_update == "[video]\n"
@@ -350,8 +400,10 @@ namespace howdy::test {
 			                    "  /dev/v4l/by-path/pci-0000:00:14.0-usb-0:1:1.0-video-index0\n"
 			                    "timeout = 4\n"),
 		    "write device path continuation fixture");
-		ok &= Expect(howdy::native::UpdateConfigValue(multiline_path, "device_path", nullptr,
-		                                              "none", false, true, {context.temp_root}) &&
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 multiline_path, {.key = "device_path", .value = "none"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                         .status == howdy::native::ConfigWriteStatus::kOk &&
 		                 ReadFile(multiline_path) == "[video]\n"
 		                                             "device_path = none\n"
 		                                             "timeout = 4\n",
@@ -365,8 +417,10 @@ namespace howdy::test {
 		                                                 "timeout = 4\n"),
 		             "write form-feed continuation fixture");
 		ok &=
-		    Expect(howdy::native::UpdateConfigValue(multiline_path, "device_path", nullptr, "none",
-			                                        false, true, {context.temp_root}) &&
+		    Expect(howdy::native::UpdateConfigValue(
+		               multiline_path, {.key = "device_path", .value = "none"},
+		               {.lock = false, .validation_root = {context.temp_root}})
+			                   .status == howdy::native::ConfigWriteStatus::kOk &&
 			           ReadFile(multiline_path) == "[video]\n"
 			                                       "device_path = none\n"
 			                                       "\f\n"
@@ -378,8 +432,10 @@ namespace howdy::test {
 		                                                 "  second ; note: old = camera\n"
 		                                                 "timeout = 4\n"),
 		             "write inline-comment continuation fixture");
-		ok &= Expect(howdy::native::UpdateConfigValue(multiline_path, "device_path", nullptr,
-		                                              "none", false, true, {context.temp_root}) &&
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 multiline_path, {.key = "device_path", .value = "none"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                         .status == howdy::native::ConfigWriteStatus::kOk &&
 		                 ReadFile(multiline_path) == "[video]\n"
 		                                             "device_path = none\n"
 		                                             "timeout = 4\n",
@@ -389,11 +445,12 @@ namespace howdy::test {
 		     {"disabled\r\n", "disabled\ftrue\n", "disabled\n", "disabled"}) {
 			ok &= Expect(WriteConfigTestFile(multiline_path, std::string("[core]\n") + bare),
 			             "write separator-less option fixture");
-			ok &=
-			    Expect(howdy::native::UpdateConfigValue(multiline_path, "disabled", nullptr, "true",
-				                                        false, true, {context.temp_root}) &&
-				           ReadFile(multiline_path) == "[core]\ndisabled = true\n",
-				       "separator-less option line is repaired whatever whitespace ends it");
+			ok &= Expect(howdy::native::UpdateConfigValue(
+			                 multiline_path, {.key = "disabled", .value = "true"},
+			                 {.lock = false, .validation_root = {context.temp_root}})
+			                         .status == howdy::native::ConfigWriteStatus::kOk &&
+			                 ReadFile(multiline_path) == "[core]\ndisabled = true\n",
+			             "separator-less option line is repaired whatever whitespace ends it");
 		}
 
 		// Each indented line continues the first value, but erasing it would drop a setting.
@@ -411,20 +468,21 @@ namespace howdy::test {
 		         "[core]\ndisabled = false\n  abort_if_ssh\n",
 		         "[core]\ndisabled = false\n  abort_if_ssh",
 		         // A line without a separator owns nothing: what follows belongs to the option
-				 // above.
+		         // above.
 		         "[core]\nabort_if_ssh = true\ndisabled\n  second\n",
 		         "[core]\nabort_if_ssh = true\ndisabled false\nmalformed\n  second\n",
 		         "[core]\ndisabled\n  abort_if_ssh = true\n",
 		     }) {
 			ok &= Expect(WriteConfigTestFile(multiline_path, ambiguous),
 			             "write ambiguous continuation fixture");
-			std::string ambiguous_error;
-			ok &= Expect(!howdy::native::UpdateConfigValue(multiline_path, "disabled",
-			                                               &ambiguous_error, "true", false, false,
-			                                               {context.temp_root}) &&
-			                 ambiguous_error.starts_with("Config line ") &&
-			                 ambiguous_error.contains(" is indented"),
-			             "ambiguous continuation is refused by line: " + ambiguous_error);
+			const auto ambiguous_result = howdy::native::UpdateConfigValue(
+			    multiline_path, {.key = "disabled", .value = "true"},
+			    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+			ok &= Expect(ambiguous_result.status ==
+			                     howdy::native::ConfigWriteStatus::kInvalidRequest &&
+			                 ambiguous_result.message.starts_with("Config line ") &&
+			                 ambiguous_result.message.contains(" is indented"),
+			             "ambiguous continuation is refused by line: " + ambiguous_result.message);
 			ok &= Expect(ReadFile(multiline_path) == ambiguous,
 			             "refused ambiguous continuation leaves the config unchanged");
 		}

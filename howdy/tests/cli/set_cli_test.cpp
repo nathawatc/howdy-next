@@ -1,5 +1,6 @@
 #include "app/command_invocation.hpp"
 #include "cli/set/internal.hpp"
+#include "config/config_utils.hpp"
 #include "test_support.hpp"
 
 #include <filesystem>
@@ -13,6 +14,8 @@ namespace {
 
 	using howdy::test::Expect;
 
+	using howdy::native::ConfigWriteResult;
+	using howdy::native::ConfigWriteStatus;
 	using howdy::native::set_internal::SetDependencies;
 
 	struct TestContext {
@@ -22,9 +25,7 @@ namespace {
 		std::filesystem::path received_path;
 		std::string           received_key;
 		std::string           received_value;
-		bool                  received_lock = false;
-		bool                  update_result = true;
-		std::string           update_error;
+		ConfigWriteResult     update_result = {.status = ConfigWriteStatus::kOk};
 	};
 
 	struct RunResult {
@@ -39,15 +40,12 @@ namespace {
 	}
 
 	auto UpdateConfigValue(void *context, const std::filesystem::path &config_path,
-	                       const std::string &key, const std::string &value,
-	                       std::string *error_message, bool lock) -> bool {
+	                       const howdy::native::ConfigValueUpdate &update) -> ConfigWriteResult {
 		auto &test_context = *static_cast<TestContext *>(context);
 		++test_context.update_calls;
 		test_context.received_path  = config_path;
-		test_context.received_key   = key;
-		test_context.received_value = value;
-		test_context.received_lock  = lock;
-		*error_message              = test_context.update_error;
+		test_context.received_key   = update.key;
+		test_context.received_value = update.value;
 		return test_context.update_result;
 	}
 
@@ -76,8 +74,11 @@ auto main() -> int {
 
 	{
 		TestContext context{
-		    .update_result = false,
-		    .update_error  = "Config values must be single-line scalars and cannot start with [",
+		    .update_result =
+		        {
+		            .status  = ConfigWriteStatus::kInvalidRequest,
+		            .message = "Config values must be single-line scalars and cannot start with [",
+		        },
 		};
 		const auto result =
 		    RunSet({.positionals = {"key", "line\nbreak"}}, DependenciesFor(context));
@@ -112,7 +113,6 @@ auto main() -> int {
 		ok &= Expect(context.received_path == context.config_path, "updater receives path");
 		ok &= Expect(context.received_key == "sface_threshold", "updater receives key");
 		ok &= Expect(context.received_value == "0.363", "updater receives value");
-		ok &= Expect(context.received_lock, "updater enables lock");
 	}
 
 	for (const auto &[error, expected_output] : {
@@ -120,8 +120,7 @@ auto main() -> int {
 	         std::pair{std::string(), std::string("Failed to update config option\n")},
 	     }) {
 		TestContext context{
-		    .update_result = false,
-		    .update_error  = error,
+		    .update_result = {.status = ConfigWriteStatus::kInstallFailed, .message = error},
 		};
 		const auto result = RunSet({.positionals = {"key", "value"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 1, "updater failure aborts");

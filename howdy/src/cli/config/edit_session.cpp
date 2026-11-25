@@ -4,7 +4,6 @@
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 #include "internal.hpp"
-#include "support/atomic_files.hpp"
 #include "support/fd_io.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
@@ -88,6 +87,20 @@ namespace howdy::native::config_internal {
 		                         const std::optional<howdy::native::InvokingUser> &invoking_user)
 		    -> int {
 			return RunEditor(editor_preference, temp_path, invoking_user);
+		}
+
+		// A parse failure has no detail to add to what its status says.
+		auto InvalidEditDetail(howdy::native::ConfigValidationResult validation) -> std::string {
+			if (validation.status == howdy::native::ConfigValidationStatus::kUnparsable) {
+				return {};
+			}
+			return std::move(validation.message);
+		}
+
+		auto InstallFailureStatus(howdy::native::ConfigWriteStatus status) -> ConfigEditStatus {
+			return status == howdy::native::ConfigWriteStatus::kStale
+			           ? ConfigEditStatus::kConfigChanged
+					   : ConfigEditStatus::kInstallFailed;
 		}
 
 	}  // namespace
@@ -319,9 +332,10 @@ namespace howdy::native::config_internal {
 				return result_base(ConfigEditStatus::kReadFailed);
 		}
 
-		std::string validation_error;
-		if (!howdy::native::ValidateConfigContent(edited_content, &validation_error)) {
-			return result_base(ConfigEditStatus::kInvalidEditedConfig, std::move(validation_error));
+		if (auto validation = howdy::native::ValidateConfigContent(edited_content);
+		    validation.status != howdy::native::ConfigValidationStatus::kOk) {
+			return result_base(ConfigEditStatus::kInvalidEditedConfig,
+			                   InvalidEditDetail(std::move(validation)));
 		}
 
 		if (FileContentMatches(config_path, edited_content, dependencies_.validation_root)) {
@@ -329,15 +343,17 @@ namespace howdy::native::config_internal {
 			return result_base(ConfigEditStatus::kNoChanges);
 		}
 
-		std::string install_error;
-		if (!howdy::native::ReplaceConfigContentAtomically(
-		        config_path, edited_content, &install_error, true, false,
-		        &temp_copy->original_content, SyncParentDirectory, dependencies_.validation_root)) {
+		if (auto installed = howdy::native::ReplaceConfigContentAtomically(
+		        config_path, edited_content,
+		        {
+		            .validate_runtime         = false,
+		            .expected_current_content = &temp_copy->original_content,
+		            .validation_root          = dependencies_.validation_root,
+		        });
+		    installed.status != howdy::native::ConfigWriteStatus::kOk) {
 			// Keep the valid edits: the install was refused or may not be durable.
-			const auto result_status = install_error == howdy::native::kStaleEditedConfigMessage
-			                               ? ConfigEditStatus::kConfigChanged
-			                               : ConfigEditStatus::kInstallFailed;
-			return result_base(result_status, std::move(install_error));
+			return result_base(InstallFailureStatus(installed.status),
+			                   std::move(installed.message));
 		}
 
 		RemoveIfExists(temp_copy->path);

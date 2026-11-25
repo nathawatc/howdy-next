@@ -14,6 +14,7 @@
 #include "support/scoped_fd.hpp"
 
 #include <cerrno>
+#include <expected>
 #include <filesystem>
 #include <format>
 #include <optional>
@@ -36,15 +37,13 @@ namespace howdy::native::config_utils_internal {
 
 	}  // namespace
 
-	auto AcquireConfigLock(ScopedFileLock &guard, const std::filesystem::path &config_path,
-	                       std::string *error_message) -> bool {
+	auto AcquireConfigLock(const std::filesystem::path &config_path)
+	    -> std::expected<ScopedFileLock, std::string> {
 		// Carry the specific rejection so an admin can tell a lock file with the wrong
 		// owner/mode apart from an I/O failure; both still fail closed.
-		const auto fail = [&](std::string_view reason) -> bool {
-			const auto message =
-			    std::string(kConfigFileLockFailureMessage) + ": " + std::string(reason);
-			guard.Release();
-			return FailWith(error_message, message);
+		const auto fail = [](std::string_view reason) -> std::unexpected<std::string> {
+			return std::unexpected(std::string(kConfigFileLockFailureMessage) + ": " +
+			                       std::string(reason));
 		};
 		const auto lock_path = LockFilePath(config_path);
 		ScopedFd   fd(
@@ -91,30 +90,40 @@ namespace howdy::native::config_utils_internal {
 		if (path_stat.st_dev != lock_stat.st_dev || path_stat.st_ino != lock_stat.st_ino) {
 			return fail(kLockReplacedMessage);
 		}
-		guard = ScopedFileLock(std::move(fd));
-		return true;
+		return ScopedFileLock(std::move(fd));
 	}
 
-	auto ExpectedContentMatches(const std::filesystem::path &config_path,
-	                            const std::string &expected, std::string *error_message,
-	                            const file_security_internal::ValidationRoot &validation_root)
-	    -> bool {
+	auto CheckExpectedContent(const std::filesystem::path &config_path, const std::string &expected,
+	                          const file_security_internal::ValidationRoot &validation_root)
+	    -> ConfigWriteResult {
 		const auto opened =
 		    OpenSecureConfigForRead(config_path, DefaultSecureOwnerUid(), validation_root);
 		if (!opened.fd.Valid()) {
-			return FailWith(error_message, kConfigFileOpenFailureMessage);
+			return {
+			    .status  = ConfigWriteStatus::kReadFailed,
+			    .message = kConfigFileOpenFailureMessage,
+			};
 		}
 		if (!opened.security.ok) {
-			return FailWith(error_message, opened.security.error_message);
+			return {
+			    .status  = ConfigWriteStatus::kInsecurePath,
+			    .message = opened.security.error_message,
+			};
 		}
 		const auto current_content = ReadConfigFromFd(opened.fd.Get());
 		if (!current_content.has_value()) {
-			return FailWith(error_message, kConfigFileReadFailureMessage);
+			return {
+			    .status  = ConfigWriteStatus::kReadFailed,
+			    .message = kConfigFileReadFailureMessage,
+			};
 		}
 		if (*current_content != expected) {
-			return FailWith(error_message, kStaleEditedConfigMessage);
+			return {
+			    .status  = ConfigWriteStatus::kStale,
+			    .message = kStaleEditedConfigMessage,
+			};
 		}
-		return true;
+		return {.status = ConfigWriteStatus::kOk};
 	}
 
 	auto InstallConfigContent(const std::filesystem::path &config_path, const std::string &content,
@@ -137,22 +146,30 @@ namespace howdy::native::config_utils_internal {
 
 namespace howdy::native {
 
-	auto ValidateConfigContent(const std::string &content, std::string *error_message) -> bool {
+	auto ValidateConfigContent(const std::string &content) -> ConfigValidationResult {
 		if (content.size() > kMaxConfigFileSize) {
-			return config_utils_internal::FailWith(
-			    error_message, config_utils_internal::kUpdatedConfigTooLargeMessage);
+			return {
+			    .status  = ConfigValidationStatus::kTooLarge,
+			    .message = config_utils_internal::kUpdatedConfigTooLargeMessage,
+			};
 		}
 
 		ConfigReader const config(content);
 		if (!config.Ok()) {
-			return config_utils_internal::FailWith(error_message, kUpdatedConfigInvalidMessage);
+			return {
+			    .status  = ConfigValidationStatus::kUnparsable,
+			    .message = config_utils_internal::kUpdatedConfigInvalidMessage,
+			};
 		}
 
-		if (const auto validation = ValidateRuntimeConfig(config)) {
-			return config_utils_internal::FailWith(error_message, *validation);
+		if (auto invalid_setting = ValidateRuntimeConfig(config)) {
+			return {
+			    .status  = ConfigValidationStatus::kInvalidSetting,
+			    .message = std::move(*invalid_setting),
+			};
 		}
 
-		return true;
+		return {.status = ConfigValidationStatus::kOk};
 	}
 
 }  // namespace howdy::native

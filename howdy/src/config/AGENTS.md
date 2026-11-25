@@ -12,6 +12,8 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md).
   of public headers.
 - Keep INI text editing (`config_utils/key_file.cpp`) separate from filesystem transaction policy
   (`config_utils/file_ops.cpp`).
+- Config writes and validation report typed results (`ConfigWriteStatus`, `ConfigValidationStatus` in
+  `config_utils.hpp`). Decide on the status; messages are display text only.
 - `include/config/test_hooks.hpp` holds the after-open/before-read race hook used by secure config
   open/read paths.
 
@@ -27,7 +29,7 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md).
   line looks like an assignment or section header instead of erasing it.
 - Preserve secure path checks, locking, revalidation, expected-current-content stale detection,
   staged install, parent-directory sync, and potentially-committed handling on post-rename sync
-  failure.
+  failure (`ConfigWriteStatus::kDurabilityUncertain`).
 - `LoadRuntimeConfigFromFd` walks no path, requires an explicit owner UID, requires a read-only
   non-`O_PATH` regular file with `st_nlink == 1` (concurrent unlink/replace fails closed), and reads
   positionally without advancing the shared file offset.

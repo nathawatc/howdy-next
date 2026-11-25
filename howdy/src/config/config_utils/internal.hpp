@@ -1,11 +1,13 @@
 #pragma once
 
+#include "config/config_utils.hpp"
 #include "support/atomic_files.hpp"
 #include "support/file_lock.hpp"
 #include "support/file_security/validation_root.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -18,23 +20,21 @@ namespace howdy::native::config_utils_internal {
 	constexpr auto kConfigFileInspectFailureMessage = "Failed to inspect config file";
 	constexpr auto kConfigFileReadFailureMessage    = "Failed to read config file";
 	constexpr auto kConfigFileLockFailureMessage    = "Failed to lock config file";
+	constexpr auto kUpdatedConfigInvalidMessage     = "Updated config is invalid";
 	constexpr auto kUpdatedConfigTooLargeMessage    = "Updated config exceeds maximum size";
+	constexpr auto kStaleEditedConfigMessage =
+	    "Config changed while editing; not installing stale edited config";
 
-	inline auto FailWith(std::string *error_message, std::string_view message) -> bool {
-		if (error_message != nullptr) {
-			*error_message = message;
-		}
-		return false;
-	}
-
+	// The held lock, or a message saying why it could not be taken.
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	AcquireConfigLock(ScopedFileLock &guard, const std::filesystem::path &config_path,
-	                  std::string *error_message) -> bool;
+	AcquireConfigLock(const std::filesystem::path &config_path)
+	    -> std::expected<ScopedFileLock, std::string>;
 
+	// kOk, or kStale, kInsecurePath or kReadFailed.
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	ExpectedContentMatches(const std::filesystem::path &config_path, const std::string &expected,
-	                       std::string                                  *error_message,
-	                       const file_security_internal::ValidationRoot &validation_root) -> bool;
+	CheckExpectedContent(const std::filesystem::path &config_path, const std::string &expected,
+	                     const file_security_internal::ValidationRoot &validation_root)
+	    -> ConfigWriteResult;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	InstallConfigContent(const std::filesystem::path &config_path, const std::string &content,

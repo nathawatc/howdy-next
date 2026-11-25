@@ -41,7 +41,13 @@ namespace howdy::native {
 
 	}  // namespace config_test_hooks
 
-	using config_utils_internal::FailWith;
+	namespace {
+
+		auto Failure(ConfigWriteStatus status, std::string message) -> ConfigWriteResult {
+			return {.status = status, .message = std::move(message)};
+		}
+
+	}  // namespace
 
 	auto OpenSecureConfigForRead(const std::filesystem::path                  &config_path,
 	                             const std::optional<uid_t>                    owner_uid,
@@ -58,145 +64,173 @@ namespace howdy::native {
 		return {.fd = std::move(fd), .open_error = 0, .security = std::move(security)};
 	}
 
-	auto ReplaceConfigContentAtomically(
-	    const std::filesystem::path &config_path, const std::string &content,
-	    std::string *error_message, bool lock, bool validate_runtime,
-	    const std::string *expected_current_content, SyncParentDirectoryFn sync_parent,
-	    const file_security_internal::ValidationRoot &validation_root) -> bool {
-		if (error_message != nullptr) {
-			error_message->clear();
-		}
+	auto ReplaceConfigContentAtomically(const std::filesystem::path &config_path,
+	                                    const std::string           &content,
+	                                    const ConfigReplaceOptions  &options) -> ConfigWriteResult {
 		if (content.size() > kMaxConfigFileSize) {
-			return FailWith(error_message, config_utils_internal::kUpdatedConfigTooLargeMessage);
+			return Failure(ConfigWriteStatus::kInvalidConfig,
+			               config_utils_internal::kUpdatedConfigTooLargeMessage);
 		}
 
-		const auto initial_security =
-		    CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(), validation_root);
+		auto initial_security =
+		    CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(), options.validation_root);
 		if (!initial_security.ok) {
-			return FailWith(error_message, initial_security.error_message);
+			return Failure(ConfigWriteStatus::kInsecurePath,
+			               std::move(initial_security.error_message));
 		}
 
 		ScopedFileLock config_lock;
-		if (lock &&
-		    !config_utils_internal::AcquireConfigLock(config_lock, config_path, error_message)) {
-			return false;
+		if (options.lock) {
+			auto acquired = config_utils_internal::AcquireConfigLock(config_path);
+			if (!acquired.has_value()) {
+				return Failure(ConfigWriteStatus::kLockFailed, std::move(acquired.error()));
+			}
+			config_lock = std::move(*acquired);
 		}
 
-		if (validate_runtime && !ValidateConfigContent(content, error_message)) {
-			return false;
+		if (options.validate_runtime) {
+			if (auto validation = ValidateConfigContent(content);
+			    validation.status != ConfigValidationStatus::kOk) {
+				return Failure(ConfigWriteStatus::kInvalidConfig, std::move(validation.message));
+			}
 		}
 
-		const auto final_security =
-		    CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(), validation_root);
+		auto final_security =
+		    CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(), options.validation_root);
 		if (!final_security.ok) {
-			return FailWith(error_message, final_security.error_message);
+			return Failure(ConfigWriteStatus::kInsecurePath,
+			               std::move(final_security.error_message));
 		}
 
 		struct stat current_stat{};
 		if (lstat(config_path.c_str(), &current_stat) != 0 || !S_ISREG(current_stat.st_mode)) {
-			return FailWith(error_message, config_utils_internal::kConfigFileInspectFailureMessage);
+			return Failure(ConfigWriteStatus::kReadFailed,
+			               config_utils_internal::kConfigFileInspectFailureMessage);
 		}
 
-		if (expected_current_content != nullptr &&
-		    !config_utils_internal::ExpectedContentMatches(config_path, *expected_current_content,
-		                                                   error_message, validation_root)) {
-			return false;
+		if (options.expected_current_content != nullptr) {
+			auto expected = config_utils_internal::CheckExpectedContent(
+			    config_path, *options.expected_current_content, options.validation_root);
+			if (expected.status != ConfigWriteStatus::kOk) {
+				return expected;
+			}
 		}
 		const auto install_result =
-		    config_utils_internal::InstallConfigContent(config_path, content, sync_parent);
+		    config_utils_internal::InstallConfigContent(config_path, content, options.sync_parent);
 		if (!install_result.has_value()) {
-			return FailWith(error_message, "Failed to stage updated config");
+			return Failure(ConfigWriteStatus::kStagingFailed, "Failed to stage updated config");
 		}
 		if (*install_result == AtomicFileCommitResult::kCommittedSyncFailed) {
-			return FailWith(error_message,
-			                "Config was installed, but its directory could not be synced; verify "
-			                "state before retrying");
+			return Failure(ConfigWriteStatus::kDurabilityUncertain,
+			               "Config was installed, but its directory could not be synced; verify "
+			               "state before retrying");
 		}
 		if (!AtomicFileCommitIsDurable(*install_result)) {
-			return FailWith(error_message, kEditedConfigInstallFailedMessage);
+			return Failure(ConfigWriteStatus::kInstallFailed, kEditedConfigInstallFailedMessage);
 		}
-		return true;
+		return {.status = ConfigWriteStatus::kOk};
 	}
 
-	auto UpdateConfigValue(const std::filesystem::path &config_path, const std::string &key,
-	                       std::string *error_message, const std::string &value, bool lock,
-	                       bool                                          validate_runtime,
-	                       const file_security_internal::ValidationRoot &validation_root) -> bool {
-		if (!config_utils_internal::IsSafeIniScalarValue(value)) {
-			return FailWith(error_message,
-			                "Config values must be single-line scalars and cannot start with [");
+	auto UpdateConfigValue(const std::filesystem::path &config_path,
+	                       const ConfigValueUpdate &update, const ConfigUpdateOptions &options)
+	    -> ConfigWriteResult {
+		if (!config_utils_internal::IsSafeIniScalarValue(update.value)) {
+			return Failure(ConfigWriteStatus::kInvalidRequest,
+			               "Config values must be single-line scalars and cannot start with [");
 		}
 
-		const auto initial_security =
-		    CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(), validation_root);
+		auto initial_security =
+		    CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(), options.validation_root);
 		if (!initial_security.ok) {
-			return FailWith(error_message, initial_security.error_message);
+			return Failure(ConfigWriteStatus::kInsecurePath,
+			               std::move(initial_security.error_message));
 		}
 
 		ScopedFileLock config_lock;
-		if (lock &&
-		    !config_utils_internal::AcquireConfigLock(config_lock, config_path, error_message)) {
-			return false;
+		if (options.lock) {
+			auto acquired = config_utils_internal::AcquireConfigLock(config_path);
+			if (!acquired.has_value()) {
+				return Failure(ConfigWriteStatus::kLockFailed, std::move(acquired.error()));
+			}
+			config_lock = std::move(*acquired);
 		}
 
 		auto opened =
-		    OpenSecureConfigForRead(config_path, DefaultSecureOwnerUid(), validation_root);
+		    OpenSecureConfigForRead(config_path, DefaultSecureOwnerUid(), options.validation_root);
 		if (!opened.fd.Valid()) {
-			return FailWith(error_message, config_utils_internal::kConfigFileOpenFailureMessage);
+			return Failure(ConfigWriteStatus::kReadFailed,
+			               config_utils_internal::kConfigFileOpenFailureMessage);
 		}
 		if (!opened.security.ok) {
-			return FailWith(error_message, opened.security.error_message);
+			return Failure(ConfigWriteStatus::kInsecurePath,
+			               std::move(opened.security.error_message));
 		}
 
 		const auto current_content = ReadConfigFromFd(opened.fd.Get());
 		opened.fd.Reset();
 		if (!current_content.has_value()) {
-			return FailWith(error_message, config_utils_internal::kConfigFileReadFailureMessage);
+			return Failure(ConfigWriteStatus::kReadFailed,
+			               config_utils_internal::kConfigFileReadFailureMessage);
 		}
 		auto lines = config_utils_internal::SplitLinesPreserveNewlines(*current_content);
 
-		const auto options = config_schema::RuntimeConfigOptions();
-		const auto option  = std::ranges::find_if(options, [&](const auto &candidate) -> auto {
-			return candidate.key == key;
+		const auto not_found = [&update] -> ConfigWriteResult {
+			return Failure(ConfigWriteStatus::kInvalidRequest,
+			               "Could not find a \"" + update.key + "\" config option to set");
+		};
+		const auto schema = config_schema::RuntimeConfigOptions();
+		const auto option = std::ranges::find_if(schema, [&](const auto &candidate) -> auto {
+			return candidate.key == update.key;
 		});
-		if (option == options.end()) {
-			return FailWith(error_message, "Could not find a \"" + key + "\" config option to set");
+		if (option == schema.end()) {
+			return not_found();
 		}
-		const auto replace_result = config_utils_internal::ReplaceLineValue(
-		    lines, {.section = option->section, .key = key, .value = value});
-		if (replace_result.result == config_utils_internal::ConfigLineReplaceResult::kDuplicate) {
-			return FailWith(error_message, "Config option \"" + key +
-			                                   "\" appears more than once in section [" +
-			                                   std::string(option->section) + "]");
-		}
-		if (replace_result.result ==
-		    config_utils_internal::ConfigLineReplaceResult::kAmbiguousContinuation) {
-			return FailWith(error_message,
-			                "Config line " + std::to_string(replace_result.line) +
-			                    " is indented, so updating \"" + key +
-			                    "\" could drop it or change what it belongs to; edit that line, "
-			                    "then retry");
-		}
-		if (replace_result.result == config_utils_internal::ConfigLineReplaceResult::kNotFound) {
-			return FailWith(error_message, "Could not find a \"" + key + "\" config option to set");
+		const auto replaced = config_utils_internal::ReplaceLineValue(
+		    lines, {.section = option->section, .key = update.key, .value = update.value});
+		switch (replaced.result) {
+			case config_utils_internal::ConfigLineReplaceResult::kReplaced:
+				break;
+			case config_utils_internal::ConfigLineReplaceResult::kNotFound:
+				return not_found();
+			case config_utils_internal::ConfigLineReplaceResult::kDuplicate:
+				return Failure(ConfigWriteStatus::kInvalidRequest,
+				               "Config option \"" + update.key +
+				                   "\" appears more than once in section [" +
+				                   std::string(option->section) + "]");
+			case config_utils_internal::ConfigLineReplaceResult::kAmbiguousContinuation:
+				return Failure(ConfigWriteStatus::kInvalidRequest,
+				               "Config line " + std::to_string(replaced.line) +
+				                   " is indented, so updating \"" + update.key +
+				                   "\" could drop it or change what it belongs to; edit that line, "
+				                   "then retry");
 		}
 
 		const auto updated_content = config_utils_internal::JoinLines(lines);
-		if (validate_runtime && !ValidateConfigContent(updated_content, error_message)) {
-			return false;
+		if (options.validate_runtime) {
+			if (auto validation = ValidateConfigContent(updated_content);
+			    validation.status != ConfigValidationStatus::kOk) {
+				// A config that was valid before the update fails because of the requested value.
+				const bool request_at_fault =
+				    ValidateConfigContent(*current_content).status == ConfigValidationStatus::kOk;
+				return Failure(request_at_fault ? ConfigWriteStatus::kInvalidRequest
+				                                : ConfigWriteStatus::kInvalidConfig,
+				               std::move(validation.message));
+			}
 		}
 
-		std::string install_error;
-		const bool  ok = ReplaceConfigContentAtomically(
-		    config_path, updated_content, error_message == nullptr ? nullptr : &install_error,
-		    false, false, &*current_content, SyncParentDirectory, validation_root);
-		if (!ok && error_message != nullptr) {
-			*error_message =
-			    install_error.empty() || install_error == kEditedConfigInstallFailedMessage
-			        ? "Failed to update config file"
-			        : install_error;
+		// The lock above is still held, and the content was validated above.
+		auto result =
+		    ReplaceConfigContentAtomically(config_path, updated_content,
+			                               {
+		                                       .lock                     = false,
+		                                       .validate_runtime         = false,
+		                                       .expected_current_content = &*current_content,
+		                                       .validation_root          = options.validation_root,
+		                                   });
+		if (result.status == ConfigWriteStatus::kInstallFailed) {
+			result.message = "Failed to update config file";
 		}
-		return ok;
+		return result;
 	}
 
 }  // namespace howdy::native
