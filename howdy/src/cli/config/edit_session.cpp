@@ -85,8 +85,22 @@ namespace howdy::native::config_internal {
 		auto RunEditorDependency([[maybe_unused]] void *context,
 		                         const std::string &editor_preference, const fs::path &temp_path,
 		                         const std::optional<howdy::native::InvokingUser> &invoking_user)
-		    -> int {
+		    -> EditorRunResult {
 			return RunEditor(editor_preference, temp_path, invoking_user);
+		}
+
+		auto EditorFailureStatus(EditorRunResult result) -> ConfigEditStatus {
+			switch (result) {
+				case EditorRunResult::kUnavailable:
+					return ConfigEditStatus::kEditorUnavailable;
+				case EditorRunResult::kExitedWithError:
+				case EditorRunResult::kKilledBySignal:
+					return ConfigEditStatus::kEditorFailed;
+				case EditorRunResult::kLaunchFailed:
+				case EditorRunResult::kSucceeded:
+					break;
+			}
+			return ConfigEditStatus::kEditorLaunchFailed;
 		}
 
 		// A parse failure has no detail to add to what its status says.
@@ -301,17 +315,10 @@ namespace howdy::native::config_internal {
 			request.editor_ready(request.context);
 		}
 
-		const int status =
+		const auto run_result =
 		    dependencies_.run_editor(dependencies_.context, editor, temp_copy->path, invoking_user);
-		if (status == kEditorUnavailableRunResult) {
-			return result_base(ConfigEditStatus::kEditorUnavailable);
-		}
-		if (status < 0) {
-			return result_base(ConfigEditStatus::kEditorLaunchFailed);
-		}
-
-		if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-			return result_base(ConfigEditStatus::kEditorFailed);
+		if (run_result != EditorRunResult::kSucceeded) {
+			return result_base(EditorFailureStatus(run_result));
 		}
 
 		// The file now holds the user's edits: remove it only on the explicit paths below, so an

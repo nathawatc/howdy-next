@@ -276,6 +276,16 @@ namespace howdy::test::config_cli {
 			            "Editing config.ini\nEditor exited unsuccessfully; config not updated\n",
 			    "real editor exit 127 reports editor failure");
 
+			ok &= Expect(WriteFile(micro_path, "#!/bin/sh\nkill -TERM $$\n") &&
+			                 chmod(micro_path.c_str(), 0755) == 0,
+			             "killed-editor fixture writes executable editor");
+			const auto killed_result = run_config();
+			ok &= Expect(
+			    killed_result.first == 1 &&
+			        killed_result.second ==
+			            "Editing config.ini\nEditor exited unsuccessfully; config not updated\n",
+			    "real editor killed by a signal reports editor failure");
+
 			sudo_user_env.Unset();
 			sudo_uid_env.Unset();
 			sudo_gid_env.Unset();

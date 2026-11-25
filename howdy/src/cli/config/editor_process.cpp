@@ -3,6 +3,7 @@
 #include "support/eintr.hpp"
 #include "support/invoking_user.hpp"
 #include "support/invoking_user_env.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <array>
 #include <cerrno>
@@ -16,6 +17,7 @@
 
 #include <fcntl.h>
 #include <grp.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include <sys/types.h>
@@ -154,53 +156,51 @@ namespace howdy::native::config_internal {
 	}  // namespace
 
 	auto RunEditor(const std::string &editor_preference, const std::filesystem::path &temp_path,
-	               const std::optional<howdy::native::InvokingUser> &invoking_user) -> int {
+	               const std::optional<howdy::native::InvokingUser> &invoking_user)
+	    -> EditorRunResult {
 		std::array<int, 2> report_pipe{};
 		if (pipe2(report_pipe.data(), O_CLOEXEC) != 0) {
-			return -1;
+			return EditorRunResult::kLaunchFailed;
 		}
-		const int report_read_fd  = report_pipe.front();
-		const int report_write_fd = report_pipe.back();
+		ScopedFd report_reader(report_pipe.front());
+		ScopedFd report_writer(report_pipe.back());
 
 		const pid_t child_pid = fork();
 		if (child_pid < 0) {
-			close(report_read_fd);
-			close(report_write_fd);
-			return -1;
+			return EditorRunResult::kLaunchFailed;
 		}
 
 		if (child_pid == 0) {
-			close(report_read_fd);
-			RunEditorChild(editor_preference, temp_path, invoking_user, report_write_fd);
+			report_reader.Reset();
+			RunEditorChild(editor_preference, temp_path, invoking_user, report_writer.Get());
 		}
 
-		close(report_write_fd);
-		int status = 0;
+		report_writer.Reset();
+		int wait_status = 0;
 		if (howdy::native::RetryOnEintr([&] -> pid_t {
-			    return waitpid(child_pid, &status, 0);
+			    return waitpid(child_pid, &wait_status, 0);
 		    }) < 0) {
-			close(report_read_fd);
-			return -1;
+			return EditorRunResult::kLaunchFailed;
 		}
 
 		unsigned char report_byte = 0;
 		const ssize_t read_count  = howdy::native::RetryOnEintr([&] -> ssize_t {
-			return read(report_read_fd, &report_byte, sizeof(report_byte));
+			return read(report_reader.Get(), &report_byte, sizeof(report_byte));
 		});
-		close(report_read_fd);
 		if (read_count < 0) {
-			return -1;
+			return EditorRunResult::kLaunchFailed;
 		}
+		// The child reports only when it could not become an editor.
 		if (read_count == 1) {
-			switch (static_cast<EditorLaunchReport>(report_byte)) {
-				case EditorLaunchReport::kUnavailable:
-					return kEditorUnavailableRunResult;
-				case EditorLaunchReport::kLaunchFailed:
-					return -1;
-			}
-			return -1;
+			return static_cast<EditorLaunchReport>(report_byte) == EditorLaunchReport::kUnavailable
+			           ? EditorRunResult::kUnavailable
+					   : EditorRunResult::kLaunchFailed;
 		}
-		return status;
+		if (WIFEXITED(wait_status)) {
+			return WEXITSTATUS(wait_status) == 0 ? EditorRunResult::kSucceeded
+			                                     : EditorRunResult::kExitedWithError;
+		}
+		return EditorRunResult::kKilledBySignal;
 	}
 
 }  // namespace howdy::native::config_internal

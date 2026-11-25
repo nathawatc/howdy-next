@@ -21,7 +21,6 @@
 #include <unistd.h>
 
 #include <sys/stat.h>
-#include <sys/wait.h>
 
 namespace howdy::test::config_cli {
 
@@ -32,6 +31,7 @@ namespace howdy::test::config_cli {
 	using howdy::native::config_internal::ConfigEditDependencies;
 	using howdy::native::config_internal::ConfigEditSession;
 	using howdy::native::config_internal::ConfigEditStatus;
+	using howdy::native::config_internal::EditorRunResult;
 
 	namespace {
 
@@ -52,7 +52,7 @@ namespace howdy::test::config_cli {
 			            .name = "alice",
 			        },
 			};
-			int                                        editor_status            = 0;
+			EditorRunResult                            editor_result = EditorRunResult::kSucceeded;
 			int                                        editor_ready_calls       = 0;
 			int                                        editor_calls             = 0;
 			bool                                       delete_temp_in_editor    = false;
@@ -111,7 +111,7 @@ namespace howdy::test::config_cli {
 		}
 
 		auto RunEditor(void *raw, const std::string &editor, const fs::path &temp_path,
-		               const std::optional<howdy::native::InvokingUser> &user) -> int {
+		               const std::optional<howdy::native::InvokingUser> &user) -> EditorRunResult {
 			auto &context              = *static_cast<TestContext *>(raw);
 			context.recorded_editor    = editor;
 			context.recorded_temp_path = temp_path;
@@ -126,7 +126,7 @@ namespace howdy::test::config_cli {
 			} else {
 				WriteFile(temp_path, context.edited_content);
 			}
-			return context.editor_status;
+			return context.editor_result;
 		}
 
 		void EditorReady(void *raw) {
@@ -341,7 +341,7 @@ namespace howdy::test::config_cli {
 			{
 				TestDirectoryFixture const fixture;
 				TestContext                context;
-				context.editor_status = howdy::native::config_internal::kEditorUnavailableRunResult;
+				context.editor_result = EditorRunResult::kUnavailable;
 				ScopedEnvironmentVariable const config_env("HOWDY_CONFIG",
 				                                           fixture.ConfigPath().string());
 				const ConfigEditSession session(DependenciesFor(context, fixture.TempRoot()));
@@ -356,7 +356,7 @@ namespace howdy::test::config_cli {
 			{
 				TestDirectoryFixture const fixture;
 				TestContext                context;
-				context.editor_status = -1;
+				context.editor_result = EditorRunResult::kLaunchFailed;
 				const auto result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 &&
@@ -367,10 +367,11 @@ namespace howdy::test::config_cli {
 				             "launch failure removes temp once");
 			}
 
-			for (const int status : {W_EXITCODE(2, 0), 15}) {
+			for (const auto editor_result :
+			     {EditorRunResult::kExitedWithError, EditorRunResult::kKilledBySignal}) {
 				TestDirectoryFixture const fixture;
 				TestContext                context;
-				context.editor_status = status;
+				context.editor_result = editor_result;
 				const auto result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 &&

@@ -38,8 +38,13 @@ namespace howdy::native::config_internal {
 		kInstallFailed,
 	};
 
-	// RunEditorFn returns this sentinel when every editor candidate was unavailable.
-	inline constexpr int kEditorUnavailableRunResult = -2;
+	enum class EditorRunResult : std::uint8_t {
+		kLaunchFailed,
+		kUnavailable,  // no editor candidate could be executed
+		kSucceeded,
+		kExitedWithError,
+		kKilledBySignal,
+	};
 
 	using EditorReadyFn = void (*)(void *context);
 
@@ -57,9 +62,9 @@ namespace howdy::native::config_internal {
 
 	using ResolveInvokingIdentityFn = howdy::native::InvokingIdentityResult (*)(void *context);
 	using SelectEditorPreferenceFn  = std::string (*)(void *context);
-	using RunEditorFn = int (*)(void *context, const std::string &editor,
-	                            const std::filesystem::path                      &temp_path,
-	                            const std::optional<howdy::native::InvokingUser> &invoking_user);
+	using RunEditorFn               = EditorRunResult (*)(
+	    void *context, const std::string &editor, const std::filesystem::path &temp_path,
+	    const std::optional<howdy::native::InvokingUser> &invoking_user);
 
 	struct ConfigEditDependencies {
 		void                                  *context                   = nullptr;
