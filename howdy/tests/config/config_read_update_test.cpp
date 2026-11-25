@@ -181,6 +181,56 @@ namespace howdy::test {
 		ok &= Expect(nonexistent_path_result.message == expected_scalar_error,
 		             "unsafe scalar on nonexistent path returns scalar diagnostic");
 
+		// inih would trim these, or cut them at what it takes for an inline comment.
+		for (const std::string altered_value : {
+		         " ",
+		         " value",
+		         "value ",
+		         "\tvalue",
+		         "value\f",
+		         "; value",
+		         ";",
+		         "/dev/x ;y",
+		         "a\t;b",
+		         "a\v; b",
+		     }) {
+			const auto result = howdy::native::UpdateConfigValue(
+			    context.config_path, {.key = "device_path", .value = altered_value},
+			    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+			ok &= Expect(
+			    result.status == howdy::native::ConfigWriteStatus::kInvalidRequest &&
+			        result.message.starts_with("Config values cannot start or end with whitespace"),
+			    "value inih would not read back is refused: " + altered_value);
+			ok &= Expect(ReadFile(context.config_path) == before_unsafe,
+			             "refused value leaves config file unchanged");
+		}
+
+		const auto kept_value_path = context.temp_root / "kept-value.ini";
+		for (const std::string kept_value : {
+		         "a;b",
+		         "a;",
+		         "a b",
+		         "a #b",
+		         "a = b",
+		         "a: [b]",
+		         "\"quoted \"",
+		         "#a",
+		     }) {
+			ok &= Expect(WriteConfigTestFile(kept_value_path, "[video]\ndevice_path = none\n") &&
+			                 howdy::native::UpdateConfigValue(
+			                     kept_value_path, {.key = "device_path", .value = kept_value},
+			                     {
+			                         .lock             = false,
+			                         .validate_runtime = false,
+			                         .validation_root  = {context.temp_root},
+			                     })
+			                         .status == howdy::native::ConfigWriteStatus::kOk,
+			             "value inih reads back is accepted: " + kept_value);
+			howdy::native::ConfigReader const reader(ReadFile(kept_value_path));
+			ok &= Expect(reader.Ok() && reader.Get("video", "device_path", "") == kept_value,
+			             "accepted value reads back unchanged: " + kept_value);
+		}
+
 		const auto empty_scalar_path = context.temp_root / "empty-scalar.ini";
 		ok &= Expect(WriteConfigTestFile(empty_scalar_path, "[video]\ndevice_path = none\n"),
 		             "write config for empty scalar update");

@@ -70,7 +70,13 @@ namespace howdy::native::config_utils_internal {
 	ReplaceLineValue(std::vector<std::string> &lines, ConfigLineReplacement replacement)
 	    -> ConfigLineReplaceOutcome;
 
+	// Whether the value stays on its line and cannot be taken for a section header.
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	IsSafeIniScalarValue(std::string_view value) -> bool;
+
+	// Whether inih reads a value ReplaceLineValue wrote as is, without trimming it or cutting it at
+	// an inline comment.
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	ReadsBackUnchanged(std::string_view value) -> bool;
 
 }  // namespace howdy::native::config_utils_internal

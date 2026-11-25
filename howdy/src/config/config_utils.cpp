@@ -138,6 +138,11 @@ namespace howdy::native {
 			return Failure(ConfigWriteStatus::kInvalidRequest,
 			               "Config values must be single-line scalars and cannot start with [");
 		}
+		if (!config_utils_internal::ReadsBackUnchanged(update.value)) {
+			return Failure(ConfigWriteStatus::kInvalidRequest,
+			               "Config values cannot start or end with whitespace, start with ;, or "
+			               "contain an inline comment (whitespace followed by ;)");
+		}
 
 		auto initial_security =
 		    CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(), options.validation_root);
