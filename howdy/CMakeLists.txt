@@ -336,6 +336,7 @@ add_library(
  src/cli/disable.cpp
  src/cli/download_models.cpp
  src/cli/list.cpp
+ src/cli/privilege_drop.cpp
  src/cli/remove.cpp
  src/cli/set.cpp
  src/cli/snapshot.cpp

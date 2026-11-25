@@ -1,4 +1,5 @@
 #include "cli/config/edit_session.hpp"
+#include "cli/privilege_drop.hpp"
 #include "internal.hpp"
 #include "support/eintr.hpp"
 #include "support/invoking_user.hpp"
@@ -16,7 +17,6 @@
 #include <vector>
 
 #include <fcntl.h>
-#include <grp.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -133,12 +133,9 @@ namespace howdy::native::config_internal {
 		               const std::optional<howdy::native::InvokingUser> &invoking_user,
 		               int                                               report_fd) -> void {
 			if (invoking_user.has_value()) {
-				if (initgroups(invoking_user->name.c_str(), invoking_user->gid) != 0 ||
-				    setgid(invoking_user->gid) != 0 || setuid(invoking_user->uid) != 0) {
-					ReportEditorLaunch(report_fd, EditorLaunchReport::kLaunchFailed, 126);
-				}
-				if (getuid() != invoking_user->uid || geteuid() != invoking_user->uid ||
-				    getgid() != invoking_user->gid || getegid() != invoking_user->gid) {
+				if (!howdy::native::cli_internal::DropPrivilegesPermanently(
+				        *invoking_user,
+				        howdy::native::cli_internal::SystemPrivilegeDropOperations())) {
 					ReportEditorLaunch(report_fd, EditorLaunchReport::kLaunchFailed, 126);
 				}
 				howdy::native::ResetInvokingUserEnvironment(*invoking_user);

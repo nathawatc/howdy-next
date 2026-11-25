@@ -5,8 +5,9 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related: [`../app/AGENTS.md`](../a
 ## Boundaries
 
 - Keep commands single-file until a genuine workflow or process seam emerges.
-  `confirmation_prompt.{cpp,hpp}` is the one non-command component (shared `[y/N]` prompt for
-  `clear` and `remove`).
+  `confirmation_prompt.{cpp,hpp}` (shared `[y/N]` prompt for `clear` and `remove`) and
+  `privilege_drop.{cpp,hpp}` (permanent drop to the invoking user for `test` and the `config` editor)
+  are the only non-command components.
 - Dispatcher owns top-level syntax and normalized global options; subcommands receive typed
   invocations and own command-specific semantic validation.
 - Keep editor, capture, and environment adapters in production code (`add.cpp`,
@@ -22,6 +23,8 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related: [`../app/AGENTS.md`](../a
 - Validate BGR frame batches in the snapshot writer and report commit-sync uncertainty without
   destructive retry.
 - Route enrollment capture diagnostics through `ClassifyEnrollmentCaptureFailure()`.
+- Drop root for good only through `DropPrivilegesPermanently`, and stop when it fails. It runs in the
+  editor child between `fork` and `exec`, so keep it free of messages, logging, and exceptions.
 - `howdy test` never probes the invoking user's home or runtime dir as root: probe under that
   user's temporary effective IDs before the permanent drop, and fail closed if switching or
   restoring credentials fails.

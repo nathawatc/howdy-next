@@ -78,6 +78,13 @@ howdy_add_native_test(
 target_link_libraries(howdy_test_gui_probe_test PRIVATE howdy_cli)
 
 howdy_add_native_test(
+ howdy_privilege_drop_test
+ native-privilege-drop
+ tests/cli/privilege_drop_test.cpp
+)
+target_link_libraries(howdy_privilege_drop_test PRIVATE howdy_cli)
+
+howdy_add_native_test(
  howdy_test_preview_session_test
  native-test-preview-session
  tests/cli/test_preview_session_test.cpp
