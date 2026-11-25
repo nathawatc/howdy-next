@@ -243,7 +243,7 @@ namespace howdy::test::download_models {
 			ok &= Expect(result == 0, "overflowing write callback returns 0");
 			ok &= Expect(ReadFile(overflow_staged->Path()).empty(),
 			             "overflowing write callback leaves staged file empty");
-			howdy::native::CleanupStagedFile(*overflow_staged);
+			overflow_staged->Cleanup();
 		}
 
 		const auto limited_destination = temp_root / "limited-write.onnx";
@@ -271,7 +271,7 @@ namespace howdy::test::download_models {
 			             "write callback tracks only committed bytes");
 			ok &= Expect(ReadFile(limited_staged->Path()) == "xy",
 			             "write callback leaves rejected chunk unwritten");
-			howdy::native::CleanupStagedFile(*limited_staged);
+			limited_staged->Cleanup();
 		}
 
 		return ok;

@@ -136,7 +136,6 @@ namespace howdy::native::config_utils_internal {
 			return std::nullopt;
 		}
 		if (!WriteAllToFd(staged->Fd().Get(), content)) {
-			CleanupStagedFile(*staged);
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 		return InstallStagedFile(*staged, config_path, sync_parent);

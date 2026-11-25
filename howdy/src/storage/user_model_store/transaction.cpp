@@ -154,6 +154,8 @@ namespace howdy::native::user_model_store_internal {
 			    });
 		}
 
+		// A failure leaves the staged file to the caller's StagedFile, which removes it before the
+		// namespace lock is released, except when the state is uncertain: then it stays on disk.
 		auto ExchangeStagedModel(StagedFile &staged, const std::filesystem::path &path,
 		                         int opened_fd, const user_model_store_test_hooks::Hooks &hooks)
 		    -> AtomicFileCommitResult {
@@ -166,7 +168,6 @@ namespace howdy::native::user_model_store_internal {
 				const auto failure = exchange_result == AtomicRenameResult::kFailed
 				                         ? IdentityFailure(path, opened_fd)
 				                         : std::nullopt;
-				CleanupStagedFile(staged);
 				if (failure == AtomicFileCommitResult::kDestinationChanged) {
 					return *failure;
 				}
@@ -179,7 +180,6 @@ namespace howdy::native::user_model_store_internal {
 				if (RenameUnlessInjected(staged.Path(), path, AtomicRenameMode::kExchange,
 				                         hooks.rollback_exchange_errno) ==
 				    AtomicRenameResult::kSuccess) {
-					CleanupStagedFile(staged);
 					return *failure;
 				}
 				staged.Disarm();
@@ -223,11 +223,9 @@ namespace howdy::native::user_model_store_internal {
 				return StagingFailureResult(path);
 			}
 			if (hooks.fail_write || !WriteAllToFd(staged->Fd().Get(), *serialized)) {
-				CleanupStagedFile(*staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}
 			if (hooks.fail_fsync || !SyncFd(staged->Fd().Get())) {
-				CleanupStagedFile(*staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}
 			if (hooks.before_write_commit) {
@@ -235,7 +233,6 @@ namespace howdy::native::user_model_store_internal {
 			}
 			if (!creating) {
 				if (const auto failure = IdentityFailure(path, opened_fd); failure.has_value()) {
-					CleanupStagedFile(*staged);
 					return *failure;
 				}
 			}
@@ -247,7 +244,6 @@ namespace howdy::native::user_model_store_internal {
 				return CommitFirstModel(*staged, path, hooks);
 			}
 			if (!staged->Fd().Close()) {
-				CleanupStagedFile(*staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}
 			return ExchangeStagedModel(*staged, path, opened_fd, hooks);
