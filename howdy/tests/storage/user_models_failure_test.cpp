@@ -340,6 +340,19 @@ namespace howdy::test::user_models {
 				             "list rejects a stranded empty model file");
 				ok &= Expect(fs::exists(model_path) && fs::file_size(model_path, ec) == 0,
 				             "a rejected append leaves the empty model file unchanged");
+				ok &= Expect(store.OpenRuntimeDescriptor("first-user").status ==
+				                 howdy::native::UserModelDescriptorStatus::kInvalidStorage,
+				             "a runtime open rejects a stranded empty model file");
+				const auto inspected = store.InspectFile("first-user");
+				ok &= Expect(inspected.status == UserModelStatus::kOk &&
+				                 inspected.snapshot.has_value() && inspected.snapshot->size == 0,
+				             "inspection accepts a stranded empty model file");
+				ok &= Expect(
+				    inspected.snapshot.has_value() &&
+				        store.ClearEntriesIfUnchanged("first-user", *inspected.snapshot).status ==
+				            UserModelStatus::kOk,
+				    "clear removes a stranded empty model file");
+				ok &= Expect(!fs::exists(model_path), "a cleared empty model file is gone");
 				fs::remove(model_path, ec);
 			}
 			return ok;

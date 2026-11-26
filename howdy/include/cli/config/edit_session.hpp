@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -28,9 +29,14 @@ namespace howdy::native::config_internal {
 		kNoChanges,
 		kEditorUnavailable,
 		kSecurityCheckFailed,
+		// The config could not be opened or read.
+		kConfigUnreadable,
 		kTempCreateFailed,
 		kEditorLaunchFailed,
 		kEditorFailed,
+		// The editor did not succeed and the copy may hold edits (or its result was lost, and the
+		// editor may still be running), so the copy is kept.
+		kEditorFailedEditKept,
 		kReadFailed,
 		kEditedConfigUnreadable,
 		kInvalidEditedConfig,
@@ -38,8 +44,15 @@ namespace howdy::native::config_internal {
 		kInstallFailed,
 	};
 
-	// RunEditorFn returns this sentinel when every editor candidate was unavailable.
-	inline constexpr int kEditorUnavailableRunResult = -2;
+	enum class EditorRunResult : std::uint8_t {
+		kLaunchFailed,
+		kUnavailable,  // no editor candidate could be executed
+		kSucceeded,
+		kExitedWithError,
+		kKilledBySignal,
+		// The editor ran, but how it ended could not be learnt.
+		kResultLost,
+	};
 
 	using EditorReadyFn = void (*)(void *context);
 
@@ -57,9 +70,9 @@ namespace howdy::native::config_internal {
 
 	using ResolveInvokingIdentityFn = howdy::native::InvokingIdentityResult (*)(void *context);
 	using SelectEditorPreferenceFn  = std::string (*)(void *context);
-	using RunEditorFn = int (*)(void *context, const std::string &editor,
-	                            const std::filesystem::path                      &temp_path,
-	                            const std::optional<howdy::native::InvokingUser> &invoking_user);
+	using RunEditorFn               = EditorRunResult (*)(
+	    void *context, const std::string &editor, const std::filesystem::path &temp_path,
+	    const std::optional<howdy::native::InvokingUser> &invoking_user);
 
 	struct ConfigEditDependencies {
 		void                                  *context                   = nullptr;
@@ -101,8 +114,15 @@ namespace howdy::native::config_internal {
 	                                          uid_t expected_owner, std::string *content)
 	    -> TempConfigReadStatus;
 
+	struct CurrentConfigError {
+		bool        insecure = false;  // or not opened or read
+		std::string message;
+	};
+
+	// Or why the config cannot be opened, trusted or read.
 	[[nodiscard]] auto
-	FileContentMatches(const std::filesystem::path &path, const std::string &expected,
-	                   const file_security_internal::ValidationRoot &validation_root = {}) -> bool;
+	ReadCurrentConfig(const std::filesystem::path                  &path,
+	                  const file_security_internal::ValidationRoot &validation_root = {})
+	    -> std::expected<std::string, CurrentConfigError>;
 
 }  // namespace howdy::native::config_internal

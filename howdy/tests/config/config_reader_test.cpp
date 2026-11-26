@@ -51,8 +51,34 @@ auto main() -> int {
 	                 howdy::native::ReadRuntimeFloat(valid, OptionId::kVideoDarkThreshold) < 55.6F,
 	             "validated dark threshold keeps configured value");
 
-	howdy::native::ConfigReader const empty("");
-	ok &= Expect(empty.Ok(), "empty config should parse");
+	{
+		using howdy::native::ConfigDamage;
+		const std::string disabled("[core]\ndisabled = true\n");
+		ok &= Expect(valid.Damage() == ConfigDamage::kNone, "valid config is undamaged");
+		ok &= Expect(howdy::native::ConfigReader("").Damage() == ConfigDamage::kBlank &&
+		                 !howdy::native::ConfigReader("").Ok(),
+		             "empty config is rejected as damaged");
+		for (const auto *const blank : {"\n", " \t\r\n\n", "\xEF\xBB\xBF", "\xEF\xBB\xBF\n"}) {
+			ok &= Expect(howdy::native::ConfigReader(blank).Damage() == ConfigDamage::kBlank,
+			             "blank config is rejected as damaged");
+		}
+		ok &= Expect(howdy::native::ConfigReader("\xEF\xBB\xBF\n;\n").Ok(),
+		             "a lone comment is not blank");
+		for (const auto &content : {
+		         std::string(disabled.size(), '\0'),
+		         disabled + '\0',
+		         '\0' + disabled,
+		         disabled.substr(0, 7) + std::string(disabled.size() - 7, '\0'),
+		         std::string("[core]\ndisabled = true") + '\0' + " x\n",
+		     }) {
+			const howdy::native::ConfigReader reader(content);
+			ok &= Expect(!reader.Ok() && reader.Damage() == ConfigDamage::kNulByte,
+			             "config with a NUL byte is rejected as damaged");
+		}
+	}
+
+	howdy::native::ConfigReader const empty("; every option at its default\n");
+	ok &= Expect(empty.Ok(), "comments-only config should parse");
 	ok &= Expect(howdy::native::ReadRuntimeInt(empty, OptionId::kVideoTimeout) == 4,
 	             "timeout default is used");
 	ok &= ExpectNear(howdy::native::ReadRuntimeFloat(empty, OptionId::kVideoDarkThreshold), 75.0F,

@@ -30,11 +30,14 @@ namespace {
 	}
 
 	auto UpdateConfigValueDependency(void *context, const std::filesystem::path &config_path,
-	                                 const std::string &key, const std::string &value,
-	                                 std::string *error_message, bool lock) -> bool {
+	                                 const howdy::native::ConfigValueUpdate &update)
+	    -> howdy::native::ConfigWriteResult {
 		return howdy::native::UpdateConfigValue(
-		    config_path, key, error_message, value, lock, true,
-		    *static_cast<howdy::native::file_security_internal::ValidationRoot *>(context));
+		    config_path, update,
+		    {
+		        .validation_root =
+		            *static_cast<howdy::native::file_security_internal::ValidationRoot *>(context),
+		    });
 	}
 
 }  // namespace
@@ -79,12 +82,12 @@ auto howdy::native::disable_internal::DisableMainWithDependencies(
 
 	const auto &disabled_option = howdy::native::config_schema::RuntimeConfigOption(
 	    howdy::native::config_schema::OptionId::kCoreDisabled);
-	std::string error_message;
-	if (!dependencies.update_config_value(dependencies.context, config_path,
-	                                      std::string(disabled_option.key), out_value,
-	                                      &error_message, true)) {
-		std::cout << (error_message.empty() ? "Failed to update \"disabled\" config option"
-		                                    : error_message)
+	const auto result = dependencies.update_config_value(
+	    dependencies.context, config_path,
+	    {.key = std::string(disabled_option.key), .value = out_value});
+	if (result.status != howdy::native::ConfigWriteStatus::kOk) {
+		std::cout << (result.message.empty() ? "Failed to update \"disabled\" config option"
+		                                     : result.message)
 		          << "\n";
 		return kDisableExitAbort;
 	}

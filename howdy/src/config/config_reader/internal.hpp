@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -12,11 +13,28 @@
 
 namespace howdy::native {
 
+	// What a crash or an interrupted write leaves behind, which inih would read as a config that
+	// sets nothing: defaults would then quietly replace settings such as `disabled`.
+	enum class ConfigDamage : std::uint8_t {
+		kNone,
+		// Nothing but whitespace; a comment is enough to say that the defaults are meant.
+		kBlank,
+		// inih ends the line at the NUL and carries on.
+		kNulByte,
+	};
+
+	[[nodiscard]] auto FindConfigDamage(std::string_view content) -> ConfigDamage;
+
+	// Completes "Config file ...". Empty for kNone.
+	[[nodiscard]] auto ConfigDamageDescription(ConfigDamage damage) -> std::string_view;
+
 	class ConfigReader {
 	public:
 		explicit ConfigReader(std::string_view content);
 
+		// Whether the content is undamaged and parsed.
 		[[nodiscard]] auto Ok() const -> bool;
+		[[nodiscard]] auto Damage() const -> ConfigDamage;
 		[[nodiscard]] auto ParseError() const -> int;
 		[[nodiscard]] auto Get(const std::string &section, const std::string &name,
 		                       const std::string &fallback) const -> std::string;
@@ -32,7 +50,8 @@ namespace howdy::native {
 		    -> bool;
 
 	private:
-		INIReader reader_;
+		ConfigDamage damage_ = ConfigDamage::kNone;
+		INIReader    reader_;
 	};
 
 	[[nodiscard]] inline auto ParseConfigIntStrict(std::string_view value) -> std::optional<int> {

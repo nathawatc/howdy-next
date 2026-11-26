@@ -1,11 +1,11 @@
 #pragma once
 
 #include "app/command_invocation.hpp"
+#include "config/config_utils.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "support/file_security/validation_root.hpp"
 
 #include <filesystem>
-#include <string>
 
 namespace howdy::native::disable_internal {
 
@@ -14,9 +14,9 @@ namespace howdy::native::disable_internal {
 	using LoadRuntimeConfigFn = howdy::native::RuntimeConfigLoadResult (*)(
 	    void *context, const std::filesystem::path &config_path);
 
-	using UpdateConfigValueFn = bool (*)(void *context, const std::filesystem::path &config_path,
-	                                     const std::string &key, const std::string &value,
-	                                     std::string *error_message, bool lock);
+	using UpdateConfigValueFn = ConfigWriteResult (*)(void                        *context,
+	                                                  const std::filesystem::path &config_path,
+	                                                  const ConfigValueUpdate     &update);
 
 	struct DisableDependencies {
 		void               *context             = nullptr;

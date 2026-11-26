@@ -80,7 +80,7 @@ auto main() -> int {
 	WithPresent(require_existing_staged, [&] -> void {
 		ok &= Expect(fs::exists(require_existing_staged->Path(), ec) && !ec,
 		             "require-existing policy creates staged file in real parent");
-		howdy::native::CleanupStagedFile(*require_existing_staged);
+		require_existing_staged->Cleanup();
 	});
 	fs::remove_all(require_existing_parent, ec);
 	ec.clear();

@@ -126,19 +126,9 @@ target_link_libraries(
 )
 
 if(HOWDY_BUILD_FUZZERS)
-  # The decoder is compiled in, so libFuzzer's coverage instrumentation reaches it.
-  add_executable(
+  howdy_add_native_fuzzer(
   howdy_runtime_descriptor_message_fuzzer
   tests/protocol/runtime_descriptor_message_fuzz.cpp
   src/protocol/runtime_descriptor_message.cpp
- )
-  howdy_configure_native_test_target(howdy_runtime_descriptor_message_fuzzer)
-  target_compile_options(
-  howdy_runtime_descriptor_message_fuzzer
-  PRIVATE -fsanitize=fuzzer,address,undefined
- )
-  target_link_options(
-  howdy_runtime_descriptor_message_fuzzer
-  PRIVATE -fsanitize=fuzzer,address,undefined
  )
 endif()

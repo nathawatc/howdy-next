@@ -5,8 +5,9 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related: [`../app/AGENTS.md`](../a
 ## Boundaries
 
 - Keep commands single-file until a genuine workflow or process seam emerges.
-  `confirmation_prompt.{cpp,hpp}` is the one non-command component (shared `[y/N]` prompt for
-  `clear` and `remove`).
+  `confirmation_prompt.{cpp,hpp}` (shared `[y/N]` prompt for `clear` and `remove`) and
+  `privilege_drop.{cpp,hpp}` (permanent drop to the invoking user for `test` and the `config` editor)
+  are the only non-command components.
 - Dispatcher owns top-level syntax and normalized global options; subcommands receive typed
   invocations and own command-specific semantic validation.
 - Keep editor, capture, and environment adapters in production code (`add.cpp`,
@@ -16,12 +17,17 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related: [`../app/AGENTS.md`](../a
 
 ## Behavior Invariants
 
-- Keep config edits secure and atomic with stale-content detection and temporary-file cleanup.
+- Keep config edits secure and atomic with stale-content detection and temporary-file cleanup. Keep
+  the temporary file and print its path whenever it may hold edits that were not installed, including
+  after an editor that exits with an error or is killed. Only a regular file of the editing user
+  counts; anything else at the path is removed, except when the editor's result was lost (it may
+  still be running), where the path is always kept.
 - Keep `download-models` download, integrity verification, staging, and atomic installation as one
   cohesive workflow; fail closed on missing injected callbacks before network or filesystem work.
 - Validate BGR frame batches in the snapshot writer and report commit-sync uncertainty without
   destructive retry.
 - Route enrollment capture diagnostics through `ClassifyEnrollmentCaptureFailure()`.
+- Drop root for good only through `DropPrivilegesPermanently`, and stop when it fails.
 - `howdy test` never probes the invoking user's home or runtime dir as root: probe under that
   user's temporary effective IDs before the permanent drop, and fail closed if switching or
   restoring credentials fails.

@@ -4,10 +4,10 @@
 #include "cli/set/internal.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
+#include "support/file_security/validation_root.hpp"
 
 #include <filesystem>
 #include <iostream>
-#include <string>
 
 namespace {
 
@@ -19,11 +19,15 @@ namespace {
 		return howdy::native::ResolveConfigPath();
 	}
 
-	auto SetCliUpdateConfigValueDependency([[maybe_unused]] void       *context,
-	                                       const std::filesystem::path &config_path,
-	                                       const std::string &key, const std::string &value,
-	                                       std::string *error_message, bool lock) -> bool {
-		return howdy::native::UpdateConfigValue(config_path, key, error_message, value, lock);
+	auto SetCliUpdateConfigValueDependency(void *context, const std::filesystem::path &config_path,
+	                                       const howdy::native::ConfigValueUpdate &update)
+	    -> howdy::native::ConfigWriteResult {
+		return howdy::native::UpdateConfigValue(
+		    config_path, update,
+		    {
+		        .validation_root =
+		            *static_cast<howdy::native::file_security_internal::ValidationRoot *>(context),
+		    });
 	}
 
 }  // namespace
@@ -37,12 +41,11 @@ auto howdy::native::set_internal::SetMainWithDependencies(
 	}
 
 	const auto &config_path = dependencies.resolve_config_path(dependencies.context);
-	const auto &key         = invocation.positionals.at(0);
-	const auto &value       = invocation.positionals.at(1);
-	std::string error_message;
-	if (!dependencies.update_config_value(dependencies.context, config_path, key, value,
-	                                      &error_message, true)) {
-		std::cout << (error_message.empty() ? "Failed to update config option" : error_message)
+	const auto  result      = dependencies.update_config_value(
+	    dependencies.context, config_path,
+	    {.key = invocation.positionals.at(0), .value = invocation.positionals.at(1)});
+	if (result.status != howdy::native::ConfigWriteStatus::kOk) {
+		std::cout << (result.message.empty() ? "Failed to update config option" : result.message)
 		          << "\n";
 		return kSetExitAbort;
 	}
@@ -51,10 +54,17 @@ auto howdy::native::set_internal::SetMainWithDependencies(
 	return kSetExitOk;
 }
 
-auto SetMain(const howdy::native::CommandInvocation &invocation) -> int {
+auto howdy::native::set_internal::SetMainWithValidationRoot(
+    const howdy::native::CommandInvocation &invocation,
+    file_security_internal::ValidationRoot  validation_root) -> int {
 	return howdy::native::set_internal::SetMainWithDependencies(
-	    invocation, howdy::native::set_internal::SetDependencies{
+	    invocation, {
+	                    .context             = &validation_root,
 	                    .resolve_config_path = SetCliResolveConfigPathDependency,
 	                    .update_config_value = SetCliUpdateConfigValueDependency,
 	                });
+}
+
+auto SetMain(const howdy::native::CommandInvocation &invocation) -> int {
+	return howdy::native::set_internal::SetMainWithValidationRoot(invocation, {});
 }

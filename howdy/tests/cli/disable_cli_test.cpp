@@ -1,7 +1,9 @@
 #include "app/command_invocation.hpp"
 #include "cli/disable/internal.hpp"
+#include "config/config_utils.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
+#include "support/file_lock.hpp"
 #include "test_support.hpp"
 
 #include <cstdlib>
@@ -24,6 +26,8 @@ namespace {
 	using howdy::test::ReadFile;
 	using howdy::test::WriteFile;
 
+	using howdy::native::ConfigWriteResult;
+	using howdy::native::ConfigWriteStatus;
 	using howdy::native::RuntimeConfigLoadResult;
 	using howdy::native::RuntimeConfigLoadStatus;
 	using howdy::native::disable_internal::DisableDependencies;
@@ -37,10 +41,8 @@ namespace {
 		std::filesystem::path   updater_path;
 		std::string             updater_key;
 		std::string             updater_value;
-		bool                    received_lock = false;
 		RuntimeConfigLoadResult load_result;
-		bool                    updater_result = true;
-		std::string             updater_error;
+		ConfigWriteResult       updater_result = {.status = ConfigWriteStatus::kOk};
 	};
 
 	struct RunResult {
@@ -74,15 +76,12 @@ namespace {
 	}
 
 	auto UpdateConfigValue(void *raw_context, const std::filesystem::path &config_path,
-	                       const std::string &key, const std::string &value,
-	                       std::string *error_message, bool lock) -> bool {
+	                       const howdy::native::ConfigValueUpdate &update) -> ConfigWriteResult {
 		auto &context = *static_cast<TestContext *>(raw_context);
 		++context.updater_calls;
 		context.updater_path  = config_path;
-		context.updater_key   = key;
-		context.updater_value = value;
-		context.received_lock = lock;
-		*error_message        = context.updater_error;
+		context.updater_key   = update.key;
+		context.updater_value = update.value;
 		return context.updater_result;
 	}
 
@@ -125,7 +124,6 @@ namespace {
 		ok &= Expect(context.updater_path == context.resolved_path, message + " passes path");
 		ok &= Expect(context.updater_key == "disabled", message + " passes key");
 		ok &= Expect(context.updater_value == value, message + " passes value");
-		ok &= Expect(context.received_lock, message + " enables lock");
 		return ok;
 	}
 
@@ -158,6 +156,8 @@ namespace {
 		ok &= Expect(chmod(config_path.c_str(), 0644) == 0, "integration secures config file");
 		ok &= Expect(RunBoundaryAwareDisable("true", temp_root) == 0,
 		             "boundary-aware disable succeeds");
+		ok &= Expect(fs::exists(howdy::native::LockFilePath(config_path), error) && !error,
+		             "boundary-aware disable takes the config lock");
 		ok &= Expect(ReadFile(config_path).contains("disabled = true\n"),
 		             "boundary-aware disable persists");
 		ok &= Expect(RunBoundaryAwareDisable("false", temp_root) == 0,
@@ -285,8 +285,7 @@ auto main() -> int {
 	     }) {
 		TestContext context;
 		context.load_result    = LoadedConfig(false);
-		context.updater_result = false;
-		context.updater_error  = error;
+		context.updater_result = {.status = ConfigWriteStatus::kInstallFailed, .message = error};
 		const auto result      = RunDisable({.positionals = {"true"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 1, "updater failure returns 1");
 		ok &= Expect(result.stdout_output == output, "updater failure stdout exact");

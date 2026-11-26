@@ -1,5 +1,7 @@
 #include "compare/compare_sandbox_test_groups.hpp"
 #include "compare/sandbox.hpp"
+#include "compare/sandbox/internal.hpp"
+#include "support/eintr.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
@@ -8,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <optional>
 #include <span>
 #include <string>
@@ -25,6 +28,10 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 
+#include <linux/bpf_common.h>
+#include <linux/filter.h>
+#include <linux/prctl.h>
+#include <linux/seccomp.h>
 #include <linux/uvcvideo.h>
 #include <linux/videodev2.h>
 
@@ -282,6 +289,94 @@ namespace {
 		return ok;
 	}
 
+#ifdef SYS_seccomp
+	constexpr int kOuterFilterUnavailable = 77;
+
+	// How an emulated kernel answers seccomp(2): always `error_number`, or, when it accepts filter
+	// mode, only once it is handed a program (a null one reaches the real kernel and faults).
+	struct EmulatedSeccomp {
+		int  error_number        = 0;
+		bool accepts_filter_mode = false;
+	};
+
+	// Puts the emulation in front of the production filter install. Never returns.
+	[[noreturn]] void RunUnderEmulatedSeccomp(const EmulatedSeccomp &emulated) {
+		const auto error_action =
+		    static_cast<__u32>(SECCOMP_RET_ERRNO) | static_cast<__u32>(emulated.error_number);
+		const auto null_action =
+		    emulated.accepts_filter_mode ? static_cast<__u32>(SECCOMP_RET_ALLOW) : error_action;
+		constexpr auto program_argument =
+		    static_cast<__u32>(offsetof(struct seccomp_data, args) + (2 * sizeof(__u64)));
+		constexpr auto    load   = static_cast<__u16>(BPF_LD | BPF_W | BPF_ABS);
+		constexpr auto    match  = static_cast<__u16>(BPF_JMP | BPF_JEQ | BPF_K);
+		constexpr auto    ret    = static_cast<__u16>(BPF_RET | BPF_K);
+		constexpr auto    number = static_cast<__u32>(offsetof(struct seccomp_data, nr));
+		auto              filter = std::to_array<struct sock_filter>({
+		    {.code = load, .jt = 0, .jf = 0, .k = number},
+		    {.code = match, .jt = 0, .jf = 3, .k = SYS_seccomp},
+		    {.code = load, .jt = 0, .jf = 0, .k = program_argument},
+		    {.code = match, .jt = 0, .jf = 2, .k = 0},
+		    {.code = ret, .jt = 0, .jf = 0, .k = null_action},
+		    {.code = ret, .jt = 0, .jf = 0, .k = SECCOMP_RET_ALLOW},
+		    {.code = ret, .jt = 0, .jf = 0, .k = error_action},
+		});
+		struct sock_fprog program{
+		    .len    = static_cast<__u16>(filter.size()),
+		    .filter = filter.data(),
+		};
+		if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
+		    prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program, 0, 0) != 0) {
+			_exit(kOuterFilterUnavailable);
+		}
+		_exit(static_cast<int>(howdy::native::ApplyCompareSeccompFilter().status));
+	}
+
+	auto ExpectEmulatedSeccomp(const EmulatedSeccomp              &emulated,
+	                           howdy::native::CompareSeccompStatus expected,
+	                           const std::string                  &message) -> bool {
+		const pid_t child = fork();
+		if (child == 0) {
+			RunUnderEmulatedSeccomp(emulated);
+		}
+		int status = 0;
+		if (child < 0 || howdy::native::RetryOnEintr([&] -> pid_t {
+			                 return waitpid(child, &status, 0);
+		                 }) != child) {
+			return Expect(false, message + ": run emulated seccomp child");
+		}
+		if (WIFEXITED(status) && WEXITSTATUS(status) == kOuterFilterUnavailable) {
+			std::cerr << "SKIP: " << message << " (no seccomp filter to emulate with)\n";
+			return true;
+		}
+		return Expect(WIFEXITED(status) && WEXITSTATUS(status) == static_cast<int>(expected),
+		              message + ", status=" + std::to_string(status));
+	}
+
+	// Only a kernel that has no seccomp, or no filter mode, may run compare unfiltered.
+	auto TestInstallOnEmulatedKernels() -> bool {
+		using howdy::native::CompareSeccompStatus;
+		if (howdy::native::compare_sandbox_internal::BuildCompareSeccompFilter().empty()) {
+			return Expect(true, "emulated kernels skipped on a build without a filter");
+		}
+		bool ok = true;
+		ok &= ExpectEmulatedSeccomp({.error_number = ENOSYS}, CompareSeccompStatus::kUnsupported,
+		                            "kernel without seccomp is unsupported");
+		ok &= ExpectEmulatedSeccomp({.error_number = EINVAL}, CompareSeccompStatus::kUnsupported,
+		                            "kernel without filter mode is unsupported");
+		ok &= ExpectEmulatedSeccomp({.error_number = EINVAL, .accepts_filter_mode = true},
+		                            CompareSeccompStatus::kInstallationFailure,
+		                            "filter rejected by a filter-capable kernel is a failure");
+		ok &= ExpectEmulatedSeccomp({.error_number = EPERM},
+		                            CompareSeccompStatus::kInstallationFailure,
+		                            "refused filter is a failure");
+		return ok;
+	}
+#else
+	auto TestInstallOnEmulatedKernels() -> bool {
+		return Expect(true, "emulated kernels skipped without seccomp headers");
+	}
+#endif
+
 }  // namespace
 
 auto RunCompareSandboxSeccompProbe(std::string_view action) -> int {
@@ -289,5 +384,7 @@ auto RunCompareSandboxSeccompProbe(std::string_view action) -> int {
 }
 
 auto RunCompareSandboxSeccompExecTests() -> bool {
-	return TestLiveSeccompEnforcementInSubprocess();
+	bool ok = TestLiveSeccompEnforcementInSubprocess();
+	ok &= TestInstallOnEmulatedKernels();
+	return ok;
 }

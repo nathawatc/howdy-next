@@ -1,8 +1,10 @@
 #include "cli/config/edit_session.hpp"
+#include "cli/privilege_drop.hpp"
 #include "internal.hpp"
 #include "support/eintr.hpp"
 #include "support/invoking_user.hpp"
 #include "support/invoking_user_env.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <array>
 #include <cerrno>
@@ -12,10 +14,12 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <fcntl.h>
-#include <grp.h>
+#include <signal.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include <sys/types.h>
@@ -131,12 +135,9 @@ namespace howdy::native::config_internal {
 		               const std::optional<howdy::native::InvokingUser> &invoking_user,
 		               int                                               report_fd) -> void {
 			if (invoking_user.has_value()) {
-				if (initgroups(invoking_user->name.c_str(), invoking_user->gid) != 0 ||
-				    setgid(invoking_user->gid) != 0 || setuid(invoking_user->uid) != 0) {
-					ReportEditorLaunch(report_fd, EditorLaunchReport::kLaunchFailed, 126);
-				}
-				if (getuid() != invoking_user->uid || geteuid() != invoking_user->uid ||
-				    getgid() != invoking_user->gid || getegid() != invoking_user->gid) {
+				if (!howdy::native::cli_internal::DropPrivilegesPermanently(
+				        *invoking_user,
+				        howdy::native::cli_internal::SystemPrivilegeDropOperations())) {
 					ReportEditorLaunch(report_fd, EditorLaunchReport::kLaunchFailed, 126);
 				}
 				howdy::native::ResetInvokingUserEnvironment(*invoking_user);
@@ -151,56 +152,118 @@ namespace howdy::native::config_internal {
 			ReportEditorLaunch(report_fd, EditorLaunchReport::kUnavailable, 127);
 		}
 
+		// Signal dispositions while the editor runs. SIGINT and SIGQUIT, which the terminal sends
+		// to the whole foreground group, are the editor's to act on, as under system(3): howdy
+		// stays to say where the edit is. SIGCHLD gets its default: ignored, which a parent can
+		// leave set across exec, it makes the kernel reap the editor, and waitpid has no status to
+		// return.
+		class EditorSignals {
+		public:
+			EditorSignals() noexcept
+			    : interrupt_(SIGINT, SIG_IGN)
+			    , quit_(SIGQUIT, SIG_IGN)
+			    , child_(SIGCHLD, SIG_DFL) {}
+
+			// In the editor's process, which keeps the default SIGCHLD.
+			void RestoreForEditor() noexcept {
+				interrupt_.Restore();
+				quit_.Restore();
+			}
+
+		private:
+			class ScopedDisposition {
+			public:
+				ScopedDisposition(int signal_number, void (*disposition)(int)) noexcept
+				    : signal_number_(signal_number) {
+					struct sigaction action{};
+					action.sa_handler = disposition;
+					changed_          = sigemptyset(&action.sa_mask) == 0 &&
+					                    sigaction(signal_number_, &action, &previous_) == 0;
+				}
+
+				~ScopedDisposition() {
+					Restore();
+				}
+
+				ScopedDisposition(const ScopedDisposition &)                     = delete;
+				auto operator=(const ScopedDisposition &) -> ScopedDisposition & = delete;
+				ScopedDisposition(ScopedDisposition &&)                          = delete;
+				auto operator=(ScopedDisposition &&) -> ScopedDisposition &      = delete;
+
+				void Restore() noexcept {
+					if (std::exchange(changed_, false)) {
+						(void)sigaction(signal_number_, &previous_, nullptr);
+					}
+				}
+
+			private:
+				int              signal_number_ = 0;
+				struct sigaction previous_{};
+				bool             changed_ = false;
+			};
+
+			ScopedDisposition interrupt_;
+			ScopedDisposition quit_;
+			ScopedDisposition child_;
+		};
+
 	}  // namespace
 
 	auto RunEditor(const std::string &editor_preference, const std::filesystem::path &temp_path,
-	               const std::optional<howdy::native::InvokingUser> &invoking_user) -> int {
+	               const std::optional<howdy::native::InvokingUser> &invoking_user)
+	    -> EditorRunResult {
 		std::array<int, 2> report_pipe{};
 		if (pipe2(report_pipe.data(), O_CLOEXEC) != 0) {
-			return -1;
+			return EditorRunResult::kLaunchFailed;
 		}
-		const int report_read_fd  = report_pipe.front();
-		const int report_write_fd = report_pipe.back();
+		ScopedFd report_reader(report_pipe.front());
+		ScopedFd report_writer(report_pipe.back());
 
-		const pid_t child_pid = fork();
+		EditorSignals signals;
+		const pid_t   child_pid = fork();
 		if (child_pid < 0) {
-			close(report_read_fd);
-			close(report_write_fd);
-			return -1;
+			return EditorRunResult::kLaunchFailed;
 		}
 
 		if (child_pid == 0) {
-			close(report_read_fd);
-			RunEditorChild(editor_preference, temp_path, invoking_user, report_write_fd);
+			report_reader.Reset();
+			signals.RestoreForEditor();
+			try {
+				RunEditorChild(editor_preference, temp_path, invoking_user, report_writer.Get());
+			} catch (...) {
+				// Unwinding further would run the caller's cleanup a second time, in this process.
+				ReportEditorLaunch(report_writer.Get(), EditorLaunchReport::kLaunchFailed, 126);
+			}
 		}
 
-		close(report_write_fd);
-		int status = 0;
+		report_writer.Reset();
+		int wait_status = 0;
 		if (howdy::native::RetryOnEintr([&] -> pid_t {
-			    return waitpid(child_pid, &status, 0);
+			    return waitpid(child_pid, &wait_status, 0);
 		    }) < 0) {
-			close(report_read_fd);
-			return -1;
+			return EditorRunResult::kResultLost;
 		}
 
 		unsigned char report_byte = 0;
 		const ssize_t read_count  = howdy::native::RetryOnEintr([&] -> ssize_t {
-			return read(report_read_fd, &report_byte, sizeof(report_byte));
+			return read(report_reader.Get(), &report_byte, sizeof(report_byte));
 		});
-		close(report_read_fd);
+		// A report that cannot be read leaves it open whether an editor ran, and an editor can exit
+		// with any code, so the result is lost and the copy is kept.
 		if (read_count < 0) {
-			return -1;
+			return EditorRunResult::kResultLost;
 		}
+		// The child reports only when it could not become an editor.
 		if (read_count == 1) {
-			switch (static_cast<EditorLaunchReport>(report_byte)) {
-				case EditorLaunchReport::kUnavailable:
-					return kEditorUnavailableRunResult;
-				case EditorLaunchReport::kLaunchFailed:
-					return -1;
-			}
-			return -1;
+			return static_cast<EditorLaunchReport>(report_byte) == EditorLaunchReport::kUnavailable
+			           ? EditorRunResult::kUnavailable
+					   : EditorRunResult::kLaunchFailed;
 		}
-		return status;
+		if (WIFEXITED(wait_status)) {
+			return WEXITSTATUS(wait_status) == 0 ? EditorRunResult::kSucceeded
+			                                     : EditorRunResult::kExitedWithError;
+		}
+		return EditorRunResult::kKilledBySignal;
 	}
 
 }  // namespace howdy::native::config_internal

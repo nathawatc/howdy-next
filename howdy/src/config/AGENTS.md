@@ -12,6 +12,8 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md).
   of public headers.
 - Keep INI text editing (`config_utils/key_file.cpp`) separate from filesystem transaction policy
   (`config_utils/file_ops.cpp`).
+- Config writes and validation report typed results (`ConfigWriteStatus`, `ConfigValidationStatus` in
+  `config_utils.hpp`). Decide on the status; messages are display text only.
 - `include/config/test_hooks.hpp` holds the after-open/before-read race hook used by secure config
   open/read paths.
 
@@ -23,11 +25,21 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md).
 - Validate the config `.lock` with `fstat` before `flock`: a regular file owned by the trusted
   owner with `st_nlink == 1` and no group/other permission bits. Fail closed with a reason instead
   of repairing it. After `flock`, fail closed unless the path still names the locked file.
-- Match inih continuation rules when replacing a value, and refuse the update when a continuation
+- Reject a damaged config (blank, or holding a NUL byte) in `ConfigReader`, so every reader fails
+  closed instead of running on defaults; a comments-only config stays valid. `howdy config` must
+  still open a damaged config to repair it.
+- Match inih line rules when changing `key_file.cpp`; the differential fuzz
+  (`tests/config/config_key_file_fuzz*.cpp`) checks every update through `ConfigReader`. Match inih
+  continuation rules when replacing a value, and refuse the update when a continuation
   line looks like an assignment or section header instead of erasing it.
+- Refuse a value inih would not read back unchanged (surrounding whitespace, an inline comment)
+  instead of storing something else than was asked for.
 - Preserve secure path checks, locking, revalidation, expected-current-content stale detection,
   staged install, parent-directory sync, and potentially-committed handling on post-rename sync
-  failure.
+  failure (`ConfigWriteStatus::kDurabilityUncertain`).
+- Open the config by path through `OpenSecureConfigForRead` (the auth helper, which does not link
+  this library, repeats its `ConfigFdWasReplaced` retry): it looks again, up to four more times, at
+  a file another write unlinked meanwhile, and refuses anything else that fails its check.
 - `LoadRuntimeConfigFromFd` walks no path, requires an explicit owner UID, requires a read-only
   non-`O_PATH` regular file with `st_nlink == 1` (concurrent unlink/replace fails closed), and reads
   positionally without advancing the shared file offset.

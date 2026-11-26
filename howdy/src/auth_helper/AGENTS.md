@@ -17,7 +17,8 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related:
   and descriptor 3 (`AF_UNIX` `SOCK_SEQPACKET`) before opening any file.
 - While setuid, `config/runtime_paths.cpp` ignores `HOWDY_CONFIG` and `HOWDY_USER_MODELS_DIR` so
   only installed paths open.
-- Open config with `O_NOFOLLOW` then check ancestors (`CheckSecureConfigFd`); open the user model
+- Open config with `O_NOFOLLOW` then check ancestors (`CheckSecureConfigFd`), up to four more
+  times while writes keep replacing it (`ConfigFdWasReplaced`); open the user model
   through `UserModelStore::OpenRuntimeDescriptor`. Keep both descriptors read-only and `O_CLOEXEC`.
 - Send strictly one `protocol/runtime_descriptor_message.hpp` message on fd 3 (send nothing when
   config fails to open). Report missing, insecure, or empty models as model states while still

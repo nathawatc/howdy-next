@@ -13,6 +13,7 @@
 #include "support/scoped_fd.hpp"
 
 #include <filesystem>
+#include <format>
 #include <optional>
 #include <string>
 #include <utility>
@@ -120,6 +121,12 @@ namespace howdy::native {
 			}
 
 			const ConfigReader reader(*content);
+			if (reader.Damage() != ConfigDamage::kNone) {
+				return FailureResult<RuntimeConfigLoadStatus::kParseError>(
+				    config_path,
+				    std::format("{} {}: {}; repair it with \"howdy config\"", kConfigFileLabel,
+					            ConfigDamageDescription(reader.Damage()), config_path.string()));
+			}
 			if (!reader.Ok()) {
 				return FailureResult<RuntimeConfigLoadStatus::kParseError>(
 				    config_path, "Failed to parse config: " + config_path.string() + " (error " +

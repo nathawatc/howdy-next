@@ -214,10 +214,6 @@ namespace howdy::native {
 		return dir_fd.Close();
 	}
 
-	inline void CleanupStagedFile(StagedFile &staged) noexcept {
-		staged.Cleanup();
-	}
-
 	inline auto PrepareStagedFile(
 	    const std::filesystem::path &destination, std::string_view temp_prefix,
 	    mode_t                   default_mode    = kDefaultAtomicFileMode,
@@ -268,6 +264,9 @@ namespace howdy::native {
 		return staged;
 	}
 
+	// Leaves no staged file behind, whatever the result: on failure it removes the file itself
+	// rather than leaving that to the caller's StagedFile, which outlives the call.
+	//
 	// `sync_parent` and `atomic_rename` may be function pointers or callables that carry their own
 	// context, such as a store's test hooks. A null or empty `sync_parent` (nullptr, a null
 	// function pointer, or an empty std::function) skips the sync and reports
@@ -284,17 +283,17 @@ namespace howdy::native {
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 		if (staged.Fd().Get() < 0) {
-			CleanupStagedFile(staged);
+			staged.Cleanup();
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
 		if (!SyncFd(staged.Fd().Get())) {
-			CleanupStagedFile(staged);
+			staged.Cleanup();
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
 		if (!staged.Fd().Close()) {
-			CleanupStagedFile(staged);
+			staged.Cleanup();
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
@@ -302,14 +301,14 @@ namespace howdy::native {
 			std::error_code ec;
 			std::filesystem::rename(staged.Path(), destination, ec);
 			if (ec) {
-				CleanupStagedFile(staged);
+				staged.Cleanup();
 				return AtomicFileCommitResult::kNotCommitted;
 			}
 		} else {
 			const auto rename_result =
 			    atomic_rename(staged.Path(), destination, AtomicRenameMode::kNoReplace);
 			if (rename_result != AtomicRenameResult::kSuccess) {
-				CleanupStagedFile(staged);
+				staged.Cleanup();
 				return FailedAtomicRenameCommitResult(rename_result);
 			}
 		}
@@ -335,7 +334,6 @@ namespace howdy::native {
 		}
 
 		if (!WriteAllToFd(staged->Fd().Get(), content)) {
-			CleanupStagedFile(*staged);
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 

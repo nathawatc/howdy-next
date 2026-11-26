@@ -20,6 +20,7 @@
 #include <vector>
 
 #include <pwd.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -111,6 +112,89 @@ namespace howdy::test::config_cli {
 				             "command-line EDITOR is rejected");
 			}
 
+			return ok;
+		}
+
+		auto PathReportedAfter(const std::string &output, const std::string &prefix)
+		    -> std::filesystem::path {
+			const auto start = output.find(prefix);
+			if (start == std::string::npos) {
+				return {};
+			}
+			const auto path_start = start + prefix.size();
+			const auto path_end   = output.find('\n', path_start);
+			return output.substr(path_start, path_end - path_start);
+		}
+
+		// Runs an editor that saves an edit and then ends with the shell command `end`.
+		template <typename RunConfig>
+		auto ExpectSavedEditKept(const std::filesystem::path &editor_path, std::string_view end,
+		                         RunConfig run_config) -> bool {
+			const std::string script =
+			    "#!/bin/sh\nprintf '[core]\\ndisabled = true\\n' > \"$1\"\n" + std::string(end) +
+			    "\n";
+			bool ok =
+			    Expect(WriteFile(editor_path, script) && chmod(editor_path.c_str(), 0755) == 0,
+				       "saving-editor fixture writes executable editor");
+			const auto [exit_code, output] = run_config();
+			const auto kept_path = PathReportedAfter(output, "Copy that may hold edits was kept: ");
+			ok &= Expect(exit_code == 1 && ReadFile(kept_path) == "[core]\ndisabled = true\n",
+			             "real editor that saved, then failed, keeps the edit: " + output);
+			std::error_code error;
+			std::filesystem::remove(kept_path, error);
+			return ok;
+		}
+
+		// Runs an editor that saves an edit and then runs the shell commands `then`.
+		template <typename RunConfig>
+		auto ExpectEditInstalled(const std::filesystem::path &editor_path, std::string_view then,
+		                         RunConfig run_config) -> bool {
+			const std::string script =
+			    "#!/bin/sh\nprintf '[core]\\ndisabled = true\\n' > \"$1\"\n" + std::string(then) +
+			    "\n";
+			const bool ok =
+			    Expect(WriteFile(editor_path, script) && chmod(editor_path.c_str(), 0755) == 0,
+				       "installing-editor fixture writes executable editor");
+			const auto [exit_code, output] = run_config();
+			return ok & Expect(exit_code == 0 && output == "Editing config.ini\nConfig updated\n",
+			                   "editor that succeeded has its edit installed: " + output);
+		}
+
+		// A parent can leave SIGCHLD ignored across exec, where waitpid finds no child to report.
+		template <typename RunConfig>
+		auto ExpectIgnoredSigchldHarmless(const std::filesystem::path &editor_path,
+		                                  RunConfig                    run_config) -> bool {
+			auto *const previous = signal(SIGCHLD, SIG_IGN);
+			bool        ok       = Expect(previous != SIG_ERR, "ignore SIGCHLD");
+			ok &= ExpectEditInstalled(editor_path, "exit 0", run_config);
+			return ok & Expect(signal(SIGCHLD, previous) == SIG_IGN,
+			                   "config edit leaves the SIGCHLD disposition as it was");
+		}
+
+		// Ctrl-C in a line-mode editor reaches the whole foreground group: howdy stays, and the
+		// editor gets to act on it, so neither signal may reach it ignored.
+		template <typename RunConfig>
+		auto ExpectInterruptLeftToEditor(const std::filesystem::path &editor_path,
+		                                 RunConfig                    run_config) -> bool {
+			if (geteuid() == 0) {
+				// The editor then runs as another user, who may not signal howdy.
+				std::cerr << "SKIP: signals from the editor while running as root\n";
+				return true;
+			}
+			auto *const previous_interrupt = signal(SIGINT, SIG_DFL);
+			auto *const previous_quit      = signal(SIGQUIT, SIG_DFL);
+			bool        ok                 = ExpectEditInstalled(
+			    editor_path,
+			    // Builtins only: PATH holds just the editors. bash ignores SIGQUIT by itself.
+			    "kill -INT $PPID; kill -QUIT $PPID\n"
+			    "while read -r name value; do\n"
+			    "[ \"$name\" = SigIgn: ] && ignored=$value\n"
+			    "done < /proc/self/status\n"
+			    "[ -n \"$ignored\" ] && [ $((0x$ignored & 2)) -eq 0 ]",
+			    run_config);
+			ok &= Expect(signal(SIGINT, previous_interrupt) == SIG_DFL &&
+			                 signal(SIGQUIT, previous_quit) == SIG_DFL,
+			             "config edit leaves the interrupt dispositions as they were");
 			return ok;
 		}
 
@@ -276,6 +360,24 @@ namespace howdy::test::config_cli {
 			            "Editing config.ini\nEditor exited unsuccessfully; config not updated\n",
 			    "real editor exit 127 reports editor failure");
 
+			ok &= Expect(WriteFile(micro_path, "#!/bin/sh\nkill -TERM $$\n") &&
+			                 chmod(micro_path.c_str(), 0755) == 0,
+			             "killed-editor fixture writes executable editor");
+			const auto killed_result = run_config();
+			ok &= Expect(
+			    killed_result.first == 1 &&
+			        killed_result.second ==
+			            "Editing config.ini\nEditor exited unsuccessfully; config not updated\n",
+			    "real editor killed by a signal reports editor failure");
+
+			// nano, the fallback after micro, exits with an error when a signal ends it.
+			ok &= ExpectSavedEditKept(micro_path, "kill -KILL $$", run_config);
+			ok &= ExpectSavedEditKept(micro_path, "exit 1", run_config);
+			ok &= Expect(ReadFile(config_path) == original,
+			             "real editor that failed leaves the config unchanged");
+			ok &= ExpectIgnoredSigchldHarmless(micro_path, run_config);
+			ok &= ExpectInterruptLeftToEditor(micro_path, run_config);
+
 			sudo_user_env.Unset();
 			sudo_uid_env.Unset();
 			sudo_gid_env.Unset();
@@ -297,17 +399,6 @@ namespace howdy::test::config_cli {
 
 			fs::remove_all(temp_root, error);
 			return ok;
-		}
-
-		auto PathReportedAfter(const std::string &output, const std::string &prefix)
-		    -> std::filesystem::path {
-			const auto start = output.find(prefix);
-			if (start == std::string::npos) {
-				return {};
-			}
-			const auto path_start = start + prefix.size();
-			const auto path_end   = output.find('\n', path_start);
-			return output.substr(path_start, path_end - path_start);
 		}
 
 		auto BoundaryAwareEntrypointPreservesInvalidEdit() -> bool {
@@ -525,10 +616,33 @@ namespace howdy::test::config_cli {
 					replacement_ok = replace_with_symlink();
 				});
 
-				const bool matches = howdy::native::config_internal::FileContentMatches(
-				    config_path, original, validation_root);
-				ok &= Expect(replacement_ok && matches,
-				             "file_content_matches consumes opened config descriptor");
+				const auto current =
+				    howdy::native::config_internal::ReadCurrentConfig(config_path, validation_root);
+				ok &= Expect(replacement_ok && current == original,
+				             "read_current_config consumes opened config descriptor");
+			}
+			fs::remove(config_path, error);
+			fs::remove(backup_path, error);
+
+			// Another writer renames a new config over the one just opened.
+			ok &= Expect(write_secure_config(), "restore config before a concurrent write");
+			{
+				bool                                                replaced = false;
+				const howdy::native::config_test_hooks::ScopedHooks hooks([&] -> void {
+					if (!std::exchange(replaced, true)) {
+						const auto next = temp_root / "next.ini";
+						ok &= Expect(WriteFile(next, kIntegrationOriginalContent) &&
+						                 chmod(next.c_str(), 0644) == 0 &&
+						                 rename(next.c_str(), config_path.c_str()) == 0,
+						             "replace the opened config");
+					}
+				});
+
+				const auto current =
+				    howdy::native::config_internal::ReadCurrentConfig(config_path, validation_root);
+				ok &= Expect(replaced && current.has_value(),
+				             "config replaced during the read is read again: " +
+				                 (current.has_value() ? *current : current.error().message));
 			}
 
 			fs::remove_all(temp_root, error);

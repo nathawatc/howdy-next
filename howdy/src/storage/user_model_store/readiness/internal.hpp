@@ -8,6 +8,7 @@
 #include "storage/user_model_store.hpp"
 #include "storage/user_model_types.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
@@ -44,15 +45,18 @@ namespace howdy::native::user_model_store_internal {
 
 	[[nodiscard]] auto SnapshotFromStat(const struct stat &st) -> UserModelFileSnapshot;
 
-	// Regular file owned by `owner_uid`, not group- or world-writable, one link, and non-empty.
-	// It backs OpenRuntimeDescriptor and, through LoadDocumentFromFd, every path load
-	// (ListEntries, LoadModels), the append and remove documents, and LoadUserModelsFromFd.
-	// Writers check the file they open with CheckSecurePathStat directly
-	// (LockNamespaceAndOpenModelFile), and clear never loads a document, so a new file rule
-	// added here must also be added there to cover them. The non-empty rule is the exception:
-	// it is for readers only, so clear can still remove a damaged empty model.
+	enum class EmptyModelPolicy : std::uint8_t {
+		kReject,
+		// For writers and inspection, so clear can still remove a damaged empty model.
+		kAccept,
+	};
+
+	// The one check of an opened model file, for every reader, writer and inspection: a regular
+	// file owned by `owner_uid`, not group- or world-writable, with one link, and not empty unless
+	// `empty_policy` accepts that.
 	[[nodiscard]] auto ValidateOpenedModelFd(int fd, const std::filesystem::path &path,
-	                                         uid_t owner_uid) -> ValidatedModelFd;
+	                                         uid_t owner_uid, EmptyModelPolicy empty_policy)
+	    -> ValidatedModelFd;
 
 	[[nodiscard]] auto CheckReadiness(const UserModelStoreConfig &config, const std::string &user)
 	    -> UserModelReadinessResult;

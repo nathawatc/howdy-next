@@ -9,6 +9,31 @@ howdy_add_native_test(
 target_link_libraries(howdy_config_utils_test PRIVATE howdy_config
                       PkgConfig::INIREADER Threads::Threads)
 
+# The fuzz entry, run over fixed inputs so every build exercises it.
+howdy_add_native_test(
+ howdy_config_key_file_fuzz_replay
+ native-config-key-file-fuzz-replay
+ tests/config/config_key_file_fuzz.cpp
+ tests/config/config_key_file_fuzz_replay.cpp
+)
+target_link_libraries(
+ howdy_config_key_file_fuzz_replay
+ PRIVATE howdy_config howdy_config_schema PkgConfig::INIREADER
+)
+
+if(HOWDY_BUILD_FUZZERS)
+  howdy_add_native_fuzzer(
+  howdy_config_key_file_fuzzer
+  tests/config/config_key_file_fuzz.cpp
+  src/config/config_reader.cpp
+  src/config/config_utils/key_file.cpp
+ )
+  target_link_libraries(
+  howdy_config_key_file_fuzzer
+  PRIVATE howdy_config_schema PkgConfig::INIREADER
+ )
+endif()
+
 howdy_add_native_test(
  howdy_config_schema_test
  native-config-schema

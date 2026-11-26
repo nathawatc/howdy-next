@@ -19,11 +19,14 @@ namespace {
 		std::cout << "Editing config.ini\n";
 	}
 
+	void PrintEditKept(const howdy::native::config_internal::ConfigEditResult &result) {
+		std::cout << "Edited config was kept: " << result.temp_path.string() << "\n";
+	}
+
 	void PrintConfigInstallError(const howdy::native::config_internal::ConfigEditResult &result) {
 		if (result.status ==
 		    howdy::native::config_internal::ConfigEditStatus::kInvalidEditedConfig) {
-			if (!result.error.empty() &&
-			    result.error != howdy::native::kUpdatedConfigInvalidMessage) {
+			if (!result.error.empty()) {
 				std::cout << result.error << "\n";
 			}
 			std::cout << "Edited config is invalid and was not installed: "
@@ -34,7 +37,7 @@ namespace {
 		                                   : result.error)
 		          << "\n";
 		if (!result.temp_path.empty()) {
-			std::cout << "Edited config was kept: " << result.temp_path.string() << "\n";
+			PrintEditKept(result);
 		}
 	}
 
@@ -62,6 +65,11 @@ auto howdy::native::config_internal::ConfigMainWithDependencies(
 			return kConfigExitOk;
 		case ConfigEditStatus::kNoChanges:
 			std::cout << "No config changes made\n";
+			if (!result.error.empty()) {
+				// The config is invalid as it is.
+				std::cout << result.error << "\n";
+				return kConfigExitAbort;
+			}
 			return kConfigExitOk;
 		case ConfigEditStatus::kEditorUnavailable:
 			std::cout << "Error: No suitable text editor found.\n";
@@ -75,6 +83,7 @@ auto howdy::native::config_internal::ConfigMainWithDependencies(
 			std::cout << ".\n";
 			return kConfigExitAbort;
 		case ConfigEditStatus::kSecurityCheckFailed:
+		case ConfigEditStatus::kConfigUnreadable:
 			std::cout << result.error << "\n";
 			return kConfigExitAbort;
 		case ConfigEditStatus::kTempCreateFailed:
@@ -85,6 +94,11 @@ auto howdy::native::config_internal::ConfigMainWithDependencies(
 			return kConfigExitAbort;
 		case ConfigEditStatus::kEditorFailed:
 			std::cout << "Editor exited unsuccessfully; config not updated\n";
+			return kConfigExitAbort;
+		case ConfigEditStatus::kEditorFailedEditKept:
+			// Also when the editor's result was lost, so the copy may hold no edit.
+			std::cout << "Editor did not report success; config not updated\n"
+			          << "Copy that may hold edits was kept: " << result.temp_path.string() << "\n";
 			return kConfigExitAbort;
 		case ConfigEditStatus::kReadFailed:
 			std::cout << howdy::native::kEditedConfigInstallFailedMessage << '\n';

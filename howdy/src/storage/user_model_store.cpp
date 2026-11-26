@@ -5,7 +5,6 @@
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "support/fd_io.hpp"
-#include "support/file_security.hpp"
 #include "support/scoped_fd.hpp"
 #include "user_model_codec/internal.hpp"
 #include "user_model_store/internal.hpp"
@@ -14,13 +13,11 @@
 #include <cerrno>
 #include <cstddef>
 #include <filesystem>
-#include <optional>
 #include <string>
 #include <utility>
 
 #include <fcntl.h>
 
-#include <sys/stat.h>
 #include <sys/types.h>
 
 namespace howdy::native {
@@ -96,7 +93,8 @@ namespace howdy::native {
 		auto LoadDocumentFromFd(int fd, const std::filesystem::path &path,
 		                        const UserModelExpectations &expectations, uid_t owner_uid)
 		    -> user_model_codec::Document {
-			const auto validated = ValidateOpenedModelFd(fd, path, owner_uid);
+			const auto validated =
+			    ValidateOpenedModelFd(fd, path, owner_uid, EmptyModelPolicy::kReject);
 			if (validated.status != UserModelStatus::kOk) {
 				return user_model_codec::Document{
 				    StoreListFailure(validated.status, validated.error_message),
@@ -209,23 +207,15 @@ namespace howdy::native {
 			                      user_model_store_internal::UserModelInspectionFailedMessage(
 			                          path_result.path, error_number));
 		}
-		struct stat opened_stat{};
-		if (fstat(input.Get(), &opened_stat) != 0) {
-			const int error_number = errno;
-			return InspectFailure(UserModelStatus::kParseError,
-			                      user_model_store_internal::UserModelInspectionFailedMessage(
-			                          path_result.path, error_number));
-		}
-		// Keep empty files inspectable so clear can remove damaged empty storage.
-		const auto security =
-		    CheckSecurePathStat(opened_stat, SecurePathKind::kRegularFile, path_result.path,
-			                    kUserModelFileLabel, config_.owner_uid);
-		if (!security.ok) {
-			return InspectFailure(UserModelStatus::kInsecurePath, security.error_message);
+		auto validated = user_model_store_internal::ValidateOpenedModelFd(
+		    input.Get(), path_result.path, config_.owner_uid,
+		    user_model_store_internal::EmptyModelPolicy::kAccept);
+		if (validated.status != UserModelStatus::kOk) {
+			return InspectFailure(validated.status, std::move(validated.error_message));
 		}
 		return UserModelInspectResult{
 		    .status   = UserModelStatus::kOk,
-		    .snapshot = user_model_store_internal::SnapshotFromStat(opened_stat),
+		    .snapshot = user_model_store_internal::SnapshotFromStat(validated.file_stat),
 		};
 	}
 

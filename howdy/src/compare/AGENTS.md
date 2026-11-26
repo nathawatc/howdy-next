@@ -28,5 +28,7 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related:
   extra thread, so `WarmUpRecognizer` runs inside the filter.
 - Seccomp is best-effort only for `CompareSeccompStatus::kUnsupported` (kernel without seccomp
   filter mode) and `kUnsupportedArchitecture` (build without a filter for the target): warn and
-  continue. Filter construction/installation failures and missing injected hooks abort.
+  continue. Filter construction/installation failures and missing injected hooks abort. Tests cover
+  the first against emulated `seccomp(2)` failures and the second by building the sandbox with
+  `HOWDY_SECCOMP_UNSUPPORTED_ARCH`.
 - Keep engine and capture orchestration tests ONNX-free by injecting inference.

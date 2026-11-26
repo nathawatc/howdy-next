@@ -12,16 +12,6 @@
 
 namespace howdy::native::config_utils_internal {
 
-	auto IsSafeIniScalarValue(std::string_view value) -> bool {
-		if (!value.empty() && value.front() == '[') {
-			return false;
-		}
-
-		return std::ranges::all_of(value, [](const char ch) -> bool {
-			return ch != '\0' && ch != '\n' && ch != '\r';
-		});
-	}
-
 	namespace {
 
 		// Drops what inih reads as an inline comment: a ';' after whitespace.
@@ -175,6 +165,25 @@ namespace howdy::native::config_utils_internal {
 		}
 
 	}  // namespace
+
+	auto IsSafeIniScalarValue(std::string_view value) -> bool {
+		if (!value.empty() && value.front() == '[') {
+			return false;
+		}
+
+		return std::ranges::all_of(value, [](const char ch) -> bool {
+			return ch != '\0' && ch != '\n' && ch != '\r';
+		});
+	}
+
+	auto ReadsBackUnchanged(std::string_view value) -> bool {
+		if (value.empty()) {
+			return true;
+		}
+		// The space ReplaceLineValue writes before the value turns a leading ';' into a comment.
+		return value.front() != ';' && !IsAsciiSpace(value.front()) &&
+		       !IsAsciiSpace(value.back()) && WithoutInlineComment(value).size() == value.size();
+	}
 
 	auto SplitLinesPreserveNewlines(const std::string &content) -> std::vector<std::string> {
 		std::vector<std::string> lines;

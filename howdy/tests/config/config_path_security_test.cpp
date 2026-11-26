@@ -70,10 +70,10 @@ namespace howdy::test {
 				std::filesystem::remove(lock_path, ec);
 				return true;
 			}
-			std::string error;
-			auto        waiting = std::async(std::launch::async, [&] -> bool {
-				return native::UpdateConfigValue(context.config_path, "disabled", &error, "true",
-				                                 true, false, {context.temp_root});
+			auto waiting = std::async(std::launch::async, [&] -> native::ConfigWriteResult {
+				return native::UpdateConfigValue(
+				    context.config_path, {.key = "disabled", .value = "true"},
+				    {.validate_runtime = false, .validation_root = {context.temp_root}});
 			});
 			ok &= Expect(WaitForBlockedFlock(lock_stat.st_ino), "config writer waits for the lock");
 			ok &= Expect(unlink(lock_path.c_str()) == 0, "remove config lock while held");
@@ -83,8 +83,11 @@ namespace howdy::test {
 				ok &= Expect(replacement.Valid(), "recreate config lock while held");
 			}
 			ok &= Expect(flock(holder.Get(), LOCK_UN) == 0, "release removed config lock");
-			ok &= Expect(!waiting.get() && error.contains("removed or replaced"),
-			             "config writer rejects a lock replaced while it waited: " + error);
+			const auto result = waiting.get();
+			ok &=
+			    Expect(result.status == native::ConfigWriteStatus::kLockFailed &&
+				           result.message.contains("removed or replaced"),
+				       "config writer rejects a lock replaced while it waited: " + result.message);
 			ok &= Expect(ReadFile(context.config_path) == before,
 			             "rejected config writer leaves the config unchanged");
 			std::error_code ec;
@@ -104,12 +107,13 @@ namespace howdy::test {
 		ec.clear();
 		fs::create_symlink("/tmp", lock_failure_path, ec);
 		ok &= Expect(!ec, "create config lock symlink for lock failure");
-		std::string lock_error;
-		ok &=
-		    Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &lock_error,
-			                                         "false", true, false, {context.temp_root}) &&
-			           lock_error.starts_with("Failed to lock config file: "),
-			       "update_config_value reports config lock failure with a reason: " + lock_error);
+		auto lock_result = howdy::native::UpdateConfigValue(
+		    context.config_path, {.key = "disabled", .value = "false"},
+		    {.validate_runtime = false, .validation_root = {context.temp_root}});
+		ok &= Expect(lock_result.status == howdy::native::ConfigWriteStatus::kLockFailed &&
+		                 lock_result.message.starts_with("Failed to lock config file: "),
+		             "update_config_value reports config lock failure with a reason: " +
+		                 lock_result.message);
 		fs::remove(lock_failure_path, ec);
 		ec.clear();
 
@@ -117,21 +121,23 @@ namespace howdy::test {
 		             "create pre-existing lock file with relaxed permissions");
 		ok &= Expect(chmod(lock_failure_path.c_str(), 0644) == 0,
 		             "set config lock file group/world-readable");
-		lock_error.clear();
-		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &lock_error,
-		                                               "false", true, false, {context.temp_root}) &&
-		                 lock_error.starts_with("Failed to lock config file: ") &&
-		                 lock_error.contains("mode 0644, expected 0600"),
+		lock_result = howdy::native::UpdateConfigValue(
+		    context.config_path, {.key = "disabled", .value = "false"},
+		    {.validate_runtime = false, .validation_root = {context.temp_root}});
+		ok &= Expect(lock_result.status == howdy::native::ConfigWriteStatus::kLockFailed &&
+		                 lock_result.message.starts_with("Failed to lock config file: ") &&
+		                 lock_result.message.contains("mode 0644, expected 0600"),
 		             "update_config_value rejects pre-existing 0644 lock file with a mode hint: " +
-		                 lock_error);
+		                 lock_result.message);
 		ok &= Expect(chmod(lock_failure_path.c_str(), 0664) == 0,
 		             "set config lock file group-writable");
-		lock_error.clear();
-		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &lock_error,
-		                                               "false", true, false, {context.temp_root}) &&
-		                 lock_error.contains("mode 0664, expected 0600; remove "),
+		lock_result = howdy::native::UpdateConfigValue(
+		    context.config_path, {.key = "disabled", .value = "false"},
+		    {.validate_runtime = false, .validation_root = {context.temp_root}});
+		ok &= Expect(lock_result.status == howdy::native::ConfigWriteStatus::kLockFailed &&
+		                 lock_result.message.contains("mode 0664, expected 0600; remove "),
 		             "update_config_value gives the same hint for a writable lock file: " +
-		                 lock_error);
+		                 lock_result.message);
 		fs::remove(lock_failure_path, ec);
 		ec.clear();
 		ok &= ExpectLockReplacedWhileWaitingFails(context, false);
@@ -152,9 +158,9 @@ namespace howdy::test {
 		const auto install_failure_path = install_failure_dir / "config.ini";
 		ok &= Expect(WriteConfigTestFile(install_failure_path, "[core]\ndisabled = false\n"),
 		             "write install-failure config");
-		std::string update_error;
-		bool        update_failed            = false;
-		const auto  install_failure_security = howdy::native::CheckSecureConfigPath(
+		howdy::native::ConfigWriteResult update_result;
+		bool                             update_failed = false;
+		const auto install_failure_security            = howdy::native::CheckSecureConfigPath(
 		    install_failure_path, howdy::native::DefaultSecureOwnerUid(), {context.temp_root});
 		ok &= Expect(install_failure_security.ok,
 		             "install-failure config passes secure path check before update");
@@ -164,17 +170,20 @@ namespace howdy::test {
 		const bool set_file_size_limit = file_size_limit_guard.SetZero();
 		ok &= Expect(set_file_size_limit, "set file-size limit for install-failure test");
 		if (install_failure_security.ok && set_file_size_limit) {
-			update_failed =
-			    !howdy::native::UpdateConfigValue(install_failure_path, "disabled", &update_error,
-				                                  "true", false, false, {context.temp_root});
+			update_result = howdy::native::UpdateConfigValue(
+			    install_failure_path, {.key = "disabled", .value = "true"},
+			    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+			update_failed = update_result.status != howdy::native::ConfigWriteStatus::kOk;
 		}
 		if (set_file_size_limit) {
 			ok &= Expect(file_size_limit_guard.Restore(),
 			             "restore file-size limit after install-failure test");
 		}
 		ok &= Expect(update_failed, "update_config_value returns false when install fails");
-		ok &= Expect(update_error == "Failed to update config file",
-		             "failed update_config_value install reports fallback error: " + update_error);
+		ok &= Expect(update_result.status == howdy::native::ConfigWriteStatus::kInstallFailed &&
+		                 update_result.message == "Failed to update config file",
+		             "failed update_config_value install reports fallback error: " +
+		                 update_result.message);
 		ok &= Expect(ReadFile(install_failure_path) == "[core]\ndisabled = false\n",
 		             "failed install leaves original config unchanged");
 		ok &= Expect(CountFilesWithPrefix(install_failure_dir, ".howdy-config-") == 0,
@@ -186,9 +195,10 @@ namespace howdy::test {
 		             "write symlink config target");
 		fs::create_symlink(symlink_target, symlink_config, ec);
 		ok &= Expect(!ec, "create symlinked config path");
-		std::string symlink_error;
-		ok &= Expect(!howdy::native::UpdateConfigValue(symlink_config, "disabled", &symlink_error,
-		                                               "true", false, false, {context.temp_root}),
+		const auto symlink_result = howdy::native::UpdateConfigValue(
+		    symlink_config, {.key = "disabled", .value = "true"},
+		    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+		ok &= Expect(symlink_result.status == howdy::native::ConfigWriteStatus::kInsecurePath,
 		             "update_config_value rejects symlinked config path");
 		ok &= Expect(ReadFile(symlink_target) == "[core]\ndisabled = false\n",
 		             "symlinked config target is left unchanged");
@@ -199,8 +209,10 @@ namespace howdy::test {
 		             "config lock absent before insecure config update");
 		ok &= Expect(chmod(context.config_path.c_str(), 0666) == 0,
 		             "make config file world-writable");
-		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", nullptr,
-		                                               "false", true, true, {context.temp_root}),
+		ok &= Expect(howdy::native::UpdateConfigValue(context.config_path,
+		                                              {.key = "disabled", .value = "false"},
+		                                              {.validation_root = {context.temp_root}})
+		                     .status != howdy::native::ConfigWriteStatus::kOk,
 		             "update_config_value rejects insecure config permissions");
 		ok &= Expect(!fs::exists(config_lock_path),
 		             "update_config_value rejects insecure config before creating lock");
@@ -222,8 +234,10 @@ namespace howdy::test {
 		                                                   {context.temp_root})
 		                  .ok,
 		             "check_secure_config_path rejects insecure config directory");
-		ok &= Expect(!howdy::native::UpdateConfigValue(insecure_config_path, "disabled", nullptr,
-		                                               "true", true, true, {context.temp_root}),
+		ok &= Expect(howdy::native::UpdateConfigValue(insecure_config_path,
+		                                              {.key = "disabled", .value = "true"},
+		                                              {.validation_root = {context.temp_root}})
+		                     .status != howdy::native::ConfigWriteStatus::kOk,
 		             "update_config_value rejects insecure config directory");
 		ok &= Expect(!fs::exists(insecure_config_lock_path),
 		             "update_config_value rejects insecure directory before creating lock");
@@ -248,8 +262,10 @@ namespace howdy::test {
 		                                                   {context.temp_root})
 		                  .ok,
 		             "check_secure_config_path rejects insecure ancestor directory");
-		ok &= Expect(!howdy::native::UpdateConfigValue(nested_config_path, "disabled", nullptr,
-		                                               "true", true, true, {context.temp_root}),
+		ok &= Expect(howdy::native::UpdateConfigValue(nested_config_path,
+		                                              {.key = "disabled", .value = "true"},
+		                                              {.validation_root = {context.temp_root}})
+		                     .status != howdy::native::ConfigWriteStatus::kOk,
 		             "update_config_value rejects insecure ancestor directory");
 		ok &= Expect(!fs::exists(nested_config_lock_path),
 		             "update_config_value rejects insecure ancestor before creating lock");
@@ -277,6 +293,13 @@ namespace howdy::test {
 			ok &= Expect(unreadable_check.error_message.contains("do not make /etc/howdy"),
 			             "inaccessible config path warns against insecure permissions");
 		}
+		if (geteuid() != 0) {
+			const auto uninspected = howdy::native::UpdateConfigValue(
+			    unreadable_config_path, {.key = "disabled", .value = "true"},
+			    {.lock = false, .validation_root = {context.temp_root}});
+			ok &= Expect(uninspected.status == howdy::native::ConfigWriteStatus::kReadFailed,
+			             "config that cannot be inspected is not called insecure");
+		}
 		ok &=
 		    Expect(chmod(unreadable_dir.c_str(), 0755) == 0, "restore unreadable config dir mode");
 
@@ -295,8 +318,10 @@ namespace howdy::test {
 			ok &= Expect(strict_root_check.ok,
 			             "strict root-owned config check accepts root-owned config");
 		}
-		ok &= Expect(howdy::native::UpdateConfigValue(protected_path, "disabled", nullptr, "true",
-		                                              false, true, {context.temp_root}),
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 protected_path, {.key = "disabled", .value = "true"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                     .status == howdy::native::ConfigWriteStatus::kOk,
 		             "update_config_value succeeds on secure config");
 		struct stat protected_stat{};
 		ok &= Expect(stat(protected_path.c_str(), &protected_stat) == 0, "stat protected config");
@@ -306,8 +331,10 @@ namespace howdy::test {
 		const auto hardlink_path = context.temp_root / "protected-hardlink.ini";
 		ok &= Expect(link(protected_path.c_str(), hardlink_path.c_str()) == 0,
 		             "create hard link to protected config");
-		ok &= Expect(!howdy::native::UpdateConfigValue(hardlink_path, "disabled", nullptr, "false",
-		                                               false, true, {context.temp_root}),
+		ok &= Expect(howdy::native::UpdateConfigValue(
+		                 hardlink_path, {.key = "disabled", .value = "false"},
+		                 {.lock = false, .validation_root = {context.temp_root}})
+		                     .status != howdy::native::ConfigWriteStatus::kOk,
 		             "update_config_value rejects hard-linked config");
 
 		howdy::native::ConfigReader const validated(ReadFile(context.config_path));

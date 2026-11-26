@@ -115,3 +115,24 @@ howdy_add_native_test(
  tests/compare/compare_sandbox_seccomp_exec_test.cpp
 )
 target_link_libraries(howdy_compare_sandbox_test PRIVATE howdy_compare_sandbox)
+
+# Big-endian and other targets without a filter, on any build: the sandbox is compiled in with the
+# filter left out.
+howdy_add_native_test(
+ howdy_compare_sandbox_unsupported_arch_test
+ native-compare-sandbox-unsupported-arch
+ tests/compare/compare_sandbox_test.cpp
+ tests/compare/compare_sandbox_limit_test.cpp
+ tests/compare/compare_sandbox_seccomp_test.cpp
+ tests/compare/compare_sandbox_seccomp_exec_test.cpp
+ src/compare/sandbox.cpp
+ src/compare/sandbox/seccomp.cpp
+)
+target_compile_definitions(
+ howdy_compare_sandbox_unsupported_arch_test
+ PRIVATE HOWDY_SECCOMP_UNSUPPORTED_ARCH=1
+)
+set_target_properties(
+ howdy_compare_sandbox_unsupported_arch_test
+ PROPERTIES HOWDY_SKIP_COMPILE_COMMANDS ON
+)

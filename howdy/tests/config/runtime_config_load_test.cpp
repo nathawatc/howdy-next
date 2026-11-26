@@ -168,6 +168,18 @@ namespace {
 		ok &= Expect(malformed.error_message.contains(display_path.string()),
 		             "malformed descriptor config names the display path");
 
+		const auto zeroed_path = temp_root / "fd-zeroed.ini";
+		ok &= Expect(WriteSecureConfig(zeroed_path, std::string(64, '\0')),
+		             "write zero-filled descriptor config");
+		const ScopedFd zeroed_fd(open(zeroed_path.c_str(), O_RDONLY | O_CLOEXEC));
+		const auto     zeroed = LoadRuntimeConfigFromFd(zeroed_fd.Get(), display_path, owner);
+		ok &= ExpectFailure(zeroed, RuntimeConfigLoadStatus::kParseError,
+		                    "zero-filled descriptor config");
+		ok &= Expect(zeroed.error_message ==
+		                 "Config file contains a NUL byte: " + display_path.string() +
+		                     "; repair it with \"howdy config\"",
+		             "zero-filled descriptor config says why: " + zeroed.error_message);
+
 		const auto invalid_value_path = temp_root / "fd-invalid.ini";
 		ok &= Expect(WriteSecureConfig(invalid_value_path, "[video]\ntimeout = 0\n"),
 		             "write invalid descriptor config");
@@ -309,10 +321,44 @@ auto main() -> int {
 		}
 	}
 
+	for (const bool replacement_secure : {true, false}) {
+		// Another writer renames a config over the one just opened.
+		const auto replaced_path = temp_root / "replaced.ini";
+		const auto next_path     = temp_root / "replaced-next.ini";
+		ok &= Expect(WriteSecureConfig(replaced_path, "[video]\ntimeout = 7\n") &&
+		                 WriteSecureConfig(next_path, "[video]\ntimeout = 9\n") &&
+		                 chmod(next_path.c_str(), replacement_secure ? 0644 : 0666) == 0,
+		             "write config to be replaced while it is read");
+		const howdy::native::config_test_hooks::ScopedHooks hooks([&] -> void {
+			(void)rename(next_path.c_str(), replaced_path.c_str());
+		});
+
+		const auto replaced =
+		    howdy::native::LoadRuntimeConfig(replaced_path, std::nullopt, {temp_root});
+		if (replacement_secure) {
+			ok &= Expect(replaced.config.has_value() && replaced.config->video.timeout == 9,
+			             "config replaced during the load is loaded: " + replaced.error_message);
+		} else {
+			ok &= ExpectFailure(replaced, RuntimeConfigLoadStatus::kPathError,
+			                    "insecure replacement during the load");
+		}
+	}
+
 	const auto missing_path = temp_root / "missing.ini";
 	const auto missing = howdy::native::LoadRuntimeConfig(missing_path, std::nullopt, {temp_root});
 	ok &= ExpectFailure(missing, RuntimeConfigLoadStatus::kPathError, "missing config");
 	ok &= Expect(missing.error_code == ENOENT, "missing config preserves open errno");
+
+	const auto empty_path = temp_root / "empty.ini";
+	ok &= Expect(WriteSecureConfig(empty_path, ""), "write empty config");
+	const auto empty = howdy::native::LoadRuntimeConfig(empty_path, std::nullopt, {temp_root});
+	ok &= ExpectFailure(empty, RuntimeConfigLoadStatus::kParseError, "empty config");
+	ok &= Expect(empty.error_message == "Config file is blank: " + empty_path.string() +
+	                                        "; repair it with \"howdy config\"",
+	             "empty config says why: " + empty.error_message);
+	ok &= Expect(WriteSecureConfig(empty_path, "# defaults\n") &&
+	                 howdy::native::LoadRuntimeConfig(empty_path, std::nullopt, {temp_root}).ok,
+	             "comments-only config loads");
 
 	const auto malformed_path = temp_root / "malformed.ini";
 	ok &= Expect(WriteFile(malformed_path, "[core\n"), "write malformed config");

@@ -1,6 +1,7 @@
 #include "cli/test.hpp"
 
 #include "app/command_invocation.hpp"
+#include "cli/privilege_drop.hpp"
 #include "cli/test/gui_probe.hpp"
 #include "cli/test/internal.hpp"
 #include "cli/test/preview_renderer.hpp"
@@ -60,12 +61,8 @@ namespace {
 		}
 
 		const auto &invoking_user = *invoking_identity.user;
-		if (initgroups(invoking_user.name.c_str(), invoking_user.gid) != 0 ||
-		    setgid(invoking_user.gid) != 0 || setuid(invoking_user.uid) != 0) {
-			return false;
-		}
-		if (getuid() != invoking_user.uid || geteuid() != invoking_user.uid ||
-		    getgid() != invoking_user.gid || getegid() != invoking_user.gid) {
+		if (!howdy::native::cli_internal::DropPrivilegesPermanently(
+		        invoking_user, howdy::native::cli_internal::SystemPrivilegeDropOperations())) {
 			return false;
 		}
 		howdy::native::ResetInvokingUserGuiEnvironment(invoking_user);
