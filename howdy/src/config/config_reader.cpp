@@ -1,16 +1,47 @@
 #include "config_reader/internal.hpp"
+#include "support/ascii.hpp"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace howdy::native {
 
+	auto FindConfigDamage(std::string_view content) -> ConfigDamage {
+		if (content.contains('\0')) {
+			return ConfigDamage::kNulByte;
+		}
+		constexpr std::string_view utf8_bom = "\xEF\xBB\xBF";
+		if (content.starts_with(utf8_bom)) {
+			content.remove_prefix(utf8_bom.size());
+		}
+		return std::ranges::all_of(content, IsAsciiSpace) ? ConfigDamage::kBlank
+		                                                  : ConfigDamage::kNone;
+	}
+
+	auto ConfigDamageDescription(ConfigDamage damage) -> std::string_view {
+		switch (damage) {
+			case ConfigDamage::kBlank:
+				return "is blank";
+			case ConfigDamage::kNulByte:
+				return "contains a NUL byte";
+			case ConfigDamage::kNone:
+				break;
+		}
+		return {};
+	}
+
 	ConfigReader::ConfigReader(std::string_view content)
-	    : reader_(content.data(), content.size()) {}
+	    : damage_(FindConfigDamage(content))
+	    , reader_(content.data(), content.size()) {}
 
 	auto ConfigReader::Ok() const -> bool {
-		return reader_.ParseError() == 0;
+		return damage_ == ConfigDamage::kNone && reader_.ParseError() == 0;
+	}
+
+	auto ConfigReader::Damage() const -> ConfigDamage {
+		return damage_;
 	}
 
 	auto ConfigReader::ParseError() const -> int {

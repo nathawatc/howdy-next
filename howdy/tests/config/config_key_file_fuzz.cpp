@@ -19,9 +19,10 @@
 
 // Differential fuzz of the INI editor against inih, through the reader production uses.
 //
-// Input layout: one byte selecting the option to set, one byte whose low bits give the length of
-// its new value, the value, then the config. Config bytes below 0x80 stand for themselves; higher
-// bytes select a token, so that random input often holds the option and the shapes around it.
+// Input layout: one byte selecting the option to set, one byte giving the length of its new value
+// (modulo kMaxValueBytes), the value, then the config. Config bytes below 0x80 stand for
+// themselves; higher bytes select a token, so that random input often holds the option and the
+// shapes around it.
 namespace howdy::test {
 
 	namespace {
@@ -99,10 +100,27 @@ namespace howdy::test {
 			return values;
 		}
 
+		// The escape that std::format has as "{:?}" only since GCC 15.
+		auto Escaped(std::string_view text) -> std::string {
+			std::string escaped = "\"";
+			for (const char ch : text) {
+				const auto byte = static_cast<unsigned char>(ch);
+				if (ch == '\n') {
+					escaped += "\\n";
+				} else if (byte < 0x20 || byte >= 0x7f || ch == '"' || ch == '\\') {
+					escaped += std::format("\\x{{{:02x}}}", byte);
+				} else {
+					escaped += ch;
+				}
+			}
+			return escaped + '"';
+		}
+
 		[[noreturn]] void Fail(std::string_view reason, const KeyFileFuzzTarget &target,
 		                       std::string_view before, std::string_view after) {
-			std::cerr << std::format("{}\n[{}] {} -> {:?}\nbefore: {:?}\nafter:  {:?}\n", reason,
-			                         target.section, target.key, target.value, before, after);
+			std::cerr << reason << "\n[" << target.section << "] " << target.key << " -> "
+			          << Escaped(target.value) << "\nbefore: " << Escaped(before)
+			          << "\nafter:  " << Escaped(after) << "\n";
 			std::abort();
 		}
 
@@ -132,8 +150,15 @@ namespace howdy::test {
 	auto CheckKeyFileReplacement(const KeyFileFuzzTarget &target, std::string_view content)
 	    -> config_utils::ConfigLineReplaceResult {
 		const std::string before(content);
-		auto              lines   = config_utils::SplitLinesPreserveNewlines(before);
-		const auto        outcome = config_utils::ReplaceLineValue(
+		// UpdateConfigValue refuses a damaged config before it edits, and so must every reader.
+		if (native::FindConfigDamage(before) != native::ConfigDamage::kNone) {
+			if (native::ConfigReader(before).Ok()) {
+				Fail("a damaged config was accepted", target, before, before);
+			}
+			return config_utils::ConfigLineReplaceResult::kNotFound;
+		}
+		auto       lines   = config_utils::SplitLinesPreserveNewlines(before);
+		const auto outcome = config_utils::ReplaceLineValue(
 		    lines, {.section = target.section, .key = target.key, .value = target.value});
 		const auto after = config_utils::JoinLines(lines);
 		if (outcome.result != config_utils::ConfigLineReplaceResult::kReplaced) {
@@ -192,7 +217,7 @@ namespace howdy::test {
 		for (const auto byte : rest.subspan(value_size)) {
 			if (byte >= 0x80) {
 				AppendToken(content, kTokens.at((byte - 0x80U) % kTokens.size()), target);
-			} else if (byte != 0) {  // a C string to inih, which ends the line at a NUL
+			} else {
 				content.push_back(static_cast<char>(byte));
 			}
 		}

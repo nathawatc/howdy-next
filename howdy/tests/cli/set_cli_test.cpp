@@ -1,6 +1,7 @@
 #include "app/command_invocation.hpp"
 #include "cli/set/internal.hpp"
 #include "config/config_utils.hpp"
+#include "support/file_lock.hpp"
 #include "test_support.hpp"
 
 #include <filesystem>
@@ -9,6 +10,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <sys/stat.h>
 
 namespace {
 
@@ -67,10 +70,36 @@ namespace {
 		return {.exit_code = exit_code, .output = output.str()};
 	}
 
+	auto ProductionSetLocksAndWrites() -> bool {
+		const auto directory = howdy::test::CreateTempDirectory("howdy-set-cli-test-");
+		if (!directory.has_value()) {
+			return Expect(false, "integration creates temp directory");
+		}
+		const howdy::test::TemporaryDirectory        guard(*directory);
+		const auto                                   config_path = guard.Path() / "config.ini";
+		const howdy::test::ScopedEnvironmentVariable config_env("HOWDY_CONFIG",
+		                                                        config_path.string());
+		bool ok = Expect(chmod(guard.Path().c_str(), 0755) == 0 &&
+		                     howdy::test::WriteFile(config_path, "[core]\ndisabled = false\n") &&
+		                     chmod(config_path.c_str(), 0644) == 0,
+		                 "integration writes a secure config");
+		std::ostringstream const output;
+		auto                    *previous_buffer = std::cout.rdbuf(output.rdbuf());
+		const int                exit_code = howdy::native::set_internal::SetMainWithValidationRoot(
+		    {.positionals = {"disabled", "true"}}, {guard.Path()});
+		std::cout.rdbuf(previous_buffer);
+		ok &= Expect(exit_code == 0 &&
+		                 howdy::test::ReadFile(config_path) == "[core]\ndisabled = true\n",
+		             "production set updates the config: " + output.str());
+		ok &= Expect(std::filesystem::exists(howdy::native::LockFilePath(config_path)),
+		             "production set takes the config lock");
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
-	bool ok = true;
+	bool ok = ProductionSetLocksAndWrites();
 
 	{
 		TestContext context{

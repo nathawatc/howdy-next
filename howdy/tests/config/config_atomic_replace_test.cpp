@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <utility>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -45,6 +46,24 @@ namespace howdy::test {
 			                 howdy::native::ConfigValidationStatus::kOk,
 			             "validate_config_content parses in memory without TMPDIR");
 		}
+		for (const auto &[damaged_content, message] : {
+		         std::pair{std::string(), "Config is blank"},
+		         std::pair{valid_content + '\0', "Config contains a NUL byte"},
+		     }) {
+			const auto damaged = howdy::native::ValidateConfigContent(damaged_content);
+			ok &= Expect(damaged.status == ConfigValidationStatus::kDamaged &&
+			                 damaged.message == message,
+			             "validate_config_content rejects damaged content: " + damaged.message);
+
+			const auto damage_path = context.temp_root / "replace-damage.ini";
+			ok &= Expect(WriteConfigTestFile(damage_path, valid_content), "write damage baseline");
+			const auto replaced = howdy::native::ReplaceConfigContentAtomically(
+			    damage_path, damaged_content,
+			    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+			ok &= Expect(replaced.status == howdy::native::ConfigWriteStatus::kInvalidConfig &&
+			                 replaced.message == message && ReadFile(damage_path) == valid_content,
+			             "damaged content is never installed: " + replaced.message);
+		}
 		const auto unparsable = howdy::native::ValidateConfigContent("[core\n");
 		ok &= Expect(unparsable.status == ConfigValidationStatus::kUnparsable,
 		             "validate_config_content rejects invalid syntax");
@@ -81,7 +100,7 @@ namespace howdy::test {
 		const auto missing_path = context.temp_root / "missing-replace-config.ini";
 		install_result          = howdy::native::ReplaceConfigContentAtomically(
 		    missing_path, replacement_content, {.validation_root = {context.temp_root}});
-		ok &= Expect(install_result.status == howdy::native::ConfigWriteStatus::kInsecurePath &&
+		ok &= Expect(install_result.status == howdy::native::ConfigWriteStatus::kReadFailed &&
 		                 !std::filesystem::exists(missing_path),
 		             "replace_config_content_atomically does not create a missing config");
 		install_result = howdy::native::ReplaceConfigContentAtomically(

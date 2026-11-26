@@ -99,16 +99,10 @@ namespace howdy::native::config_utils_internal {
 		const auto opened =
 		    OpenSecureConfigForRead(config_path, DefaultSecureOwnerUid(), validation_root);
 		if (!opened.fd.Valid()) {
-			return {
-			    .status  = ConfigWriteStatus::kReadFailed,
-			    .message = kConfigFileOpenFailureMessage,
-			};
+			return OpenFailure(opened.open_error);
 		}
 		if (!opened.security.ok) {
-			return {
-			    .status  = ConfigWriteStatus::kInsecurePath,
-			    .message = opened.security.error_message,
-			};
+			return PathFailure(opened.security);
 		}
 		const auto current_content = ReadConfigFromFd(opened.fd.Get());
 		if (!current_content.has_value()) {
@@ -154,6 +148,12 @@ namespace howdy::native {
 		}
 
 		ConfigReader const config(content);
+		if (config.Damage() != ConfigDamage::kNone) {
+			return {
+			    .status  = ConfigValidationStatus::kDamaged,
+			    .message = std::format("Config {}", ConfigDamageDescription(config.Damage())),
+			};
+		}
 		if (!config.Ok()) {
 			return {
 			    .status  = ConfigValidationStatus::kUnparsable,

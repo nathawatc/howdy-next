@@ -383,12 +383,14 @@ if(BUILD_TESTING)
     add_test(NAME ${test_name} COMMAND ${target})
   endfunction()
 
-  # Compile the code under test in, so libFuzzer's coverage instrumentation reaches it.
+  # Compile the code under test in, so libFuzzer's coverage instrumentation reaches it. The library
+  # and the replay test own these sources, so clang-tidy reads them there.
   function(howdy_add_native_fuzzer target)
     add_executable(${target} ${ARGN})
     howdy_configure_native_test_target(${target})
     target_compile_options(${target} PRIVATE -fsanitize=fuzzer,address,undefined)
     target_link_options(${target} PRIVATE -fsanitize=fuzzer,address,undefined)
+    set_target_properties(${target} PROPERTIES HOWDY_SKIP_COMPILE_COMMANDS ON)
   endfunction()
 
   include(cmake/tests/app.cmake)

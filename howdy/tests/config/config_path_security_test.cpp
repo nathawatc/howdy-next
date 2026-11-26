@@ -293,6 +293,13 @@ namespace howdy::test {
 			ok &= Expect(unreadable_check.error_message.contains("do not make /etc/howdy"),
 			             "inaccessible config path warns against insecure permissions");
 		}
+		if (geteuid() != 0) {
+			const auto uninspected = howdy::native::UpdateConfigValue(
+			    unreadable_config_path, {.key = "disabled", .value = "true"},
+			    {.lock = false, .validation_root = {context.temp_root}});
+			ok &= Expect(uninspected.status == howdy::native::ConfigWriteStatus::kReadFailed,
+			             "config that cannot be inspected is not called insecure");
+		}
 		ok &=
 		    Expect(chmod(unreadable_dir.c_str(), 0755) == 0, "restore unreadable config dir mode");
 

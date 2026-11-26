@@ -17,6 +17,7 @@
 
 #include <unistd.h>
 
+#include <sys/stat.h>
 #include <sys/types.h>
 
 namespace howdy::native {
@@ -70,6 +71,18 @@ namespace howdy::native {
 		    validation_root));
 	}
 
+	// How many times a reader opens the config again after finding it replaced; each look follows
+	// a write that replaced it, so the bound only stops a stream of writes from starving a reader.
+	inline constexpr int kMaxConfigReopens = 4;
+
+	// Whether `fd` names a file that has lost its last link, as one a writer replaced since it was
+	// opened. Such a file fails the security check; a second open finds the new one, which has to
+	// pass it.
+	[[nodiscard]] inline auto ConfigFdWasReplaced(int fd) -> bool {
+		struct stat fd_stat{};
+		return fstat(fd, &fd_stat) == 0 && fd_stat.st_nlink == 0;
+	}
+
 	[[nodiscard]] auto
 	OpenSecureConfigForRead(const std::filesystem::path                  &config_path,
 	                        std::optional<uid_t>                          owner_uid,
@@ -97,6 +110,8 @@ namespace howdy::native {
 	enum class ConfigValidationStatus : std::uint8_t {
 		kOk,
 		kTooLarge,
+		// Blank, or holding a NUL byte.
+		kDamaged,
 		kUnparsable,
 		kInvalidSetting,
 	};
@@ -111,7 +126,9 @@ namespace howdy::native {
 		kOk,
 		// The option cannot be set, or not to this value.
 		kInvalidRequest,
-		// The content to install is too large, does not parse, or holds an invalid setting.
+		// The current config is damaged or cannot be edited safely (a duplicate option, an
+		// ambiguous continuation line), or the content to install is too large or damaged, does
+		// not parse, or holds an invalid setting.
 		kInvalidConfig,
 		kInsecurePath,
 		// The current config could not be opened, inspected or read.
@@ -119,7 +136,9 @@ namespace howdy::native {
 		kLockFailed,
 		// The current config is no longer the content the caller started from.
 		kStale,
+		// The staged file could not be prepared.
 		kStagingFailed,
+		// Writing or renaming the staged file failed; the old config is in place.
 		kInstallFailed,
 		// Installed, but its directory was not synced: potentially committed.
 		kDurabilityUncertain,

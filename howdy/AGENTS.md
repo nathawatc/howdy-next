@@ -29,7 +29,9 @@ Parent: [`../AGENTS.md`](../AGENTS.md).
   `compare_descriptors.hpp`, `compare_verdict.hpp`); use their shared constants/codec and reject any
   deviation.
 - `howdy/CMakeLists.txt` and `howdy/cmake/tests/*.cmake` own target membership: keep each
-  translation unit in one intended target and keep `howdy/src` off global include paths.
+  translation unit in one intended target and keep `howdy/src` off global include paths. The
+  exceptions rebuild units in another configuration: fuzzers, for coverage, and
+  `howdy_compare_sandbox_unsupported_arch_test`.
 - `howdy/cmake/docs.cmake` (`howdy_docs`) generates `howdy.1`, `howdy.ini.5`, and `pam_howdy.8`
   from `howdy_command_catalog`, `howdy_pam_option_catalog`, `howdy_config_schema`, and `*.in`
   templates; update catalogs, schema, or templates rather than generated output.

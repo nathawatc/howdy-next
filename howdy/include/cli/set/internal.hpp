@@ -2,6 +2,7 @@
 
 #include "app/command_invocation.hpp"
 #include "config/config_utils.hpp"
+#include "support/file_security/validation_root.hpp"
 
 #include <filesystem>
 
@@ -21,5 +22,8 @@ namespace howdy::native::set_internal {
 
 	[[nodiscard]] auto SetMainWithDependencies(const CommandInvocation &invocation,
 	                                           const SetDependencies   &dependencies) -> int;
+
+	auto SetMainWithValidationRoot(const CommandInvocation               &invocation,
+	                               file_security_internal::ValidationRoot validation_root) -> int;
 
 }  // namespace howdy::native::set_internal

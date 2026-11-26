@@ -5,6 +5,7 @@
 #include "support/file_lock.hpp"
 #include "support/file_security/validation_root.hpp"
 
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -12,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace howdy::native::config_utils_internal {
@@ -29,6 +31,25 @@ namespace howdy::native::config_utils_internal {
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	AcquireConfigLock(const std::filesystem::path &config_path)
 	    -> std::expected<ScopedFileLock, std::string>;
+
+	// The result of a failed check. An errno says that the path could not be inspected, not that
+	// it is insecure.
+	[[nodiscard]] inline auto PathFailure(ConfigPathCheckResult check) -> ConfigWriteResult {
+		return {
+		    .status  = check.error_code == 0 ? ConfigWriteStatus::kInsecurePath
+			                                 : ConfigWriteStatus::kReadFailed,
+		    .message = std::move(check.error_message),
+		};
+	}
+
+	// The result of a failed open. ELOOP is a symlink put there since the path was checked.
+	[[nodiscard]] inline auto OpenFailure(int open_error) -> ConfigWriteResult {
+		return {
+		    .status  = open_error == ELOOP ? ConfigWriteStatus::kInsecurePath
+			                               : ConfigWriteStatus::kReadFailed,
+		    .message = kConfigFileOpenFailureMessage,
+		};
+	}
 
 	// kOk, or kStale, kInsecurePath or kReadFailed.
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
@@ -75,7 +96,7 @@ namespace howdy::native::config_utils_internal {
 	IsSafeIniScalarValue(std::string_view value) -> bool;
 
 	// Whether inih reads a value ReplaceLineValue wrote as is, without trimming it or cutting it at
-	// an inline comment.
+	// an inline comment, as long as the line fits its limit.
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	ReadsBackUnchanged(std::string_view value) -> bool;
 

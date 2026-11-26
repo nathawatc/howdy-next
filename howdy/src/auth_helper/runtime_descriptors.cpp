@@ -22,24 +22,33 @@ namespace howdy::native::auth_helper {
 
 		auto OpenConfig(const RuntimeDescriptorSources &sources, OpenedRuntimeDescriptors *opened)
 		    -> bool {
-			howdy::native::ScopedFd config(open(sources.config.c_str(), kOpenFlags));
-			if (!config.Valid()) {
-				const int error_number = errno;
-				opened->error_message  = "Failed to open Config file: " + sources.config.string() +
-				                         " (" + SystemErrorMessage(error_number) + ")" +
-				                         ConfigAccessErrorHint(error_number);
-				return false;
+			for (int attempt = 0;; ++attempt) {
+				howdy::native::ScopedFd config(open(sources.config.c_str(), kOpenFlags));
+				if (!config.Valid()) {
+					const int error_number = errno;
+					opened->error_message =
+					    "Failed to open Config file: " + sources.config.string() + " (" +
+					    SystemErrorMessage(error_number) + ")" +
+					    ConfigAccessErrorHint(error_number);
+					return false;
+				}
+				// The ancestors are checked after the open, so they vouch for the file it names.
+				auto security =
+				    CheckSecureConfigFd(config.Get(), sources.config, sources.config_owner_uid,
+					                    sources.config_validation_root);
+				if (security.ok) {
+					opened->config = std::move(config);
+					return true;
+				}
+				// Bounded: each look follows a write that replaced the config. PAM re-checks the fd
+				// it receives, so a replace after this check still fails that login closed: the
+				// retry narrows the window, it does not close it.
+				if (attempt >= howdy::native::kMaxConfigReopens ||
+				    !ConfigFdWasReplaced(config.Get())) {
+					opened->error_message = std::move(security.error_message);
+					return false;
+				}
 			}
-			// The ancestors are checked after the open, so they vouch for the file it names.
-			const auto security =
-			    CheckSecureConfigFd(config.Get(), sources.config, sources.config_owner_uid,
-				                    sources.config_validation_root);
-			if (!security.ok) {
-				opened->error_message = security.error_message;
-				return false;
-			}
-			opened->config = std::move(config);
-			return true;
 		}
 
 		void OpenModel(const std::string &user, const RuntimeDescriptorSources &sources,

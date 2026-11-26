@@ -122,33 +122,35 @@ namespace {
 
 	struct RandomReplay {
 		std::uint32_t seed            = 0;
-		int           min_config_byte = 0;  // 0x80 for tokens only
+		unsigned      min_config_byte = 0;  // 0x80 for tokens only
 	};
 
 	// Returns how many random inputs were replaced.
 	auto ReplayRandomInputs(const RandomReplay &replay) -> int {
 		constexpr int rounds = 40000;
 		// NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
-		std::mt19937                            generator(replay.seed);
-		std::uniform_int_distribution<int>      any_byte(0, 255);
-		std::uniform_int_distribution<int>      config_byte(replay.min_config_byte, 255);
-		std::uniform_int_distribution<unsigned> length(0, 40);
-		int                                     replaced = 0;
+		std::mt19937 generator(replay.seed);
+		// Not a standard distribution, whose output differs between libraries.
+		const auto below = [&generator](unsigned limit) -> unsigned {
+			return static_cast<unsigned>(generator() % limit);
+		};
+		int replaced = 0;
 		for (int round = 0; round < rounds; ++round) {
 			constexpr std::size_t     value_bytes = 4;
 			std::vector<std::uint8_t> input{
-			    static_cast<std::uint8_t>(any_byte(generator)),
+			    static_cast<std::uint8_t>(below(256)),
 			    value_bytes,
 			};
 			for (std::size_t index = 0; index < value_bytes; ++index) {
-				input.push_back(static_cast<std::uint8_t>(any_byte(generator)));
+				input.push_back(static_cast<std::uint8_t>(below(256)));
 			}
 			// Half the configs open the target's section, which random tokens rarely do first.
 			if (round % 2 == 0) {
 				input.push_back(kSectionToken);
 			}
-			for (auto remaining = length(generator); remaining > 0; --remaining) {
-				input.push_back(static_cast<std::uint8_t>(config_byte(generator)));
+			for (auto remaining = below(41); remaining > 0; --remaining) {
+				input.push_back(static_cast<std::uint8_t>(replay.min_config_byte +
+				                                          below(256 - replay.min_config_byte)));
 			}
 			if (RunKeyFileFuzzInput(input) == ConfigLineReplaceResult::kReplaced) {
 				++replaced;

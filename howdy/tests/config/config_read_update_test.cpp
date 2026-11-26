@@ -205,6 +205,57 @@ namespace howdy::test {
 			             "refused value leaves config file unchanged");
 		}
 
+		{
+			// inih cuts a line at INI_MAX_LINE, which the library build sets and may lift.
+			const std::string long_value = "/dev/" + std::string(4000, 'x');
+			const std::string long_line  = "[video]\ndark_threshold = " + long_value + "\n";
+			if (howdy::native::ConfigReader(long_line).Get("video", "dark_threshold", "") ==
+			    long_value) {
+				std::cerr << "SKIP: this inih build reads overlong lines whole\n";
+			} else {
+				const auto result = howdy::native::UpdateConfigValue(
+				    context.config_path, {.key = "dark_threshold", .value = long_value},
+				    {
+				        .lock             = false,
+				        .validate_runtime = false,
+				        .validation_root  = {context.temp_root},
+				    });
+				ok &= Expect(result.status == howdy::native::ConfigWriteStatus::kInvalidRequest &&
+				                 result.message.contains("too long"),
+				             "value inih would cut is refused by name: " + result.message);
+				// Also where the update itself repairs the only malformed line.
+				const auto bare_path = context.temp_root / "overlong-bare.ini";
+				ok &= Expect(WriteConfigTestFile(bare_path, "[video]\ndark_threshold 60\n"),
+				             "write malformed option for an overlong value");
+				const auto repaired = howdy::native::UpdateConfigValue(
+				    bare_path, {.key = "dark_threshold", .value = long_value},
+				    {
+				        .lock             = false,
+				        .validate_runtime = false,
+				        .validation_root  = {context.temp_root},
+				    });
+				ok &= Expect(repaired.status == howdy::native::ConfigWriteStatus::kInvalidRequest &&
+				                 repaired.message.contains("too long"),
+				             "overlong value is blamed, not the config: " + repaired.message);
+				ok &= Expect(ReadFile(context.config_path) == before_unsafe,
+				             "refused overlong value leaves config file unchanged");
+			}
+		}
+
+		const auto unknown = howdy::native::UpdateConfigValue(
+		    context.config_path, {.key = "devcie_path", .value = "/dev/video0 "},
+		    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+		ok &= Expect(unknown.message == "Could not find a \"devcie_path\" config option to set",
+		             "unknown option is named before its value is judged: " + unknown.message);
+
+		const auto value_first = howdy::native::UpdateConfigValue(
+		    context.temp_root / "missing-for-value.ini",
+		    {.key = "device_path", .value = "/dev/video0 "},
+		    {.lock = false, .validation_root = {context.temp_root}});
+		ok &= Expect(
+		    value_first.message.starts_with("Config values cannot start or end with whitespace"),
+		    "a bad value is named before the config is read: " + value_first.message);
+
 		const auto kept_value_path = context.temp_root / "kept-value.ini";
 		for (const std::string kept_value : {
 		         "a;b",
@@ -338,7 +389,7 @@ namespace howdy::test {
 		    duplicate_target_path, {.key = "disabled", .value = "true"},
 		    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
 		ok &= Expect(duplicate_target_result.status ==
-		                 howdy::native::ConfigWriteStatus::kInvalidRequest,
+		                 howdy::native::ConfigWriteStatus::kInvalidConfig,
 		             "update_config_value rejects duplicate target options");
 		ok &= Expect(duplicate_target_result.message.contains("appears more than once"),
 		             "duplicate target update reports duplicate option");
@@ -401,6 +452,22 @@ namespace howdy::test {
 		             "recovery write does not mask unrelated invalid config values");
 		ok &= Expect(WriteConfigTestFile(context.config_path, after_threshold),
 		             "restore valid config after recovery-write test");
+
+		const auto damaged_path = context.temp_root / "damaged.ini";
+		for (const auto &damaged : {
+		         std::string(),
+		         std::string(32, '\0'),
+		         std::string("[core]\ndisabled = false\n") + '\0',
+		     }) {
+			ok &= Expect(WriteConfigTestFile(damaged_path, damaged), "write damaged config");
+			const auto result = howdy::native::UpdateConfigValue(
+			    damaged_path, {.key = "disabled", .value = "true"},
+			    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
+			ok &= Expect(result.status == howdy::native::ConfigWriteStatus::kInvalidConfig &&
+			                 result.message.ends_with("; repair it with \"howdy config\""),
+			             "damaged config is refused with a remedy: " + result.message);
+			ok &= Expect(ReadFile(damaged_path) == damaged, "damaged config is left unchanged");
+		}
 
 		const auto multiline_path = context.temp_root / "multiline.ini";
 		ok &= Expect(WriteConfigTestFile(multiline_path, "[video]\n"
@@ -529,7 +596,7 @@ namespace howdy::test {
 			    multiline_path, {.key = "disabled", .value = "true"},
 			    {.lock = false, .validate_runtime = false, .validation_root = {context.temp_root}});
 			ok &= Expect(ambiguous_result.status ==
-			                     howdy::native::ConfigWriteStatus::kInvalidRequest &&
+			                     howdy::native::ConfigWriteStatus::kInvalidConfig &&
 			                 ambiguous_result.message.starts_with("Config line ") &&
 			                 ambiguous_result.message.contains(" is indented"),
 			             "ambiguous continuation is refused by line: " + ambiguous_result.message);

@@ -19,6 +19,15 @@ Lines beginning with
 or
 .B ;
 are treated as comments.
+.PP
+Options that are left out use their defaults;
+.B howdy set
+and
+.B howdy disable
+change only options written in the file. A file that is blank or contains a NUL byte
+is taken for damaged and rejected; to use every default, keep at least one comment in it.
+.B howdy config
+opens a damaged file for repair.
 .SH "CONFIGURATION OPTIONS"
 @HOWDY_CONFIG_REFERENCE@
 .SH FILES
