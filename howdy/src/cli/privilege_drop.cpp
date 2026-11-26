@@ -21,17 +21,11 @@ namespace howdy::native::cli_internal {
 		    .setuid = [](void * /*context*/, uid_t uid) -> int {
 			    return ::setuid(uid);
 		    },
-		    .getuid = [](void * /*context*/) -> uid_t {
-			    return ::getuid();
+		    .get_user_ids = [](void * /*context*/, UserIds *ids) -> int {
+			    return ::getresuid(&ids->real, &ids->effective, &ids->saved);
 		    },
-		    .geteuid = [](void * /*context*/) -> uid_t {
-			    return ::geteuid();
-		    },
-		    .getgid = [](void * /*context*/) -> gid_t {
-			    return ::getgid();
-		    },
-		    .getegid = [](void * /*context*/) -> gid_t {
-			    return ::getegid();
+		    .get_group_ids = [](void * /*context*/, GroupIds *ids) -> int {
+			    return ::getresgid(&ids->real, &ids->effective, &ids->saved);
 		    },
 		};
 	}
@@ -42,9 +36,8 @@ namespace howdy::native::cli_internal {
 	auto DropPrivilegesPermanently(const InvokingUser            &user,
 	                               const PrivilegeDropOperations &operations) noexcept -> bool {
 		if (operations.initgroups == nullptr || operations.setgid == nullptr ||
-		    operations.setuid == nullptr || operations.getuid == nullptr ||
-		    operations.geteuid == nullptr || operations.getgid == nullptr ||
-		    operations.getegid == nullptr) {
+		    operations.setuid == nullptr || operations.get_user_ids == nullptr ||
+		    operations.get_group_ids == nullptr) {
 			return false;
 		}
 
@@ -54,10 +47,15 @@ namespace howdy::native::cli_internal {
 		    operations.setuid(operations.context, user.uid) != 0) {
 			return false;
 		}
-		return operations.getuid(operations.context) == user.uid &&
-		       operations.geteuid(operations.context) == user.uid &&
-		       operations.getgid(operations.context) == user.gid &&
-		       operations.getegid(operations.context) == user.gid;
+		// The saved IDs too: a process that could set only its effective UID would keep a saved
+		// UID 0, and with it a way back to root.
+		UserIds  user_ids;
+		GroupIds group_ids;
+		return operations.get_user_ids(operations.context, &user_ids) == 0 &&
+		       operations.get_group_ids(operations.context, &group_ids) == 0 &&
+		       user_ids.real == user.uid && user_ids.effective == user.uid &&
+		       user_ids.saved == user.uid && group_ids.real == user.gid &&
+		       group_ids.effective == user.gid && group_ids.saved == user.gid;
 	}
 
 }  // namespace howdy::native::cli_internal

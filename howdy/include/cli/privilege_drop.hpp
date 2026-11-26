@@ -6,15 +6,26 @@
 
 namespace howdy::native::cli_internal {
 
+	// Real, effective and saved IDs, as getresuid and getresgid report them.
+	struct UserIds {
+		uid_t real      = 0;
+		uid_t effective = 0;
+		uid_t saved     = 0;
+	};
+
+	struct GroupIds {
+		gid_t real      = 0;
+		gid_t effective = 0;
+		gid_t saved     = 0;
+	};
+
 	struct PrivilegeDropOperations {
 		void *context                                                 = nullptr;
 		int (*initgroups)(void *context, const char *user, gid_t gid) = nullptr;
 		int (*setgid)(void *context, gid_t gid)                       = nullptr;
 		int (*setuid)(void *context, uid_t uid)                       = nullptr;
-		uid_t (*getuid)(void *context)                                = nullptr;
-		uid_t (*geteuid)(void *context)                               = nullptr;
-		gid_t (*getgid)(void *context)                                = nullptr;
-		gid_t (*getegid)(void *context)                               = nullptr;
+		int (*get_user_ids)(void *context, UserIds *ids)              = nullptr;
+		int (*get_group_ids)(void *context, GroupIds *ids)            = nullptr;
 	};
 
 	[[nodiscard]] auto SystemPrivilegeDropOperations() noexcept -> PrivilegeDropOperations;

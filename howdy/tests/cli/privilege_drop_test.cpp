@@ -22,8 +22,10 @@ namespace {
 	struct FakeCredentials {
 		uid_t                    uid  = 0;
 		uid_t                    euid = 0;
+		uid_t                    suid = 0;
 		gid_t                    gid  = 0;
 		gid_t                    egid = 0;
+		gid_t                    sgid = 0;
 		std::vector<std::string> calls;
 		std::string              initgroups_user;
 		gid_t                    initgroups_gid = 0;
@@ -62,6 +64,7 @@ namespace {
 		}
 		fake.gid  = fake.stale == "gid" ? fake.gid : gid;
 		fake.egid = fake.stale == "egid" ? fake.egid : gid;
+		fake.sgid = fake.stale == "sgid" ? fake.sgid : gid;
 		return 0;
 	}
 
@@ -72,26 +75,33 @@ namespace {
 		}
 		fake.uid  = fake.stale == "uid" ? fake.uid : uid;
 		fake.euid = fake.stale == "euid" ? fake.euid : uid;
+		fake.suid = fake.stale == "suid" ? fake.suid : uid;
 		return 0;
 	}
 
 	auto OperationsFor(FakeCredentials &fake) -> PrivilegeDropOperations {
 		return {
-		    .context    = &fake,
-		    .initgroups = FakeInitgroups,
-		    .setgid     = FakeSetgid,
-		    .setuid     = FakeSetuid,
-		    .getuid     = [](void *context) -> uid_t {
-			    return Fake(context).uid;
+		    .context      = &fake,
+		    .initgroups   = FakeInitgroups,
+		    .setgid       = FakeSetgid,
+		    .setuid       = FakeSetuid,
+		    .get_user_ids = [](void *context, howdy::native::cli_internal::UserIds *ids) -> int {
+			    const auto &credentials = Fake(context);
+			    *ids                    = {
+			        .real      = credentials.uid,
+			        .effective = credentials.euid,
+			        .saved     = credentials.suid,
+			    };
+			    return 0;
 		    },
-		    .geteuid = [](void *context) -> uid_t {
-			    return Fake(context).euid;
-		    },
-		    .getgid = [](void *context) -> gid_t {
-			    return Fake(context).gid;
-		    },
-		    .getegid = [](void *context) -> gid_t {
-			    return Fake(context).egid;
+		    .get_group_ids = [](void *context, howdy::native::cli_internal::GroupIds *ids) -> int {
+			    const auto &credentials = Fake(context);
+			    *ids                    = {
+			        .real      = credentials.gid,
+			        .effective = credentials.egid,
+			        .saved     = credentials.sgid,
+			    };
+			    return 0;
 		    },
 		};
 	}
@@ -108,8 +118,8 @@ namespace {
 		             "privilege drop changes groups, then GID, then UID");
 		ok &= Expect(fake.initgroups_user == "user" && fake.initgroups_gid == kUserGid,
 		             "privilege drop loads the user's groups");
-		ok &= Expect(fake.uid == kUserUid && fake.euid == kUserUid && fake.gid == kUserGid &&
-		                 fake.egid == kUserGid,
+		ok &= Expect(fake.uid == kUserUid && fake.euid == kUserUid && fake.suid == kUserUid &&
+		                 fake.gid == kUserGid && fake.egid == kUserGid && fake.sgid == kUserGid,
 		             "privilege drop changes every ID");
 		return ok;
 	}
@@ -129,7 +139,7 @@ namespace {
 
 	auto UnverifiedIdsFailTheDrop() -> bool {
 		bool ok = true;
-		for (const auto *id : {"uid", "euid", "gid", "egid"}) {
+		for (const auto *id : {"uid", "euid", "suid", "gid", "egid", "sgid"}) {
 			FakeCredentials fake;
 			fake.stale = id;
 			ok &= Expect(!Run(OperationsFor(fake)), fake.stale + " left unchanged fails the drop");
@@ -156,16 +166,10 @@ namespace {
 			    operations.setuid = nullptr;
 		    },
 		    [](auto &operations) -> void {
-			    operations.getuid = nullptr;
+			    operations.get_user_ids = nullptr;
 		    },
 		    [](auto &operations) -> void {
-			    operations.geteuid = nullptr;
-		    },
-		    [](auto &operations) -> void {
-			    operations.getgid = nullptr;
-		    },
-		    [](auto &operations) -> void {
-			    operations.getegid = nullptr;
+			    operations.get_group_ids = nullptr;
 		    },
 		};
 		bool ok = true;
@@ -182,9 +186,8 @@ namespace {
 	auto SystemOperationsAreComplete() -> bool {
 		const auto operations = howdy::native::cli_internal::SystemPrivilegeDropOperations();
 		return Expect(operations.initgroups != nullptr && operations.setgid != nullptr &&
-		                  operations.setuid != nullptr && operations.getuid != nullptr &&
-		                  operations.geteuid != nullptr && operations.getgid != nullptr &&
-		                  operations.getegid != nullptr,
+		                  operations.setuid != nullptr && operations.get_user_ids != nullptr &&
+		                  operations.get_group_ids != nullptr,
 		              "system operations are complete");
 	}
 
