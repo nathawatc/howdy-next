@@ -356,7 +356,8 @@ namespace howdy::test::config_cli {
 			{
 				TestDirectoryFixture const fixture;
 				TestContext                context;
-				context.editor_result = EditorRunResult::kLaunchFailed;
+				context.editor_result  = EditorRunResult::kLaunchFailed;
+				context.edited_content = std::string(kWorkflowOriginalContent);
 				const auto result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 &&
@@ -367,23 +368,102 @@ namespace howdy::test::config_cli {
 				             "launch failure removes temp once");
 			}
 
+			return ok;
+		}
+
+		auto UnsuccessfulEditorKeepsSavedEdits() -> bool {
+			constexpr std::string_view failure =
+			    "Editing config.ini\nEditor exited unsuccessfully; config not updated\n";
+			constexpr std::string_view kept =
+			    "Editing config.ini\nEditor did not report success; config not updated\n";
+			bool ok = true;
 			for (const auto editor_result :
 			     {EditorRunResult::kExitedWithError, EditorRunResult::kKilledBySignal}) {
+				{
+					TestDirectoryFixture const fixture;
+					TestContext                context;
+					context.editor_result  = editor_result;
+					context.edited_content = std::string(kWorkflowOriginalContent);
+					const auto result      = RunConfig(DependenciesFor(context, fixture.TempRoot()),
+					                                   fixture.ConfigPath());
+					ok &= Expect(result.exit_code == 1 && result.output == failure,
+					             "unsuccessful editor output exact");
+					ok &= Expect(!context.recorded_temp_path.empty() &&
+					                 !fs::exists(context.recorded_temp_path),
+					             "unsuccessful editor removes an unchanged temp file");
+				}
+				for (const auto &saved : {
+				         std::string(kEditedContent),
+				         std::string("[core\n"),
+				         std::string(howdy::native::kMaxConfigFileSize + 1, '#'),
+				     }) {
+					TestDirectoryFixture const fixture;
+					TestContext                context;
+					context.editor_result  = editor_result;
+					context.edited_content = saved;
+					const auto result      = RunConfig(DependenciesFor(context, fixture.TempRoot()),
+					                                   fixture.ConfigPath());
+					ok &= Expect(result.exit_code == 1 &&
+					                 result.output ==
+					                     std::string(kept) + "Copy that may hold edits was kept: " +
+					                         context.recorded_temp_path.string() + "\n",
+					             "unsuccessful editor says where the edit is: " + result.output);
+					ok &= Expect(ReadFile(context.recorded_temp_path) == saved,
+					             "unsuccessful editor keeps the saved edit");
+					ok &= Expect(ReadFile(fixture.ConfigPath()) == kWorkflowOriginalContent,
+					             "unsuccessful editor leaves the config unchanged");
+					std::error_code ec;
+					fs::remove(context.recorded_temp_path, ec);
+				}
+				{
+					TestDirectoryFixture const fixture;
+					TestContext                context;
+					context.editor_result = editor_result;
+					context.on_editor     = [](const fs::path &temp_path) -> void {
+						unlink(temp_path.c_str());
+						mkfifo(temp_path.c_str(), 0600);
+					};
+					const auto result = RunConfig(DependenciesFor(context, fixture.TempRoot()),
+					                              fixture.ConfigPath());
+					ok &= Expect(result.exit_code == 1 && result.output == failure &&
+					                 !fs::exists(context.recorded_temp_path),
+					             "unsuccessful editor keeps nothing it cannot trust");
+				}
+			}
+			{
+				// The editor ran, but its result was lost.
 				TestDirectoryFixture const fixture;
 				TestContext                context;
-				context.editor_result = editor_result;
+				context.editor_result = EditorRunResult::kResultLost;
 				const auto result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 &&
-				                 result.output ==
-				                     "Editing config.ini\n"
-				                     "Editor exited unsuccessfully; config not updated\n",
-				             "unsuccessful editor output exact");
-				ok &= Expect(!context.recorded_temp_path.empty() &&
-				                 !fs::exists(context.recorded_temp_path),
-				             "unsuccessful editor removes temp once");
+				                 result.output.contains("Copy that may hold edits was kept: ") &&
+				                 ReadFile(context.recorded_temp_path) == kEditedContent,
+				             "editor whose result was lost keeps the saved edit: " + result.output);
+				std::error_code ec;
+				fs::remove(context.recorded_temp_path, ec);
 			}
+			{
+				// An editor whose result was lost may still be running.
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				context.editor_result  = EditorRunResult::kResultLost;
+				context.edited_content = std::string(kWorkflowOriginalContent);
+				const auto result =
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
+				ok &= Expect(result.exit_code == 1 &&
+				                 result.output.contains("Copy that may hold edits was kept: ") &&
+				                 fs::exists(context.recorded_temp_path),
+				             "editor whose result was lost keeps even an unchanged copy");
+				std::error_code ec;
+				fs::remove(context.recorded_temp_path, ec);
+			}
+			return ok;
+		}
 
+		auto EditedFileReadFailures() -> bool {
+			bool ok = true;
 			{
 				TestDirectoryFixture const fixture;
 				TestContext                context;
@@ -442,6 +522,136 @@ namespace howdy::test::config_cli {
 				std::error_code ec;
 				fs::remove(context.recorded_temp_path, ec);
 			}
+			return ok;
+		}
+
+		auto InvalidConfigLeftAsItWasIsNoEdit() -> bool {
+			bool ok = true;
+			for (const auto &[invalid, detail] : {
+			         std::pair{std::string(), ": Config is blank"},
+			         std::pair{std::string(32, '\0'), ": Config contains a NUL byte"},
+			         std::pair{std::string("[core\n"), ""},
+			         std::pair{std::string("[video]\ntimeout = 0\n"),
+					           ": Invalid config value for timeout=\"0\": expected integer range "
+					           "1..300"},
+			     }) {
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				context.edited_content = invalid;
+				WriteFile(fixture.ConfigPath(), invalid);
+				const auto result =
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
+				ok &=
+				    Expect(result.exit_code == 1 &&
+					           result.output == std::string("Editing config.ini\nNo config changes "
+					                                        "made\nError: the config is invalid") +
+					                                detail + "\n",
+					       "invalid config left as it was is reported: " + result.output);
+				ok &= Expect(!fs::exists(context.recorded_temp_path),
+				             "invalid config left as it was leaves no copy");
+			}
+			for (const bool insecure : {false, true}) {
+				// The session's status says which, not only its message.
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				context.edited_content = std::string(kWorkflowOriginalContent);
+				context.on_editor      = [&, insecure](const fs::path &) -> void {
+					if (insecure) {
+						chmod(fixture.ConfigPath().c_str(), 0666);
+					} else {
+						fs::remove(fixture.ConfigPath());
+					}
+				};
+				ScopedEnvironmentVariable const config_env("HOWDY_CONFIG",
+				                                           fixture.ConfigPath().string());
+				const ConfigEditSession session(DependenciesFor(context, fixture.TempRoot()));
+				const auto              result = session.Run({});
+				ok &= Expect(result.status == (insecure ? ConfigEditStatus::kSecurityCheckFailed
+				                                        : ConfigEditStatus::kConfigUnreadable),
+				             "unusable config left as it was has the matching status");
+			}
+			for (const auto &[damage, message] : {
+			         std::pair{+[](const fs::path &path) -> void {
+				                   fs::remove(path);
+			                   },
+					           "No such file"},
+			         std::pair{+[](const fs::path &path) -> void {
+				                   chmod(path.c_str(), 0666);
+			                   },
+					           "must not be group-writable"},
+			     }) {
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				context.on_editor = [&, damage](const fs::path &) -> void {
+					damage(fixture.ConfigPath());
+				};
+				const auto result =
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
+				ok &= Expect(result.exit_code == 1 && result.output.contains(message) &&
+				                 !fs::exists(context.recorded_temp_path),
+				             "config that became unusable is reported: " + result.output);
+			}
+			{
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				context.on_editor = [&](const fs::path &) -> void {
+					WriteFile(fixture.ConfigPath(), "");
+				};
+				const auto result =
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
+				ok &= Expect(
+				    result.exit_code == 1 &&
+				        result.output.contains("Error: the config is invalid: Config is blank"),
+				    "config that became invalid is reported: " + result.output);
+			}
+			for (const auto &original : {std::string(), std::string(kWorkflowOriginalContent)}) {
+				// Someone else writes the config while the editor shows it unchanged.
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				WriteFile(fixture.ConfigPath(), original);
+				context.on_editor = [&](const fs::path &) -> void {
+					WriteFile(fixture.ConfigPath(), kEditedContent);
+				};
+				const auto result =
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
+				ok &= Expect(result.exit_code == 1 &&
+				                 result.output ==
+				                     "Editing config.ini\nConfig changed while editing; no "
+				                     "edits were made\n" &&
+				                 !fs::exists(context.recorded_temp_path),
+				             "unchanged copy of a config that changed is reported and removed: " +
+				                 result.output);
+				ok &= Expect(ReadFile(fixture.ConfigPath()) == kEditedContent,
+				             "unchanged copy leaves the concurrent config");
+			}
+			return ok;
+		}
+
+		auto DamagedConfigCanBeRepaired() -> bool {
+			bool ok = true;
+			for (const auto &damaged : {std::string(), std::string(32, '\0')}) {
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				WriteFile(fixture.ConfigPath(), damaged);
+				const auto result =
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
+				ok &= Expect(result.exit_code == 0 &&
+				                 ReadFile(fixture.ConfigPath()) == kEditedContent,
+				             "damaged config opens and is repaired: " + result.output);
+			}
+			TestDirectoryFixture const fixture;
+			TestContext                context;
+			context.edited_content = std::string(32, '\0');
+			const auto result =
+			    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
+			ok &= Expect(result.exit_code == 1 &&
+			                 result.output.starts_with("Editing config.ini\nConfig contains a NUL "
+			                                           "byte\nEdited config is invalid"),
+			             "damaged edit says why it was refused: " + result.output);
+			ok &= Expect(ReadFile(fixture.ConfigPath()) == kWorkflowOriginalContent,
+			             "damaged edit leaves the config unchanged");
+			std::error_code ec;
+			fs::remove(context.recorded_temp_path, ec);
 			return ok;
 		}
 
@@ -543,8 +753,12 @@ namespace howdy::test::config_cli {
 		ok &= InvokingIdentityFailuresAbortEdit();
 		ok &= EditorSelectionAndSecurityWorkflow();
 		ok &= EditorExecutionFailures();
+		ok &= UnsuccessfulEditorKeepsSavedEdits();
+		ok &= EditedFileReadFailures();
 		ok &= EditedTempOwnerIsChecked();
 		ok &= InvalidEditPreservesTempFile();
+		ok &= InvalidConfigLeftAsItWasIsNoEdit();
+		ok &= DamagedConfigCanBeRepaired();
 		ok &= SuccessfulAndUnchangedWorkflows();
 		return ok;
 	}

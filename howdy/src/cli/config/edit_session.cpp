@@ -4,6 +4,7 @@
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 #include "internal.hpp"
+#include "support/error_message.hpp"
 #include "support/fd_io.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
@@ -12,6 +13,7 @@
 
 #include <cerrno>
 #include <cstdlib>
+#include <expected>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -89,12 +91,39 @@ namespace howdy::native::config_internal {
 			return RunEditor(editor_preference, temp_path, invoking_user);
 		}
 
-		auto EditorFailureStatus(EditorRunResult result) -> ConfigEditStatus {
+		auto MayHoldSavedEdits(const TempConfigCopy &temp_copy, uid_t temp_owner) -> bool {
+			std::string content;
+			switch (ReadTempConfigSnapshot(temp_copy.path, temp_owner, &content)) {
+				case TempConfigReadStatus::kOk:
+					return content != temp_copy.original_content;
+				case TempConfigReadStatus::kUnreadable:
+					return true;
+				case TempConfigReadStatus::kUntrusted:
+					break;
+			}
+			return false;
+		}
+
+		// Ends an edit whose editor did not succeed. The result cannot tell a user who gave up from
+		// an editor that was killed (nano exits 1 on SIGTERM) or whose exit status was lost, so
+		// whatever was saved is kept.
+		auto FinishFailedEdit(EditorRunResult result, const TempConfigCopy &temp_copy,
+		                      uid_t temp_owner) -> ConfigEditStatus {
+			// A lost result may mean an editor that is still running, so the copy stays as well.
+			// No editor ran when none was found or it failed to launch.
+			const bool editor_ran =
+			    result != EditorRunResult::kUnavailable && result != EditorRunResult::kLaunchFailed;
+			if (result == EditorRunResult::kResultLost ||
+			    (editor_ran && MayHoldSavedEdits(temp_copy, temp_owner))) {
+				return ConfigEditStatus::kEditorFailedEditKept;
+			}
+			RemoveIfExists(temp_copy.path);
 			switch (result) {
 				case EditorRunResult::kUnavailable:
 					return ConfigEditStatus::kEditorUnavailable;
 				case EditorRunResult::kExitedWithError:
 				case EditorRunResult::kKilledBySignal:
+				case EditorRunResult::kResultLost:
 					return ConfigEditStatus::kEditorFailed;
 				case EditorRunResult::kLaunchFailed:
 				case EditorRunResult::kSucceeded:
@@ -109,6 +138,40 @@ namespace howdy::native::config_internal {
 				return {};
 			}
 			return std::move(validation.message);
+		}
+
+		// Empty for a valid config.
+		auto InvalidConfigError(const std::string &content) -> std::string {
+			auto validation = howdy::native::ValidateConfigContent(content);
+			if (validation.status == howdy::native::ConfigValidationStatus::kOk) {
+				return {};
+			}
+			const auto detail = InvalidEditDetail(std::move(validation));
+			return "Error: the config is invalid" + (detail.empty() ? detail : ": " + detail);
+		}
+
+		// The edit left the copy as it was; `base` carries its path and editor.
+		auto UnchangedEditResult(const std::expected<std::string, CurrentConfigError> &current,
+		                         const std::string &edited_content, ConfigEditResult base)
+		    -> ConfigEditResult {
+			if (!current.has_value()) {
+				base.status = current.error().insecure ? ConfigEditStatus::kSecurityCheckFailed
+				                                       : ConfigEditStatus::kConfigUnreadable;
+				base.error  = current.error().message;
+				return base;
+			}
+			auto invalid = InvalidConfigError(*current);
+			if (edited_content != *current) {
+				// Nothing to keep, but the config is no longer the one the user looked at.
+				base.status = ConfigEditStatus::kConfigChanged;
+				base.error  = "Config changed while editing; no edits were made" +
+				              (invalid.empty() ? invalid : "\n" + invalid);
+				base.temp_path.clear();
+				return base;
+			}
+			base.status = ConfigEditStatus::kNoChanges;
+			base.error  = std::move(invalid);
+			return base;
 		}
 
 		auto InstallFailureStatus(howdy::native::ConfigWriteStatus status) -> ConfigEditStatus {
@@ -226,16 +289,32 @@ namespace howdy::native::config_internal {
 		return TempConfigReadStatus::kOk;
 	}
 
-	auto FileContentMatches(const fs::path &path, const std::string &expected,
-	                        const file_security_internal::ValidationRoot &validation_root) -> bool {
-		const auto opened =
+	auto ReadCurrentConfig(const fs::path                               &path,
+	                       const file_security_internal::ValidationRoot &validation_root)
+	    -> std::expected<std::string, CurrentConfigError> {
+		auto opened =
 		    howdy::native::OpenSecureConfigForRead(path, DefaultSecureOwnerUid(), validation_root);
-		if (!opened.fd.Valid() || !opened.security.ok) {
-			return false;
+		if (!opened.fd.Valid()) {
+			return std::unexpected(CurrentConfigError{
+			    // ELOOP is a symlink put at the path, which is a security matter.
+			    .insecure = opened.open_error == ELOOP,
+			    .message  = "Failed to open config file: " + path.string() + " (" +
+				            SystemErrorMessage(opened.open_error) + ")" +
+				            howdy::native::ConfigAccessErrorHint(opened.open_error),
+			});
 		}
-
-		const auto current = howdy::native::ReadConfigFromFd(opened.fd.Get());
-		return current.has_value() && *current == expected;
+		if (!opened.security.ok) {
+			return std::unexpected(CurrentConfigError{
+			    // An errno says that the path could not be inspected, not that it is insecure.
+			    .insecure = opened.security.error_code == 0,
+			    .message  = std::move(opened.security.error_message),
+			});
+		}
+		auto content = howdy::native::ReadConfigFromFd(opened.fd.Get());
+		if (!content.has_value()) {
+			return std::unexpected(CurrentConfigError{.message = "Failed to read config file"});
+		}
+		return std::move(*content);
 	}
 
 	ConfigEditSession::ConfigEditSession(ConfigEditDependencies dependencies)
@@ -317,16 +396,16 @@ namespace howdy::native::config_internal {
 
 		const auto run_result =
 		    dependencies_.run_editor(dependencies_.context, editor, temp_copy->path, invoking_user);
-		if (run_result != EditorRunResult::kSucceeded) {
-			return result_base(EditorFailureStatus(run_result));
-		}
-
-		// The file now holds the user's edits: remove it only on the explicit paths below, so an
+		// The file may now hold the user's edits: remove it only on the explicit paths below, so an
 		// exception cannot discard them.
 		temp_guard.Dismiss();
 
-		std::string edited_content;
 		const uid_t temp_owner = invoking_user.has_value() ? invoking_user->uid : geteuid();
+		if (run_result != EditorRunResult::kSucceeded) {
+			return result_base(FinishFailedEdit(run_result, *temp_copy, temp_owner));
+		}
+
+		std::string edited_content;
 		switch (ReadTempConfigSnapshot(temp_copy->path, temp_owner, &edited_content)) {
 			case TempConfigReadStatus::kOk:
 				break;
@@ -339,15 +418,18 @@ namespace howdy::native::config_internal {
 				return result_base(ConfigEditStatus::kReadFailed);
 		}
 
+		// Before the validation: what was left as it is is no edit, valid or not.
+		const auto current = ReadCurrentConfig(config_path, dependencies_.validation_root);
+		if (edited_content == current || edited_content == temp_copy->original_content) {
+			RemoveIfExists(temp_copy->path);
+			return UnchangedEditResult(current, edited_content,
+			                           result_base(ConfigEditStatus::kNoChanges));
+		}
+
 		if (auto validation = howdy::native::ValidateConfigContent(edited_content);
 		    validation.status != howdy::native::ConfigValidationStatus::kOk) {
 			return result_base(ConfigEditStatus::kInvalidEditedConfig,
 			                   InvalidEditDetail(std::move(validation)));
-		}
-
-		if (FileContentMatches(config_path, edited_content, dependencies_.validation_root)) {
-			RemoveIfExists(temp_copy->path);
-			return result_base(ConfigEditStatus::kNoChanges);
 		}
 
 		if (auto installed = howdy::native::ReplaceConfigContentAtomically(

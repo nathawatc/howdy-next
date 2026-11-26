@@ -14,9 +14,11 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <fcntl.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -150,6 +152,61 @@ namespace howdy::native::config_internal {
 			ReportEditorLaunch(report_fd, EditorLaunchReport::kUnavailable, 127);
 		}
 
+		// Signal dispositions while the editor runs. SIGINT and SIGQUIT, which the terminal sends
+		// to the whole foreground group, are the editor's to act on, as under system(3): howdy
+		// stays to say where the edit is. SIGCHLD gets its default: ignored, which a parent can
+		// leave set across exec, it makes the kernel reap the editor, and waitpid has no status to
+		// return.
+		class EditorSignals {
+		public:
+			EditorSignals() noexcept
+			    : interrupt_(SIGINT, SIG_IGN)
+			    , quit_(SIGQUIT, SIG_IGN)
+			    , child_(SIGCHLD, SIG_DFL) {}
+
+			// In the editor's process, which keeps the default SIGCHLD.
+			void RestoreForEditor() noexcept {
+				interrupt_.Restore();
+				quit_.Restore();
+			}
+
+		private:
+			class ScopedDisposition {
+			public:
+				ScopedDisposition(int signal_number, void (*disposition)(int)) noexcept
+				    : signal_number_(signal_number) {
+					struct sigaction action{};
+					action.sa_handler = disposition;
+					changed_          = sigemptyset(&action.sa_mask) == 0 &&
+					                    sigaction(signal_number_, &action, &previous_) == 0;
+				}
+
+				~ScopedDisposition() {
+					Restore();
+				}
+
+				ScopedDisposition(const ScopedDisposition &)                     = delete;
+				auto operator=(const ScopedDisposition &) -> ScopedDisposition & = delete;
+				ScopedDisposition(ScopedDisposition &&)                          = delete;
+				auto operator=(ScopedDisposition &&) -> ScopedDisposition &      = delete;
+
+				void Restore() noexcept {
+					if (std::exchange(changed_, false)) {
+						(void)sigaction(signal_number_, &previous_, nullptr);
+					}
+				}
+
+			private:
+				int              signal_number_ = 0;
+				struct sigaction previous_{};
+				bool             changed_ = false;
+			};
+
+			ScopedDisposition interrupt_;
+			ScopedDisposition quit_;
+			ScopedDisposition child_;
+		};
+
 	}  // namespace
 
 	auto RunEditor(const std::string &editor_preference, const std::filesystem::path &temp_path,
@@ -162,14 +219,21 @@ namespace howdy::native::config_internal {
 		ScopedFd report_reader(report_pipe.front());
 		ScopedFd report_writer(report_pipe.back());
 
-		const pid_t child_pid = fork();
+		EditorSignals signals;
+		const pid_t   child_pid = fork();
 		if (child_pid < 0) {
 			return EditorRunResult::kLaunchFailed;
 		}
 
 		if (child_pid == 0) {
 			report_reader.Reset();
-			RunEditorChild(editor_preference, temp_path, invoking_user, report_writer.Get());
+			signals.RestoreForEditor();
+			try {
+				RunEditorChild(editor_preference, temp_path, invoking_user, report_writer.Get());
+			} catch (...) {
+				// Unwinding further would run the caller's cleanup a second time, in this process.
+				ReportEditorLaunch(report_writer.Get(), EditorLaunchReport::kLaunchFailed, 126);
+			}
 		}
 
 		report_writer.Reset();
@@ -177,15 +241,17 @@ namespace howdy::native::config_internal {
 		if (howdy::native::RetryOnEintr([&] -> pid_t {
 			    return waitpid(child_pid, &wait_status, 0);
 		    }) < 0) {
-			return EditorRunResult::kLaunchFailed;
+			return EditorRunResult::kResultLost;
 		}
 
 		unsigned char report_byte = 0;
 		const ssize_t read_count  = howdy::native::RetryOnEintr([&] -> ssize_t {
 			return read(report_reader.Get(), &report_byte, sizeof(report_byte));
 		});
+		// A report that cannot be read leaves it open whether an editor ran, and an editor can exit
+		// with any code, so the result is lost and the copy is kept.
 		if (read_count < 0) {
-			return EditorRunResult::kLaunchFailed;
+			return EditorRunResult::kResultLost;
 		}
 		// The child reports only when it could not become an editor.
 		if (read_count == 1) {
