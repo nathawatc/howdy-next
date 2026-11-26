@@ -30,7 +30,9 @@ namespace {
 	using howdy::native::CompareSeccompStatus;
 	using howdy::native::compare_sandbox_internal::CompareSeccompDependencies;
 
-#ifndef SYS_seccomp
+#ifdef HOWDY_SECCOMP_UNSUPPORTED_ARCH
+	// Set by the build, which tests this path where the architecture does have a filter.
+#elifndef SYS_seccomp
 	// Headers without the syscall: the build, not the kernel, lacks the filter.
 #	define HOWDY_SECCOMP_UNSUPPORTED_ARCH 1
 #elifdef __x86_64__

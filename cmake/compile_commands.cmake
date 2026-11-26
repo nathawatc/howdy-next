@@ -5,6 +5,13 @@ function(howdy_add_compile_commands_mirror target)
     return()
   endif()
 
+  # Set on a target that only rebuilds other targets' sources in another configuration, which
+  # clang-tidy would otherwise report on as well.
+  get_target_property(skip_mirror ${target} HOWDY_SKIP_COMPILE_COMMANDS)
+  if(skip_mirror)
+    return()
+  endif()
+
   get_target_property(target_sources ${target} SOURCES)
   if(NOT target_sources)
     return()

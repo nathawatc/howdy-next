@@ -30,7 +30,9 @@ namespace {
 	using howdy::native::compare_sandbox_internal::kSeccompRetKillProcess;
 	using howdy::native::compare_sandbox_internal::kSeccompSetModeFilter;
 
-#ifndef SYS_seccomp
+#ifdef HOWDY_SECCOMP_UNSUPPORTED_ARCH
+	// Set by the build.
+#elifndef SYS_seccomp
 #	define HOWDY_SECCOMP_UNSUPPORTED_ARCH 1
 #elifdef __x86_64__
 	constexpr __u32 kExpectedAuditArch = AUDIT_ARCH_X86_64;
