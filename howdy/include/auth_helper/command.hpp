@@ -15,6 +15,12 @@ namespace howdy::native::auth_helper::command {
 	__attribute__((visibility("hidden"))) auto RunWithQuietDiagnostics(
 	    const std::function<bool()>                 &operation,
 	    const std::function<void(std::string_view)> &log = SyslogDiagnosticLines) -> bool;
-	__attribute__((visibility("hidden"))) auto Run(int argc, char **argv) -> int;
+	// Catches every exception from `operation`, logs a diagnostic through `log` and stderr without
+	// heap allocation, and returns exit code 1 instead of aborting the helper.
+	__attribute__((visibility("hidden"))) auto
+	RunGuarded(const std::function<int()>                  &operation,
+	           const std::function<void(std::string_view)> &log = SyslogDiagnosticLines) noexcept
+	    -> int;
+	__attribute__((visibility("hidden"))) auto Run(int argc, char **argv) noexcept -> int;
 
 }  // namespace howdy::native::auth_helper::command
