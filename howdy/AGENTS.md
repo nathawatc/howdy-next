@@ -22,8 +22,17 @@ Parent: [`../AGENTS.md`](../AGENTS.md).
   never depend on vision for shared contracts.
 - Reuse `support/fd_io.hpp`, `support/atomic_files.hpp`, and `support/file_security.hpp` for bounded
   I/O, staged files, and secure paths.
-- The `file_security.hpp` tree, `*FileParent`, and `*WithDirectory` helpers reject relative, NUL,
-  and `..` paths; pass paths to them unnormalized so they can.
+- Pass paths unnormalized into `file_security.hpp` public entry points (`*DirectoryTree`,
+  `*FileParent`, `*WithDirectory`) so the boundary rejects relative, NUL, and `..` paths. Inside
+  `support/file_security.hpp` and `support/file_security/`, parse and normalize the target and
+  `ValidationRoot` once in one boundary parser into a validated target type; internal helpers
+  consume that validated target instead of raw `std::filesystem::path` and never repeat
+  `lexically_normal()`, `parent_path()`, or target-gate checks.
+- Pass owned descriptors as `ScopedFd` across internal `howdy` helpers (reserve borrowed raw `int`
+  fds for thin single-syscall wrappers such as `fd_io.hpp`, `CheckSecureFd`, and `CheckReadOnlyFd`).
+  When changing path-security logic, verify every sibling `file_security.hpp` entry point against a
+  shared table-driven negative matrix (`""`, `"."`, `".."`, `"/"`, `"//"`, trailing `/` or `/.`,
+  embedded `\0`, symlink root/ancestor/leaf, and out-of-root targets).
 - Run shared model readiness/integrity checks (`model_assets/model_file.hpp`) before inference or
   authentication.
 - Expose OpenCV headers as system includes through `howdy_opencv`.

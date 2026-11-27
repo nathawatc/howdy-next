@@ -35,8 +35,8 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md).
 - Refuse a value inih would not read back unchanged (surrounding whitespace, an inline comment)
   instead of storing something else than was asked for.
 - Preserve secure path checks, locking, revalidation, expected-current-content stale detection,
-  staged install, parent-directory sync, and potentially-committed handling on post-rename sync
-  failure (`ConfigWriteStatus::kDurabilityUncertain`).
+  staged install, parent-directory sync, and `ConfigWriteStatus::kDurabilityUncertain` on
+  post-rename sync failure.
 - Open the config by path through `OpenSecureConfigForRead` (the auth helper, which does not link
   this library, repeats its `ConfigFdWasReplaced` retry): it looks again, up to four more times, at
   a file another write unlinked meanwhile, and refuses anything else that fails its check.

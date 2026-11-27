@@ -26,8 +26,8 @@ Parent: [`../AGENTS.md`](../AGENTS.md). Related:
   return `kInsecurePath`; walk errnos (`EACCES`, `EIO`) return `kParseError`.
 - Keep every model path either absent or a committed model — never create a placeholder. Report any
   post-open path or lock-directory change as `kModelChanged`. Commit through `AtomicRename`
-  (`support/atomic_files.hpp`) rather than raw `renameat2`, and treat `kDurabilityUncertain` as
-  potentially committed.
+  (`support/atomic_files.hpp`) rather than raw `renameat2`, and report post-rename sync failure as
+  `kDurabilityUncertain`.
 - Lock only `.howdy-writers.lock` (`0600`, root-only) via `LockModelNamespace`. Never lock a model
   file (auth helper gives users read-only fds that can stall root writers) or the models directory
   (safety relies on `0750`).

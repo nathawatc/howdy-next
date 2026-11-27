@@ -28,9 +28,9 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related:
   loading; `ApplyCompareSandbox` (`PR_SET_NO_NEW_PRIVS`, then rlimits) before model loading;
   `DropComparePrivileges`, which clears dumpable again after any credential change; then
   seccomp-BPF.
-- `DisableCompareTracing` needs a readable `/proc/self/task` and fails closed without it. Its
-  check is best effort; see the known limitations next to the code. The entrypoint runs it again
-  after `DropComparePrivileges`, before seccomp.
+- `DisableCompareTracing` requires a readable `/proc/self/task` and fails closed without it; its
+  best-effort limitations documented next to the code are a settled contract. The entrypoint runs it
+  again after `DropComparePrivileges`, before seccomp.
 - Install seccomp right after the privilege drop and before engine construction, warm-up, or any
   extra thread, so `WarmUpRecognizer` runs inside the filter.
 - Seccomp is best-effort only for `CompareSeccompStatus::kUnsupported` (kernel without seccomp

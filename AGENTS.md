@@ -16,7 +16,8 @@ local guides add detail without relaxing these invariants.
 
 ## Build and CMake
 
-- Target CMake 3.31+ and C++23.
+- Target CMake 3.31+ and C++23; build and test with `cmake --preset debug|release` and
+  `ctest --preset debug|release`.
 - Resolve every pkg-config dependency through `howdy_pkg_check_modules()`
   (`cmake/howdy_pkg_config.cmake`) rather than `pkg_check_modules()` directly (header explains the
   CMake `Requires` bug).
@@ -47,12 +48,28 @@ local guides add detail without relaxing these invariants.
 
 ## Edge Cases
 
-- Map the failure space while designing: list the inputs, states, races, and caller environments a
-  change can meet, and choose a structure that rules them out by construction.
-- Fix an edge case in code only when the fix is local and robust. When closing it would need
-  userspace to re-derive kernel semantics (ptrace, credentials, signals, job control) or would only
-  move the gap, record it as a known limitation next to the code and close it at the boundary that
-  owns it.
+- **Pre-edit failure matrix:** Before writing or fixing code, enumerate the complete failure space
+  across boundary inputs (empty, root/separator/trailing-slash, `.`/`..`, embedded `\0`, symlink or
+  non-regular leaves, numeric/size limits), state transitions, syscall/TOCTOU races, and
+  rollback/error paths, and audit every sibling entry point sharing that boundary in one pass.
+- **Parse once at the boundary:** Parse, validate, and normalize raw primitives
+  (`std::filesystem::path`, raw `int` fds, unvalidated strings) in one boundary parser/constructor
+  that yields a validated type or owned handle, and pass only that representation across internal
+  helpers (keep raw primitives at outer API or thin single-syscall edges). Call normalization and
+  path splitting (`lexically_normal()`, `parent_path()`) in that single boundary function only.
+  Comments asserting an earlier check made a helper safe (e.g., *"safe now that X ran"*) signal a
+  broken boundary—encode the invariant in the validated type instead.
+- **Invariant fix and regression lock:** On every bug or review finding, identify the broken system
+  invariant before editing, repair the shared boundary parser/helper and all sibling callers
+  uniformly rather than stacking localized symptom guards, and lock the fix with table-driven
+  negative tests covering the entire malformed input or failure class across every affected entry
+  point—not just the single reported case.
+- **Boundary ownership:** Fix an edge case in code only when the fix closes the gap at the boundary
+  that owns the invariant. When closing it in code would require userspace to re-derive kernel
+  semantics (ptrace, credentials, signals, job control) or would only shift assumptions onto another
+  caller, do not add a userspace workaround: document the known limitation and owning invariant
+  inline at the owning boundary, enforce the contract there, and treat documented limitations as
+  settled contracts during review unless the owning boundary changes.
 
 ## Security
 

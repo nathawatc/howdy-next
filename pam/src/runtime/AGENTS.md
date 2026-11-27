@@ -37,5 +37,6 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Child:
 
 ## Known Limitation: SSH Detection (Won't Fix)
 
-`abort_if_ssh` is a convenience, not a security boundary; read the bypass, rejected logind approach,
-and reopening criteria in `session_probe.cpp` before changing SSH detection.
+`abort_if_ssh` is a convenience, not a security boundary, and its limitations are a settled
+contract; read the bypass, rejected logind approach, and reopening criteria in `session_probe.cpp`
+before proposing changes.

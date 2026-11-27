@@ -1,6 +1,6 @@
 # Auth Helper Guidelines
 
-Parent: [`../../AGENTS.md`](../../AGENTS.md). Related:
+Parent: [`../../AGENTS.md`](../../AGENTS.md). Related: [`../config/AGENTS.md`](../config/AGENTS.md),
 [`../storage/user_model_store/AGENTS.md`](../storage/user_model_store/AGENTS.md),
 [`../../../pam/src/runtime/auth_helper_process/AGENTS.md`](../../../pam/src/runtime/auth_helper_process/AGENTS.md).
 
@@ -15,8 +15,8 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related:
 
 - Trust only the real UID: `argv` user must match the `getuid()` passwd entry. Validate the username
   and descriptor 3 (`AF_UNIX` `SOCK_SEQPACKET`) before opening any file.
-- While setuid, `config/runtime_paths.cpp` ignores `HOWDY_CONFIG` and `HOWDY_USER_MODELS_DIR` so
-  only installed paths open.
+- Rely on `config/runtime_paths.cpp` ignoring env overrides while setuid so only installed paths
+  open.
 - Open config with `O_NOFOLLOW` then check ancestors (`CheckSecureConfigFd`), up to four more
   times while writes keep replacing it (`ConfigFdWasReplaced`); open the user model
   through `UserModelStore::OpenRuntimeDescriptor`. Keep both descriptors read-only and `O_CLOEXEC`.

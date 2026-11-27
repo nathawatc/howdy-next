@@ -5,14 +5,11 @@ changing tests for a subsystem.
 
 ## Rules
 
-- `howdy/cmake/tests/*.cmake` owns logical CTest suites (several span multiple `.cpp` files);
-  inspect before moving or adding coverage.
-- Place package test-only shared headers under `howdy/tests/include/<module>/` (cross-package
-  helpers live in repo-root `tests/include/`).
 - Prefer injected filesystem, clock, capture, renderer, process, and inference dependencies over
   host side effects.
-- Cover success, malformed input, partial failure, rollback/cleanup, and uncertain-commit paths on
-  security-sensitive code.
+- Lock security-sensitive code with table-driven tests covering success, full malformed input
+  classes across sibling entry points, partial failure, rollback/cleanup, and uncertain-commit
+  (`kDurabilityUncertain`) paths.
 - Protocol decoders (`tests/protocol/runtime_descriptor_message_fuzz*.cpp`) and the INI editor
   (`tests/config/config_key_file_fuzz*.cpp`, differential against inih) have fuzz targets: fixed-input
   replay runs in every build; libFuzzer targets build automatically when `HOWDY_ENABLE_FUZZING`

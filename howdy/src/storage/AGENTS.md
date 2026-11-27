@@ -1,7 +1,8 @@
 # Storage Guidelines
 
 Parent: [`../../AGENTS.md`](../../AGENTS.md). Child:
-[`user_model_store/AGENTS.md`](user_model_store/AGENTS.md).
+[`user_model_store/AGENTS.md`](user_model_store/AGENTS.md). Related:
+[`../config/AGENTS.md`](../config/AGENTS.md).
 
 ## Boundaries
 
@@ -19,6 +20,6 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Child:
 - Preserve JSON grammar, strict/non-strict parsing, numeric and nesting limits, model-count and
   encoding-count bounds, duplicate direct-key rejection, finite encoding validation, IDs,
   compatibility checks, and serialization format.
-- `LoadUserModelsFromFd` enforces the same descriptor contract as `LoadRuntimeConfigFromFd` (no path
-  walk, explicit owner UID, read-only non-`O_PATH` regular file, `st_nlink == 1`, positional read)
-  plus non-empty size (an empty model file is damaged storage).
+- `LoadUserModelsFromFd` enforces the `LoadRuntimeConfigFromFd` descriptor contract (see
+  [`../config/AGENTS.md`](../config/AGENTS.md)) plus non-empty size (an empty model file is damaged
+  storage).
