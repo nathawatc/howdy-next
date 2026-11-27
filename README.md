@@ -117,9 +117,9 @@ See [wiki](https://github.com/nathawatc/howdy-next/wiki/Troubleshooting) for
 common issues.
 
 > [!WARNING]
-> Howdy is weaker than a password. Similar faces or photos may fool it.
-> IR reduces spoofing because IR light is not reproduced by photos or LCD displays.
-> Never use Howdy as the sole authentication method.
+> Howdy's weak point is the camera. A plain RGB webcam can be fooled by a photo
+> or a face shown on a screen. Use an IR camera: photos and LCD displays do not reproduce IR light,
+> which blocks those spoofs.
 
 ## License
 

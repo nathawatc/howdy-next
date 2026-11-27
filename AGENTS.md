@@ -43,6 +43,15 @@ local guides add detail without relaxing these invariants.
 - Update the nearest `AGENTS.md` (and any affected `.agents/skills/*/SKILL.md`) in the same change
   whenever invariants, subsystem boundaries, or workflows change.
 
+## Edge Cases
+
+- Map the failure space while designing: list the inputs, states, races, and caller environments a
+  change can meet, and choose a structure that rules them out by construction.
+- Fix an edge case in code only when the fix is local and robust. When closing it would need
+  userspace to re-derive kernel semantics (ptrace, credentials, signals, job control) or would only
+  move the gap, record it as a known limitation next to the code and close it at the boundary that
+  owns it.
+
 ## Security
 
 - Fail closed on unexpected errors, malformed inputs, or privilege/ownership violations. Preserve

@@ -38,9 +38,10 @@ Enrolled user face models.
 .SH "EXIT STATUS"
 Returns 0 on success and nonzero on error.
 .SH "SECURITY NOTES"
-Facial recognition is weaker than a password; similar faces or photos may fool
-it.
-.B Do not use Howdy as the sole authentication method.
+Howdy's weak point is the camera. A plain RGB webcam can be fooled
+by a photo or a face shown on a screen.
+.B Use an IR camera:
+photos and LCD displays do not reproduce IR light, which blocks those spoofs.
 Keep config and model paths root-controlled.
 .SH AUTHOR
 Originally written by boltgolt. Howdy Next is maintained by nathawat on GitHub.
