@@ -209,8 +209,12 @@ namespace howdy::pam::runtime {
 			if (pidfd_send_signal(pidfd_, signal, nullptr, 0) == 0) {
 				return 0;
 			}
-			if (errno == ESRCH) {
+			const int signal_error = errno;
+			if (signal_error == ESRCH) {
 				return ReapedElsewhere();
+			}
+			if (pid_ <= 0) {
+				return signal_error;
 			}
 		}
 		return SignalByPid(signal);

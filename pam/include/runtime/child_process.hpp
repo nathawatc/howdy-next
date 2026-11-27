@@ -44,8 +44,10 @@ namespace howdy::pam::runtime {
 	// weaker than the pidfd: it cannot tell the tracked child from another child of the application
 	// that reused the PID, which no PID-based call can, and a short window remains between the
 	// check and the kill in which the application could reap the child. Constructed with pidfd -1,
-	// every operation uses that PID mode. A PID at or below 0 (unknown) is never used: those
-	// fallbacks then report the child as reaped elsewhere.
+	// every operation uses that PID mode. A PID at or below 0 (unknown) is never used: without a
+	// usable pidfd wait, wait and exit-await fallbacks report the child as reaped elsewhere, while
+	// a non-ESRCH pidfd signal failure returns that error without marking the child reaped
+	// elsewhere.
 	class __attribute__((visibility("hidden"))) TrackedChild {
 	public:
 		// `pidfd` is borrowed and may be -1.

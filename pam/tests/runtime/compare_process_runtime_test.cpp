@@ -45,6 +45,7 @@ namespace {
 		int               waitid_error       = 0;
 		int               waitid_any_error   = 0;  // every waitid, by PID as well as by pidfd
 		bool              fail_pidfd_signal  = false;
+		int               pidfd_signal_error = 0;
 		bool              fail_kill          = false;
 		bool              signal_refused     = false;
 		int               release_fd         = -1;  // closed by the first poll after a refusal
@@ -150,6 +151,10 @@ auto TestKill(pid_t pid, int signal) -> int {
 }
 
 auto TestPidfdSendSignal(int pidfd, int signal, siginfo_t *info, unsigned int flags) -> int {
+	if (WaitState().pidfd_signal_error != 0) {
+		errno = WaitState().pidfd_signal_error;
+		return -1;
+	}
 	if (WaitState().fail_pidfd_signal) {
 		errno = EPERM;
 		return -1;
@@ -1004,6 +1009,101 @@ namespace {
 		return ok;
 	}
 
+	// Without a usable PID (pid <= 0), a non-ESRCH pidfd_send_signal failure returns that error
+	// without marking the child reaped elsewhere or calling kill(), so pidfd Wait() still works.
+	auto TestSignalWithoutPidPreservesNonEsrchError() -> bool {
+		const pid_t child_pid = SpawnBlockedChild();
+		if (!Expect(child_pid > 0, "signal-without-pid test spawns child")) {
+			return false;
+		}
+		const howdy::native::ScopedFd pidfd(howdy::pam::runtime::OpenChildPidfd(child_pid));
+		if (!Expect(pidfd.Valid(), "signal-without-pid test opens child pidfd")) {
+			(void)kill(child_pid, SIGKILL);
+			(void)waitpid(child_pid, nullptr, 0);
+			return false;
+		}
+
+		struct SignalCase {
+			pid_t pid;
+			bool  use_pidfd;
+			int   injected_error;
+			int   expected_error;
+			bool  expected_reaped;
+		};
+
+		constexpr auto cases = std::to_array<SignalCase>({
+		    {
+		        .pid             = -1,
+		        .use_pidfd       = true,
+		        .injected_error  = EPERM,
+		        .expected_error  = EPERM,
+		        .expected_reaped = false,
+		    },
+		    {
+		        .pid             = 0,
+		        .use_pidfd       = true,
+		        .injected_error  = ENOSYS,
+		        .expected_error  = ENOSYS,
+		        .expected_reaped = false,
+		    },
+		    {
+		        .pid             = -1,
+		        .use_pidfd       = true,
+		        .injected_error  = ESRCH,
+		        .expected_error  = ECHILD,
+		        .expected_reaped = true,
+		    },
+		    {
+		        .pid             = 0,
+		        .use_pidfd       = true,
+		        .injected_error  = ESRCH,
+		        .expected_error  = ECHILD,
+		        .expected_reaped = true,
+		    },
+		    {
+		        .pid             = -1,
+		        .use_pidfd       = false,
+		        .injected_error  = 0,
+		        .expected_error  = ECHILD,
+		        .expected_reaped = true,
+		    },
+		    {
+		        .pid             = 0,
+		        .use_pidfd       = false,
+		        .injected_error  = 0,
+		        .expected_error  = ECHILD,
+		        .expected_reaped = true,
+		    },
+		});
+
+		bool ok = true;
+		for (const auto &test_case : cases) {
+			howdy::pam::runtime::TrackedChild child(test_case.pid,
+			                                        test_case.use_pidfd ? pidfd.Get() : -1);
+			WaitState().pidfd_signal_error = test_case.injected_error;
+			WaitState().kill_calls         = 0;
+			const int result               = child.Signal(SIGKILL);
+			WaitState().pidfd_signal_error = 0;
+			ok &= Expect(result == test_case.expected_error &&
+			                 child.WasReapedElsewhere() == test_case.expected_reaped &&
+			                 WaitState().kill_calls == 0,
+			             "Signal with pid <= 0 classifies pidfd error without calling kill");
+			if (!test_case.expected_reaped) {
+				int status = 0;
+				ok &=
+				    Expect(child.Wait(false, &status) == howdy::pam::runtime::ChildState::kRunning,
+					       "non-ESRCH pidfd signal failure leaves pidfd child waitable");
+			}
+		}
+
+		howdy::pam::runtime::TrackedChild cleanup(-1, pidfd.Get());
+		const auto                        reaped = howdy::pam::runtime::KillAndReap(cleanup);
+		ok &= Expect(reaped.has_value() && WIFSIGNALED(*reaped) && WTERMSIG(*reaped) == SIGKILL,
+		             "signal-without-pid test stops and reaps child through pidfd");
+		ok &= Expect(ChildReaped(child_pid), "signal-without-pid child is reaped");
+		return ok;
+	}
+
 	// A pidfd wait refused for any reason but a missing P_PIDFD fails closed instead of moving to
 	// a waitpid that could reap another child which reused the PID.
 	auto TestFilteredPidfdWaitDoesNotUsePid() -> bool {
@@ -1539,6 +1639,7 @@ auto main(int argc, char **argv) -> int {
 	ok &= TestPidfdMoveFailureIsNotChildGone();
 	ok &= TestUnconfirmedPidIsNotSignalled();
 	ok &= TestPeekTrackedLinux53EinvalFallback();
+	ok &= TestSignalWithoutPidPreservesNonEsrchError();
 	ok &= TestFilteredPidfdWaitDoesNotUsePid();
 	return ok ? 0 : 1;
 }
