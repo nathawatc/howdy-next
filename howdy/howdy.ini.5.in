@@ -2,38 +2,36 @@
 .SH NAME
 howdy.ini \- Howdy Next configuration file
 .SH DESCRIPTION
-The file
 .I @HOWDY_CONFIG_PATH_ROFF@
-contains runtime configuration for Howdy Next.
-.PP
-The configuration file is formatted using standard INI syntax organized into section
-headers followed by key and value definitions:
+configures Howdy Next using standard INI sections and
+.B key = value
+lines:
 .PP
 .nf
 [section]
 key = value
 .fi
 .PP
-Lines beginning with
+Lines starting with
 .B #
 or
 .B ;
-are treated as comments.
-.PP
-Options that are left out use their defaults;
+are comments.
+Omitted keys use their defaults;
 .B howdy set
 and
 .B howdy disable
-change only options written in the file. A file that is blank or contains a NUL byte
-is taken for damaged and rejected; to use every default, keep at least one comment in it.
+only update keys already in the file.
+A blank file or one containing a NUL byte is rejected as damaged (keep at least
+one comment to use all defaults); run
 .B howdy config
-opens a damaged file for repair.
+to repair it.
 .SH "CONFIGURATION OPTIONS"
 @HOWDY_CONFIG_REFERENCE@
 .SH FILES
 .TP
 .I @HOWDY_CONFIG_PATH_ROFF@
-Main Howdy configuration file.
+Configuration file.
 .SH "SEE ALSO"
 .BR howdy (1),
 .BR pam_howdy (8)

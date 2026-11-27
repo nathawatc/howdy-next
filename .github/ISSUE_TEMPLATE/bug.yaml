@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible Howdy Next bug.
+description: Report a CLI, camera, recognition, or packaging bug.
 title: "bug: "
 labels:
   - bug
@@ -7,19 +7,15 @@ body:
   - type: markdown
     attributes:
       value: |
-        Use this form for reproducible bugs in the CLI, camera runtime, face recognition, packaging, or tests.
+        For `pam_howdy.so` issues, use the **PAM authentication issue** form instead.
 
-        Before filing:
-        - Run `sudo howdy test` outside PAM.
-        - Check the troubleshooting wiki.
-        - Include logs as text, not screenshots, unless the UI itself is relevant.
+        Before filing, run `sudo howdy test` and check the troubleshooting wiki. Paste logs as text, not screenshots, unless the UI itself is the bug.
 
   - type: textarea
     id: summary
     attributes:
       label: Summary
-      description: Describe the bug and the expected behavior.
-      placeholder: What failed? What did you expect instead?
+      description: Briefly describe what went wrong.
     validations:
       required: true
 
@@ -27,7 +23,6 @@ body:
     id: steps
     attributes:
       label: Steps to reproduce
-      description: Provide the smallest reliable reproduction.
       value: |
         1.
         2.
@@ -36,18 +31,13 @@ body:
       required: true
 
   - type: textarea
-    id: actual
+    id: actual-expected
     attributes:
-      label: Actual result
-      description: Include exact terminal output, error messages, or observed behavior.
-    validations:
-      required: true
-
-  - type: textarea
-    id: expected
-    attributes:
-      label: Expected result
-      description: What should have happened?
+      label: Actual vs. expected result
+      description: Include exact error messages or terminal output.
+      value: |
+        - Actual:
+        - Expected:
     validations:
       required: true
 
@@ -55,7 +45,6 @@ body:
     id: howdy-version
     attributes:
       label: Howdy Next version
-      description: Output of `howdy version`, package version, or commit hash.
       placeholder: Output of `howdy version`, package version, or commit hash
     validations:
       required: true
@@ -64,8 +53,7 @@ body:
     id: install-source
     attributes:
       label: Installation source
-      description: Package or build method used.
-      placeholder: AUR howdy-next, AUR howdy-next-git, local package build
+      placeholder: AUR howdy-next, AUR howdy-next-git, Nix flake, source build
     validations:
       required: true
 
@@ -73,13 +61,11 @@ body:
     id: system-info
     attributes:
       label: System information
-      description: Include distro, kernel, desktop/session, display server, camera, and PAM consumer if relevant.
       value: |
         - Distro:
         - Kernel:
-        - Session/display server:
+        - Session / display server:
         - Camera device/path:
-        - PAM consumer, if relevant:
     validations:
       required: true
 
@@ -87,7 +73,7 @@ body:
     id: config
     attributes:
       label: Relevant configuration
-      description: Include only relevant `/etc/howdy/config.ini` keys and PAM lines. Remove private data.
+      description: Optional. Relevant `/etc/howdy/config.ini` keys (strip private data).
       render: ini
     validations:
       required: false
@@ -96,9 +82,9 @@ body:
     id: logs
     attributes:
       label: Logs and command output
-      description: Include `sudo howdy test`, `sudo howdy snapshot`, or `journalctl -b` output as relevant. Remove private data.
+      description: Optional. Relevant `sudo howdy test`, `sudo howdy snapshot`, or `journalctl -b` output (strip private data).
       placeholder: |
-        sudo journalctl -b --no-pager | grep -Ei 'howdy|pam_howdy|howdy-auth-helper|opencv|segfault|coredump'
+        sudo journalctl -b --no-pager | grep -Ei 'howdy|opencv|seccomp|segfault|coredump'
       render: shell
     validations:
       required: false
@@ -112,5 +98,5 @@ body:
           required: false
         - label: I checked existing issues and the troubleshooting wiki.
           required: true
-        - label: I removed private information from logs and configuration snippets.
+        - label: I removed private data from logs and configs.
           required: true

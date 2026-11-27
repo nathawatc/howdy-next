@@ -8,5 +8,5 @@ contact_links:
     url: https://github.com/nathawatc/howdy-next/wiki/PAM-Integration
     about: PAM ordering and lock-screen guidance.
   - name: Polkit integration wiki
-    url: https://github.com/nathawatc/howdy-next/wiki/Polkit-integration
+    url: https://github.com/nathawatc/howdy-next/wiki/Polkit-127-Compatibility
     about: Polkit 127+ sandbox compatibility notes.

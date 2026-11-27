@@ -5,50 +5,43 @@ howdy \- facial authentication management for Linux
 .B howdy
 [\fIoptions\fR] \fIcommand\fR [\fIarguments\fR...]
 .SH DESCRIPTION
-Howdy manages enrolled face models and camera-based recognition for Howdy Next.
-Recognition is exposed to authentication services through the
-.BR pam_howdy (8)
-module.
+.B howdy
+manages enrolled face models, camera testing, and configuration for Howdy Next.
+PAM authentication is provided by
+.BR pam_howdy (8).
 .PP
-The command selects a management operation. A target user is resolved from the
-invoking environment when possible; use the user option when explicit targeting
-is required.
+Model commands target the invoking user automatically; pass
+.B \-U
+/
+.B \-\-user
+to target another account.
 .SH COMMANDS
 @HOWDY_COMMAND_REFERENCE@
 .SH OPTIONS
 @HOWDY_OPTION_REFERENCE@
 .SH EXAMPLES
-Add a face model, test recognition, or edit configuration:
-.PP
 .nf
+sudo howdy config
 sudo howdy add
 sudo howdy test
-sudo howdy config
 .fi
-.PP
-Use
-.BR \-U
-or
-.BR \-\-user
-when a model command must target a specific account.
 .SH FILES
 .TP
 .I @HOWDY_CONFIG_PATH_ROFF@
-Main Howdy configuration file.
+Configuration file.
 .TP
 .I @HOWDY_MODELS_DIR_ROFF@
-Packaged ONNX model directory.
+OpenCV ONNX model directory.
 .TP
 .I @HOWDY_USER_MODELS_DIR_ROFF@
-Configured directory containing enrolled user face models.
+Enrolled user face models.
 .SH "EXIT STATUS"
-The command returns zero on success and a nonzero status when parsing, validation,
-recognition, or storage fails.
+Returns 0 on success and nonzero on error.
 .SH "SECURITY NOTES"
-Facial recognition is weaker than a password. Similar faces or photographs may
-fool it.
+Facial recognition is weaker than a password; similar faces or photos may fool
+it.
 .B Do not use Howdy as the sole authentication method.
-Keep the configured files and model directories root-controlled.
+Keep config and model paths root-controlled.
 .SH AUTHOR
 Originally written by boltgolt. Howdy Next is maintained by nathawat on GitHub.
 .SH "SEE ALSO"

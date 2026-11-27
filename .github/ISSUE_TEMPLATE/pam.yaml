@@ -7,67 +7,64 @@ body:
   - type: markdown
     attributes:
       value: |
-        Use this form for `pam_howdy.so` issues, including sudo/login/polkit/lock-screen behavior, password prompt interaction, helper failures, or PAM ordering.
+        Use this form for `pam_howdy.so` issues (sudo, login, polkit, lock screens, prompt behavior, or helper errors).
 
-        Keep a root shell open while changing PAM files. Test `sudo howdy test` outside PAM first; camera/model/config failures should be fixed before debugging PAM.
+        Keep a root shell open while editing `/etc/pam.d/`. Run `sudo howdy test` first so camera or model errors are ruled out.
 
   - type: textarea
     id: summary
     attributes:
-      label: Summary
-      description: Describe the authentication failure or unexpected PAM behavior.
+      label: What happened?
+      description: Describe what failed and what you expected instead.
     validations:
       required: true
 
   - type: dropdown
     id: pam-consumer
     attributes:
-      label: PAM consumer
-      description: Which program/service is failing?
+      label: PAM service
       options:
         - sudo
-        - login/TTY
+        - login / TTY
         - polkit
-        - login manager
-        - display manager
+        - display manager (GDM, SDDM, greetd, LightDM)
         - lock screen
-        - system-auth/common stack
+        - system-auth / common stack
         - other
-    validations:
-      required: true
-
-  - type: textarea
-    id: pam-config
-    attributes:
-      label: PAM configuration
-      description: Include the relevant file from `/etc/pam.d/`. Do not paste unrelated secrets.
-      render: shell
-      placeholder: |
-        auth [success=4 default=ignore] pam_howdy.so workaround=native
-        auth [success=3 default=ignore] pam_unix.so  try_first_pass nullok
     validations:
       required: true
 
   - type: dropdown
     id: workaround
     attributes:
-      label: pam_howdy workaround mode
-      description: Which service-local option is used on the `pam_howdy.so` line?
+      label: Workaround option
+      description: Option set on the `pam_howdy.so` line.
       options:
-        - workaround=off
-        - workaround=input
+        - none (default)
         - workaround=native
+        - workaround=input
         - workaround=native-input
-        - not specified
         - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: pam-config
+    attributes:
+      label: PAM config
+      description: Relevant lines from `/etc/pam.d/`.
+      render: shell
+      placeholder: |
+        auth sufficient pam_howdy.so workaround=native
+        auth sufficient pam_unix.so try_first_pass nullok
     validations:
       required: true
 
   - type: textarea
     id: outside-pam-test
     attributes:
-      label: Outside-PAM test result
-      description: Paste `sudo howdy test` output, or explain why it cannot be run.
+      label: "`sudo howdy test` output"
+      description: Paste output from outside PAM, or explain why it cannot run.
       render: shell
     validations:
       required: true
@@ -75,52 +72,44 @@ body:
   - type: textarea
     id: auth-log
     attributes:
-      label: Authentication logs
-      description: Paste relevant `journalctl -b` or auth log lines around the failed attempt. Remove private data.
+      label: Logs
+      description: Relevant `journalctl` or auth log lines around the failure. Strip private data.
       placeholder: |
-        sudo journalctl -b --no-pager | grep -Ei 'howdy|pam_howdy|howdy-auth-helper|sudo|login|polkit|waylock|greetd|sddm|gdm|lightdm|pam|conversation|segfault|coredump|opencv'
+        sudo journalctl -b --no-pager | grep -Ei 'howdy|sudo|login|polkit|waylock|greetd|sddm|gdm|lightdm|pam|seccomp|segfault|coredump|opencv'
       render: shell
     validations:
       required: true
-
-  - type: textarea
-    id: helper-paths
-    attributes:
-      label: Helper and path checks
-      description: Include helper permissions and relevant `/etc/howdy` ownership when lock-screen or unprivileged PAM is involved.
-      render: shell
-      value: |
-        ls -ld /etc/howdy /etc/howdy/models
-        ls -l /etc/howdy/config.ini
-        find /usr/lib /usr/lib64 /usr/libexec /usr/local/lib /usr/local/lib64 /usr/local/libexec -maxdepth 3 -type f -name howdy-auth-helper -exec ls -l {} + 2>/dev/null
-        ls -l /run/wrappers/bin/howdy-auth-helper 2>/dev/null
-    validations:
-      required: false
 
   - type: textarea
     id: environment
     attributes:
       label: Environment
       value: |
-        - Howdy Next version:
-        - Distro/package:
+        - Howdy version (`howdy version`):
+        - Distro / install method:
         - Kernel:
-        - Desktop/session:
-        - Display server:
-        - Lock screen/display manager, if relevant:
+        - Session / display server:
     validations:
       required: true
+
+  - type: textarea
+    id: helper-paths
+    attributes:
+      label: Helper & path permissions (lock screen / unprivileged PAM)
+      description: Optional. Include if authentication runs unprivileged.
+      placeholder: |
+        ls -ld /etc/howdy /etc/howdy/models /etc/howdy/config.ini
+        ls -l /usr/libexec/howdy/howdy-auth-helper # or /run/wrappers/bin/howdy-auth-helper
+      render: shell
+    validations:
+      required: false
 
   - type: checkboxes
     id: checklist
     attributes:
       label: Checklist
       options:
-        - label: I kept a root shell open while testing PAM changes.
-          required: false
         - label: I tested `sudo howdy test` outside PAM first.
           required: true
-        - label: I included the relevant `/etc/pam.d/` service file or stack snippet.
-          required: true
-        - label: I removed private information from logs and configuration snippets.
+        - label: I removed private data from configs and logs.
           required: true
