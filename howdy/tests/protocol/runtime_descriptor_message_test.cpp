@@ -4,19 +4,24 @@
 #include "test_support.hpp"
 
 #include <array>
+#include <cerrno>
 #include <cstddef>
 #include <cstring>
 #include <filesystem>
 #include <span>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include <fcntl.h>
+#include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/uio.h>  // IWYU pragma: keep
+#include <sys/wait.h>
 
 namespace {
 
@@ -183,6 +188,64 @@ namespace {
 		             "too many descriptors are invalid");
 		ok &= reject({.payload = "DM", .rights = {{cfg}}, .credentials = true},
 		             "credentials next to the descriptors are invalid");
+		ok &= reject({.payload = "", .rights = {{cfg}}},
+		             "zero-byte packet with descriptors is invalid");
+		return ok;
+	}
+
+	auto ExhaustDescriptorsAndReceive(int receiver_fd) -> int {
+		rlimit limit{};
+		if (getrlimit(RLIMIT_NOFILE, &limit) != 0) {
+			return EXIT_FAILURE;
+		}
+		const rlim_t target_cur = static_cast<rlim_t>(receiver_fd) + 1;
+		if (limit.rlim_cur > target_cur) {
+			limit.rlim_cur = target_cur;
+			if (setrlimit(RLIMIT_NOFILE, &limit) != 0) {
+				return EXIT_FAILURE;
+			}
+		}
+		std::vector<ScopedFd> fillers;
+		while (true) {
+			const int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+			if (fd < 0) {
+				if (errno != EMFILE) {
+					return EXIT_FAILURE;
+				}
+				break;
+			}
+			fillers.emplace_back(fd);
+		}
+		const auto received = message::ReceiveMessage(receiver_fd);
+		return received.status == ReceiveStatus::kInvalid ? EXIT_SUCCESS : EXIT_FAILURE;
+	}
+
+	// Exhausts the subprocess descriptor table so recvmsg drops incoming SCM_RIGHTS with
+	// MSG_CTRUNC and msg_controllen == 0; a 0-byte packet must still classify as kInvalid, not EOF.
+	auto TestTruncatedZeroBytePacketIsInvalid(const ScopedFd &config) -> bool {
+		bool ok = true;
+		for (const auto &[payload, label] : {
+		         std::pair{std::string{}, "zero-byte packet with MSG_CTRUNC is invalid, not EOF"},
+		         std::pair{std::string("DM"),
+				           "truncated SCM_RIGHTS packet under EMFILE is invalid"},
+		     }) {
+			auto pair = MakeSocketPair();
+			if (!Expect(pair.sender.Valid() && pair.receiver.Valid() &&
+			                SendRaw(pair.sender.Get(),
+			                        {.payload = payload, .rights = {{config.Get()}}}),
+			            std::string("queue ") + label)) {
+				return false;
+			}
+			pair.sender.Reset();
+			const pid_t child = fork();
+			if (child == 0) {
+				_exit(ExhaustDescriptorsAndReceive(pair.receiver.Get()));
+			}
+			int status = 0;
+			ok &= Expect(child > 0 && waitpid(child, &status, 0) == child && WIFEXITED(status) &&
+			                 WEXITSTATUS(status) == EXIT_SUCCESS,
+			             label);
+		}
 		return ok;
 	}
 
@@ -246,6 +309,11 @@ namespace {
 		const auto truncated = decode(missing, CMSG_SPACE(sizeof(int)), MSG_CTRUNC);
 		ok &= Expect(!truncated.valid && truncated.descriptors == std::vector<int>{7},
 		             "a truncated message is invalid but still reports its descriptors");
+		for (const int flag : {MSG_CTRUNC, MSG_TRUNC}) {
+			const auto empty_truncated = decode({}, 0, flag);
+			ok &= Expect(!empty_truncated.valid && empty_truncated.descriptors.empty(),
+			             "empty truncated message decodes as invalid");
+		}
 
 		// The kernel merges several SCM_RIGHTS headers of one sendmsg into one, so only a
 		// decoder handed raw bytes can see two.
@@ -272,6 +340,7 @@ auto main() -> int {
 	ok &= TestRoundTrips(config, model);
 	ok &= TestSendRefusesBrokenMessages(config, model);
 	ok &= TestRejections(config, model);
+	ok &= TestTruncatedZeroBytePacketIsInvalid(config);
 	ok &= TestEmptyAndClosed();
 	ok &= TestDecoderBounds();
 
