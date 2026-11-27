@@ -187,6 +187,9 @@ namespace howdy::native {
 
 		inline auto NormalizeValidationRootPath(std::filesystem::path root)
 		    -> std::filesystem::path {
+			// Callers pass only '..'-free paths (RelativeTarget or CheckDirectoryTreeTarget ran
+			// first), so lexically_normal() just folds interior '.' and repeated separators.
+			root = root.lexically_normal();
 			// Strip trailing separators/dots so lstat still rejects a symlink root.
 			while (root != root.root_path() &&
 			       (root.filename().empty() || root.filename() == ".")) {
@@ -203,6 +206,40 @@ namespace howdy::native {
 			return root;
 		}
 
+		// Shared by the tree check and tree creation so both accept exactly the same targets.
+		// '..' is rejected rather than normalized: lexical collapsing would let creation build
+		// a directory the check then refuses, and a symlinked ancestor makes the collapse lie.
+		// error_code stays 0 like other policy rejections: callers treat nonzero codes as I/O
+		// failures and replace the message with a generic one.
+		inline auto CheckDirectoryTreeTarget(const std::filesystem::path &path,
+		                                     const std::string_view       label)
+		    -> SecurePathCheckResult {
+			const auto reject = [&](const std::string_view reason) -> SecurePathCheckResult {
+				return {
+				    .ok            = false,
+				    .error_message = std::string(label) + std::string(reason) + path.string(),
+				    .error_code    = 0,
+				};
+			};
+			if (path.native().contains('\0')) {
+				// Printing the path would truncate it at the NUL, so omit it.
+				return {
+				    .ok            = false,
+				    .error_message = std::string(label) + " must not contain NUL",
+				    .error_code    = 0,
+				};
+			}
+			if (!path.is_absolute()) {
+				return reject(" must be absolute: ");
+			}
+			for (const auto &component : path) {
+				if (component == "..") {
+					return reject(" must not contain '..': ");
+				}
+			}
+			return {.ok = true};
+		}
+
 	}  // namespace file_security_internal
 
 	[[nodiscard]] inline auto CheckSecureRootOwnedDirectoryTree(
@@ -210,51 +247,41 @@ namespace howdy::native {
 	    const std::optional<uid_t>                    owner_uid       = DefaultSecureOwnerUid(),
 	    const file_security_internal::ValidationRoot &validation_root = {})
 	    -> SecurePathCheckResult {
-		if (!validation_root.path.empty()) {
-			const auto relative = file_security_internal::RelativeTarget(validation_root, path);
-			if (!relative) {
-				return {
-				    .error_message = std::string(label) + ": target outside validation boundary",
-				};
-			}
-			auto current =
-			    file_security_internal::NormalizeValidationRootPath(validation_root.path);
-			auto security = CheckSecureRootOwnedDirectory(current, label, owner_uid);
-			if (!security.ok) {
-				return security;
-			}
-			for (const auto &component : *relative) {
-				if (component.empty() || component == ".") {
-					continue;
-				}
-				current /= component;
-				security = CheckSecureRootOwnedDirectory(current, label, owner_uid);
-				if (!security.ok) {
-					return security;
-				}
-			}
-			return {.ok = true};
+		if (auto target = file_security_internal::CheckDirectoryTreeTarget(path, label);
+		    !target.ok) {
+			return target;
 		}
-		if (!path.is_absolute()) {
-			return CheckSecureRootOwnedDirectory(path, label, owner_uid);
+		// Normalize as ResolveDirectoryRoot does so creation and this check agree on paths with
+		// '.' parts; with '..' rejected above this only folds '.' and repeated separators.
+		const auto                                   normalized = path.lexically_normal();
+		const file_security_internal::ValidationRoot effective_root =
+		    !validation_root.path.empty()
+		        ? validation_root
+		        : file_security_internal::ValidationRoot{
+		              .path = file_security_internal::DefaultRootPath(normalized),
+		          };
+		const auto relative = file_security_internal::RelativeTarget(effective_root, normalized);
+		if (!relative) {
+			return {
+			    .error_message = std::string(label) + ": target outside validation boundary",
+			};
 		}
-
-		auto current       = file_security_internal::DefaultRootPath(path);
-		auto root_security = CheckSecureRootOwnedDirectory(current, label, owner_uid);
-		if (!root_security.ok) {
-			return root_security;
+		auto current  = file_security_internal::NormalizeValidationRootPath(effective_root.path);
+		auto security = CheckSecureRootOwnedDirectory(current, label, owner_uid);
+		if (!security.ok) {
+			return security;
 		}
-
-		const auto relative = path.lexically_relative(current);
-		for (const auto &component : relative) {
+		for (const auto &component : *relative) {
+			if (component.empty() || component == ".") {
+				continue;
+			}
 			current /= component;
-			const auto security = CheckSecureRootOwnedDirectory(current, label, owner_uid);
+			security = CheckSecureRootOwnedDirectory(current, label, owner_uid);
 			if (!security.ok) {
 				return security;
 			}
 		}
-
-		return SecurePathCheckResult{.ok = true, .error_message = {}};
+		return {.ok = true};
 	}
 
 	namespace file_security_internal {
@@ -269,18 +296,11 @@ namespace howdy::native {
 		                                 const std::string_view       label,
 		                                 const ValidationRoot        &validation_root)
 		    -> ResolvedDirectoryRoot {
-			const auto normalized = path.lexically_normal();
-			if (!normalized.is_absolute()) {
-				return {
-				    .check =
-				        {
-				            .ok = false,
-				            .error_message =
-				                std::string(label) + " must be absolute: " + path.string(),
-				            .error_code = EINVAL,
-				        },
-				};
+			if (auto target = CheckDirectoryTreeTarget(path, label); !target.ok) {
+				return {.check = std::move(target)};
 			}
+			// Safe now that '..' is gone: this only folds '.' and repeated separators.
+			const auto normalized = path.lexically_normal();
 
 			if (!validation_root.path.empty()) {
 				const auto rel = RelativeTarget(validation_root, normalized);
@@ -439,8 +459,11 @@ namespace howdy::native {
 			return root_security;
 		}
 
-		const auto normalized   = path.lexically_normal();
-		auto       current_path = resolved.root;
+		// lexically_normal() keeps a trailing separator ("/a/b/"), which the component walk
+		// never rebuilds, so strip it or the leaf would get ancestor_mode.
+		const auto normalized =
+		    file_security_internal::NormalizeValidationRootPath(path.lexically_normal());
+		auto current_path = resolved.root;
 		for (const auto &comp : resolved.relative) {
 			if (comp.empty() || comp == ".") {
 				continue;
@@ -466,36 +489,40 @@ namespace howdy::native {
 		std::string_view file;
 	};
 
-	namespace file_security_internal {
-
-		inline auto CheckSecureParentDirectory(const std::filesystem::path &path,
-		                                       const SecurePathLabels       labels,
-		                                       const std::optional<uid_t>   owner_uid,
-		                                       const ValidationRoot        &validation_root)
-		    -> SecurePathCheckResult {
-			const auto parent = path.parent_path();
-			if (parent.empty()) {
-				return SecurePathCheckResult{
-				    .ok            = false,
-				    .error_message = std::string(labels.file) +
-					                 " must have a parent directory: " + path.string(),
-				    .error_code    = 0,
-				};
-			}
-
-			return CheckSecureRootOwnedDirectoryTree(parent, labels.directory, owner_uid,
-			                                         validation_root);
+	// Vets a file path and its parent tree without touching the file, for callers that open or
+	// stage the file themselves.
+	[[nodiscard]] inline auto CheckSecureRootOwnedFileParent(
+	    const std::filesystem::path &path, const SecurePathLabels labels,
+	    const std::optional<uid_t>                    owner_uid       = DefaultSecureOwnerUid(),
+	    const file_security_internal::ValidationRoot &validation_root = {})
+	    -> SecurePathCheckResult {
+		// Check the full path first, not just the parent: lstat stops at an embedded NUL and
+		// resolves a trailing '..', so a clean parent alone would vouch for another file.
+		if (auto target = file_security_internal::CheckDirectoryTreeTarget(path, labels.file);
+		    !target.ok) {
+			return target;
 		}
-
-	}  // namespace file_security_internal
+		// "file/" or "file/." would make parent_path() the file itself, so the parent check would
+		// vet the wrong node and blame it with a misleading message.
+		if (const auto name = path.filename(); name.empty() || name == ".") {
+			return {
+			    .ok            = false,
+			    .error_message = std::string(labels.file) + " must name a file: " + path.string(),
+			};
+		}
+		// An absolute path always has a non-empty parent; were it ever empty, the tree check's own
+		// target gate would still reject it.
+		return CheckSecureRootOwnedDirectoryTree(path.parent_path(), labels.directory, owner_uid,
+		                                         validation_root);
+	}
 
 	[[nodiscard]] inline auto CheckSecureRootOwnedFileWithDirectory(
 	    const std::filesystem::path &path, const SecurePathLabels labels,
 	    const std::optional<uid_t>                    owner_uid       = DefaultSecureOwnerUid(),
 	    const file_security_internal::ValidationRoot &validation_root = {})
 	    -> SecurePathCheckResult {
-		if (auto directory_security = file_security_internal::CheckSecureParentDirectory(
-		        path, labels, owner_uid, validation_root);
+		if (auto directory_security =
+		        CheckSecureRootOwnedFileParent(path, labels, owner_uid, validation_root);
 		    !directory_security.ok) {
 			return directory_security;
 		}
@@ -508,8 +535,8 @@ namespace howdy::native {
 	    const std::optional<uid_t>                    owner_uid       = DefaultSecureOwnerUid(),
 	    const file_security_internal::ValidationRoot &validation_root = {})
 	    -> SecurePathCheckResult {
-		if (auto directory_security = file_security_internal::CheckSecureParentDirectory(
-		        path, labels, owner_uid, validation_root);
+		if (auto directory_security =
+		        CheckSecureRootOwnedFileParent(path, labels, owner_uid, validation_root);
 		    !directory_security.ok) {
 			return directory_security;
 		}

@@ -22,6 +22,8 @@ Parent: [`../AGENTS.md`](../AGENTS.md).
   never depend on vision for shared contracts.
 - Reuse `support/fd_io.hpp`, `support/atomic_files.hpp`, and `support/file_security.hpp` for bounded
   I/O, staged files, and secure paths.
+- The `file_security.hpp` tree, `*FileParent`, and `*WithDirectory` helpers reject relative, NUL,
+  and `..` paths; pass paths to them unnormalized so they can.
 - Run shared model readiness/integrity checks (`model_assets/model_file.hpp`) before inference or
   authentication.
 - Expose OpenCV headers as system includes through `howdy_opencv`.

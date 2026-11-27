@@ -66,16 +66,10 @@ namespace howdy::native {
 	                               const std::optional<uid_t>                   &owner_uid,
 	                               const file_security_internal::ValidationRoot &validation_root)
 	    -> OpenCvModelReadiness {
-		const auto parent = path.parent_path();
-		if (parent.empty()) {
-			return {
-			    .status = OpenCvModelStatus::kInsecure,
-			    .error_message =
-			        std::string(label) + " must have a parent directory: " + path.string(),
-			};
-		}
-		const auto directory_security = CheckSecureRootOwnedDirectoryTree(
-		    parent, kModelsDirectoryLabel, owner_uid, validation_root);
+		// Same helper the download writer stages through, so readiness and staging accept the
+		// same paths.
+		const auto directory_security = CheckSecureRootOwnedFileParent(
+		    path, {.directory = kModelsDirectoryLabel, .file = label}, owner_uid, validation_root);
 		if (!directory_security.ok) {
 			return {
 			    .status        = OpenCvModelStatus::kInsecure,

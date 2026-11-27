@@ -46,7 +46,7 @@ auto main() -> int {
 	const auto parentless           = fs::path("model.onnx");
 	const auto parentless_readiness = Readiness(parentless);
 	ok &= Expect(parentless_readiness.status == OpenCvModelStatus::kInsecure &&
-	                 parentless_readiness.error_message.contains("parent directory"),
+	                 parentless_readiness.error_message.contains("must be absolute"),
 	             "parentless model path is insecure");
 
 	const auto valid = temp_root / "valid.onnx";
@@ -55,6 +55,18 @@ auto main() -> int {
 	ok &= Expect(non_placeholder_readiness.status == OpenCvModelStatus::kOk &&
 	                 non_placeholder_readiness.error_message.empty(),
 	             "readiness accepts secure non-placeholder bytes without parsing ONNX");
+	const auto nul_readiness = Readiness(fs::path(valid.string() + std::string(1, '\0') + "x"));
+	ok &= Expect(nul_readiness.status == OpenCvModelStatus::kInsecure &&
+	                 nul_readiness.error_message == "Model file must not contain NUL",
+	             "NUL in model file name is insecure although the parent is clean");
+	fs::create_directory(temp_root / "dotdot-parent", ec);
+	ok &= Expect(!ec, "create dotdot parent");
+	// The '..' leaf resolves to a directory, which the regular-file check would also reject, so
+	// assert the message to prove the '..' gate fired.
+	const auto dotdot_readiness = Readiness(temp_root / "dotdot-parent" / "..");
+	ok &= Expect(dotdot_readiness.status == OpenCvModelStatus::kInsecure &&
+	                 dotdot_readiness.error_message.contains("must not contain '..'"),
+	             "trailing '..' model path is insecure");
 	bool onnx_rejected = false;
 	try {
 		onnx_rejected = cv::dnn::readNetFromONNX(valid.string()).empty();

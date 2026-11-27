@@ -110,7 +110,7 @@ namespace howdy::test {
 		const auto parentless_check = howdy::native::CheckSecureConfigPath(
 		    "config.ini", howdy::native::DefaultSecureOwnerUid(), {context.temp_root});
 		ok &= Expect(!parentless_check.ok &&
-		                 parentless_check.error_message.contains("must have a parent directory"),
+		                 parentless_check.error_message.contains("must be absolute"),
 		             "check_secure_config_path rejects parentless config path");
 
 		ok &= Expect(WriteConfigTestFile(context.config_path, context.config_at_limit),

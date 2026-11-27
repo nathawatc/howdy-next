@@ -44,13 +44,14 @@ namespace {
 
 	using howdy::native::download_models_internal::CurlLong;
 
-	constexpr int      kDownloadModelsExitOk    = 0;
-	constexpr int      kDownloadModelsExitAbort = EXIT_FAILURE;
-	constexpr CurlLong kConnectTimeoutSeconds   = 15;
-	constexpr CurlLong kTransferTimeoutSeconds  = 300;
-	constexpr CurlLong kLowSpeedBytesPerSecond  = 1024;
-	constexpr CurlLong kLowSpeedTimeoutSeconds  = 30;
-	constexpr CurlLong kMaxRedirects            = 5;
+	constexpr std::string_view kModelFileLabel          = "Model file";
+	constexpr int              kDownloadModelsExitOk    = 0;
+	constexpr int              kDownloadModelsExitAbort = EXIT_FAILURE;
+	constexpr CurlLong         kConnectTimeoutSeconds   = 15;
+	constexpr CurlLong         kTransferTimeoutSeconds  = 300;
+	constexpr CurlLong         kLowSpeedBytesPerSecond  = 1024;
+	constexpr CurlLong         kLowSpeedTimeoutSeconds  = 30;
+	constexpr CurlLong         kMaxRedirects            = 5;
 
 	using howdy::native::ScopedFd;
 	using howdy::native::download_models_internal::CurlSetoptOperations;
@@ -226,10 +227,14 @@ namespace {
 	    const std::filesystem::path &destination, const std::optional<uid_t> owner_uid,
 	    const howdy::native::file_security_internal::ValidationRoot &validation_root)
 	    -> std::optional<StagedDownloadFile> {
-		const auto parent       = destination.parent_path();
-		const auto dir_security = howdy::native::CheckSecureRootOwnedDirectoryTree(
-		    parent, howdy::native::kModelsDirectoryLabel, owner_uid, validation_root);
+		// The same parent-plus-full-path check model readiness uses, so the writer never stages a
+		// path that readiness would reject.
+		const auto dir_security = howdy::native::CheckSecureRootOwnedFileParent(
+		    destination,
+		    {.directory = howdy::native::kModelsDirectoryLabel, .file = kModelFileLabel}, owner_uid,
+		    validation_root);
 		if (!dir_security.ok) {
+			std::cout << dir_security.error_message << "\n";
 			return std::nullopt;
 		}
 
@@ -385,7 +390,7 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 	for (const auto &model : dependencies.models) {
 		const auto destination = models_dir / model.filename;
 		const auto readiness   = howdy::native::CheckOpencvModelReadiness(
-		    destination, "Model file", owner_uid, dependencies.validation_root);
+		    destination, kModelFileLabel, owner_uid, dependencies.validation_root);
 		if (readiness.status == howdy::native::OpenCvModelStatus::kInsecure) {
 			std::cout << readiness.error_message << "\n";
 			return kDownloadModelsExitAbort;

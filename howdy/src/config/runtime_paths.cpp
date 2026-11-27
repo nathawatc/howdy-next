@@ -26,6 +26,9 @@ namespace howdy::native {
 
 			if (const char *value = secure_getenv(name); value != nullptr && *value != '\0') {
 				std::filesystem::path path(value);
+				// Relative overrides keep their long-standing silent fallback to the configured
+				// path. An absolute '..' override is returned unchanged so the file_security.hpp
+				// helpers reject it; normalizing it here would quietly pick another directory.
 				if (path.is_absolute()) {
 					return path;
 				}

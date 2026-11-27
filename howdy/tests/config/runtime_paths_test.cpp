@@ -96,6 +96,11 @@ auto main() -> int {
 	    "relative HOWDY_USER_MODELS_DIR is ignored and default user models directory is used");
 	ok &= Expect(howdy::native::ResolveLogPath() == default_log_path,
 	             "relative HOWDY_LOG_PATH is ignored and default log path is used");
+	// A '..' override must reach the file_security helpers unchanged so they reject it; falling
+	// back to the default here would silently swap in another directory.
+	setenv("HOWDY_MODELS_DIR", "/srv/howdy/../models", 1);
+	ok &= Expect(howdy::native::ResolveModelsDir() == std::filesystem::path("/srv/howdy/../models"),
+	             "absolute '..' HOWDY_MODELS_DIR is passed through unnormalized");
 
 	ok &= Expect(chmod(temp_root.c_str(), 0755) == 0, "pin temp root mode");
 	const auto insecure_dir    = temp_root / "insecure-config-dir";

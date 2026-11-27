@@ -664,6 +664,19 @@ namespace howdy::test::user_models {
 			             "remove does not create a missing models directory");
 		}
 		{
+			// A '..' models_dir must be refused as a policy failure with its reason, not reported
+			// as a generic create failure, and nothing may be created at its normalized path.
+			auto dotdot_config       = store_config;
+			dotdot_config.models_dir = temp_root / "dotdot-sub" / ".." / "dotdot-models";
+			const auto result =
+			    howdy::native::UserModelStore(dotdot_config).AppendEntry("alice", first_entry);
+			ok &= Expect(result.status == howdy::native::UserModelStatus::kInsecurePath &&
+			                 result.error_message.contains("must not contain '..'"),
+			             "append rejects a '..' models directory as an insecure path");
+			ok &= Expect(!fs::exists(temp_root / "dotdot-models", ec) && !ec,
+			             "rejected '..' models directory is not created");
+		}
+		{
 			// A models directory removed (and maybe recreated) after the lock no longer holds
 			// this writer's lock, so the append must not write or recreate anything.
 			const auto locked_models_dir = model_path.parent_path();

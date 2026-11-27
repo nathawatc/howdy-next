@@ -25,7 +25,9 @@ namespace howdy::native::file_security_internal {
 				}
 			}
 		}
-		auto relative = target.lexically_relative(root.path);
+		// Both are '..'-free here, so normalizing only folds '.' and repeated separators; it keeps
+		// a target and root that spell the same directory differently from looking disjoint.
+		auto relative = target.lexically_normal().lexically_relative(root.path.lexically_normal());
 		if (relative.empty()) {
 			return std::nullopt;
 		}

@@ -47,17 +47,25 @@ namespace {
 		ok &= Expect(check(nested).ok, "secure nested child is accepted");
 		ok &= Expect(check(root / "." / "child" / "nested" / "").ok,
 		             "dot and trailing separator preserve containment");
+		ok &= Expect(check(fs::path("/.") / root.relative_path() / "child").ok,
+		             "dot before the boundary is folded as tree creation folds it");
+		ok &= Expect(CheckSecureRootOwnedDirectoryTree(child, "Boundary", geteuid(),
+		                                               {outside / "." / "boundary"})
+		                 .ok,
+		             "dot inside the boundary path is folded too");
 		ok &= Expect(check(outside).error_message.contains("outside validation boundary"),
 		             "target outside boundary is rejected");
 		ok &= Expect(check(outside / "boundary-sibling")
 		                 .error_message.contains("outside validation boundary"),
 		             "same-prefix sibling is rejected");
-		ok &= Expect(check(root / ".." / "boundary-sibling")
-		                 .error_message.contains("outside validation boundary"),
+		const auto parent_escape = check(root / ".." / "boundary-sibling");
+		ok &= Expect(!parent_escape.ok && parent_escape.error_code == 0 &&
+		                 parent_escape.error_message.contains("must not contain '..'"),
 		             "parent escape is rejected");
-		ok &= Expect(
-		    check(child / ".." / "child").error_message.contains("outside validation boundary"),
-		    "parent component is rejected even when it returns inside");
+		const auto parent_inside = check(child / ".." / "child");
+		ok &= Expect(!parent_inside.ok && parent_inside.error_code == 0 &&
+		                 parent_inside.error_message.contains("must not contain '..'"),
+		             "parent component is rejected even when it returns inside");
 		ok &= Expect(!check("child").ok, "custom boundary rejects relative target");
 		ok &= Expect(!CheckSecureRootOwnedDirectoryTree(child, "Boundary", std::nullopt,
 		                                                {root / ".." / "boundary"})
@@ -81,6 +89,8 @@ namespace {
 		ok &= Expect(!check(root / "escape" / "boundary-sibling").ok, "symlink escape is rejected");
 		ok &= Expect(!check(root / "inside-link" / "nested").ok,
 		             "internal directory symlink is rejected");
+		ok &= Expect(!check(root / "inside-link" / "").ok && !check(root / "inside-link" / ".").ok,
+		             "symlink leaf is rejected with trailing separator or dot");
 		for (const auto &suffix : {fs::path{}, fs::path{"."}}) {
 			const auto link =
 			    suffix.empty() ? outside / "root-link" : outside / "root-link" / suffix;
@@ -95,6 +105,24 @@ namespace {
 		                 production.error_message == full_root.error_message,
 		             "default wrapper still walks from filesystem root and rejects external "
 		             "writable ancestor");
+		const auto relative_target = nested.lexically_relative(fs::current_path());
+		const auto prod_relative =
+		    CheckSecureRootOwnedDirectoryTree(relative_target, "Boundary", std::nullopt);
+		ok &= Expect(!prod_relative.ok && prod_relative.error_code == 0 &&
+		                 prod_relative.error_message ==
+		                     "Boundary must be absolute: " + relative_target.string(),
+		             "default root rejects relative target instead of skipping ancestors");
+		const auto prod_dotdot =
+		    CheckSecureRootOwnedDirectoryTree(nested / ".." / "nested", "Boundary", std::nullopt);
+		ok &= Expect(!prod_dotdot.ok && prod_dotdot.error_code == 0 &&
+		                 prod_dotdot.error_message.contains("must not contain '..'") &&
+		                 prod_dotdot.error_message.contains(nested.string()),
+		             "default root rejects parent component traversal");
+		const auto prod_nul = CheckSecureRootOwnedDirectoryTree(
+		    fs::path(nested.string() + std::string(1, '\0') + "/child"), "Boundary", std::nullopt);
+		ok &= Expect(!prod_nul.ok && prod_nul.error_code == 0 &&
+		                 prod_nul.error_message == "Boundary must not contain NUL",
+		             "default root rejects embedded NUL");
 		return ok;
 	}
 
@@ -136,6 +164,67 @@ namespace {
 		return howdy::native::CheckSecureRootOwnedFdWithDirectory(
 		    fd, path, {.directory = "Test parent directory", .file = "Test file"}, std::nullopt,
 		    {std::filesystem::current_path() / "howdy-file-security-test"});
+	}
+
+	// The parent directory is clean in every case here; only the full path is unsafe.
+	auto FileTargetChecks(const std::filesystem::path &safe_file) -> bool {
+		const auto nul_path =
+		    std::filesystem::path(safe_file.string() + std::string(1, '\0') + "x");
+		const auto nul_file = SecureFileWithDirectory(nul_path);
+		bool       ok       = Expect(!nul_file.ok && nul_file.error_code == 0 &&
+		                                 nul_file.error_message == "Test file must not contain NUL",
+		                             "NUL in file name is rejected although the parent is clean");
+		const howdy::test::ScopedFd fd(open(safe_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+		ok &= Expect(fd.Valid() && !SecureFdWithDirectory(fd.Get(), nul_path).ok,
+		             "descriptor path with NUL in file name is rejected");
+		const auto dotdot_file = SecureFileWithDirectory(safe_file.parent_path() / "..");
+		ok &= Expect(!dotdot_file.ok && dotdot_file.error_message.contains("must not contain '..'"),
+		             "trailing '..' file component is rejected");
+		for (const auto &suffix : {std::filesystem::path{""}, std::filesystem::path{"."}}) {
+			const auto named = SecureFileWithDirectory(safe_file / suffix);
+			ok &= Expect(!named.ok && named.error_message.contains("must name a file"),
+			             "file path ending in a separator or '.' is rejected as malformed");
+		}
+		return ok;
+	}
+
+	auto HasLeafMode(const std::filesystem::path &path) -> bool {
+		struct stat st{};
+		return stat(path.c_str(), &st) == 0 && howdy::native::MaskedBits(st.st_mode, 0777) == 0750;
+	}
+
+	// Target-shape cases for CreateSecureDirectoryTree under temp_root/create-tree.
+	auto CreateTreeTargetChecks(const std::filesystem::path &temp_root) -> bool {
+		namespace fs           = std::filesystem;
+		const auto create_root = temp_root / "create-tree";
+		const howdy::native::file_security_internal::ValidationRoot boundary{temp_root};
+		std::error_code                                             ec;
+
+		const auto dot_root_leaf = create_root / "dot-root-leaf";
+		bool       ok =
+		    Expect(CreateSecureDirectoryTree(dot_root_leaf, "Test directory", 0750, 0700, geteuid(),
+			                                 {temp_root.parent_path() / "." / temp_root.filename()})
+			           .ok,
+			       "CreateSecureDirectoryTree accepts a boundary spelled with '.'");
+		ok &= Expect(HasLeafMode(dot_root_leaf),
+		             "boundary spelled with '.' still gives the leaf its leaf mode");
+
+		const auto dotdot =
+		    CreateSecureDirectoryTree(create_root / "sub" / ".." / "dotdot-leaf", "Test directory",
+			                          0750, 0700, geteuid(), boundary);
+		ok &= Expect(!dotdot.ok && dotdot.error_code == 0 &&
+		                 dotdot.error_message.contains("must not contain '..'"),
+		             "CreateSecureDirectoryTree rejects '..' like the tree check");
+		ok &= Expect(!fs::exists(create_root / "dotdot-leaf", ec) && !ec,
+		             "rejected '..' target is not created at its normalized path");
+
+		const auto slash_leaf = create_root / "slash-leaf";
+		ok &= Expect(CreateSecureDirectoryTree(slash_leaf / "", "Test directory", 0750, 0700,
+		                                       geteuid(), boundary)
+		                 .ok,
+		             "CreateSecureDirectoryTree accepts trailing separator");
+		ok &= Expect(HasLeafMode(slash_leaf), "trailing separator leaf gets leaf mode");
+		return ok;
 	}
 
 }  // namespace
@@ -291,6 +380,7 @@ auto main() -> int {
 	fs::remove(hardlink_path, ec);
 	ec.clear();
 	ok &= Expect(SecureFile(safe_file).ok, "file is accepted after hardlink removal");
+	ok &= FileTargetChecks(safe_file);
 
 	const auto missing_file = temp_root / "missing-file";
 	ok &= Expect(!SecureFile(missing_file).ok, "missing file is rejected");
@@ -362,6 +452,8 @@ auto main() -> int {
 	    create_leaf, "Test directory", 0750, 0700, geteuid(), create_boundary);
 	ok &= Expect(recreated.ok, "CreateSecureDirectoryTree is idempotent on existing tree");
 
+	ok &= CreateTreeTargetChecks(temp_root);
+
 	const auto bad_root = temp_root / "bad-tree";
 	const auto bad_leaf = bad_root / "sub" / "leaf";
 	ok &= Expect(
@@ -389,9 +481,11 @@ auto main() -> int {
 	             "CreateSecureDirectoryTree rejects insecure existing leaf");
 	ok &= Expect(chmod(create_leaf.c_str(), 0750) == 0, "restore leaf");
 
-	ok &= Expect(!CreateSecureDirectoryTree("relative/tree", "Relative directory", 0750, 0700,
-	                                        geteuid(), create_boundary)
-	                  .ok,
+	const auto relative_create = CreateSecureDirectoryTree("relative/tree", "Relative directory",
+	                                                       0750, 0700, geteuid(), create_boundary);
+	ok &= Expect(!relative_create.ok && relative_create.error_code == 0 &&
+	                 relative_create.error_message ==
+	                     "Relative directory must be absolute: relative/tree",
 	             "CreateSecureDirectoryTree rejects relative target");
 
 	const auto outside_result = howdy::native::CreateSecureDirectoryTree(
