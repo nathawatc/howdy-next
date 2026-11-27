@@ -51,12 +51,15 @@ namespace howdy::native::config_internal {
 
 		auto ExecEditorThroughPath(const std::string           &editor,
 		                           const std::filesystem::path &temp_path) -> int {
+			if (!IsSupportedEditorPreference(editor)) {
+				return ENOENT;
+			}
 			std::string           editor_arg = editor;
 			std::string           path_arg   = temp_path.string();
 			std::array<char *, 3> exec_argv  = {editor_arg.data(), path_arg.data(), nullptr};
 
 			// execvp may invoke /bin/sh for ENOEXEC. Search with execv so editor execution stays
-			// direct.
+			// direct. IsSupportedEditorPreference guarantees any path with '/' is absolute.
 			if (editor.contains('/')) {
 				execv(editor.c_str(), exec_argv.data());
 				return errno;
@@ -86,23 +89,23 @@ namespace howdy::native::config_internal {
 				const auto directory = search_path.substr(
 				    start, end == std::string_view::npos ? std::string_view::npos : end - start);
 
-				std::string candidate;
-				if (directory.empty()) {
-					candidate = editor;
-				} else {
+				// Ignore empty and relative PATH segments so an editor is never executed from the
+				// current working directory (e.g. PATH="" or leading/trailing ':').
+				if (!directory.empty() && directory.starts_with('/')) {
+					std::string candidate;
 					candidate.reserve(directory.size() + 1 + editor.size());
 					candidate.append(directory);
 					candidate.push_back('/');
 					candidate.append(editor);
-				}
 
-				execv(candidate.c_str(), exec_argv.data());
-				const int error = errno;
-				if (!IsEditorUnavailableError(error)) {
-					return error;
-				}
-				if (error == EACCES) {
-					last_error = EACCES;
+					execv(candidate.c_str(), exec_argv.data());
+					const int error = errno;
+					if (!IsEditorUnavailableError(error)) {
+						return error;
+					}
+					if (error == EACCES) {
+						last_error = EACCES;
+					}
 				}
 
 				if (end == std::string_view::npos) {
