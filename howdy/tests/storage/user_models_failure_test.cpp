@@ -778,44 +778,82 @@ namespace howdy::test::user_models {
 			             "restore model after post-check write swap test");
 		}
 		{
-			const auto original_content  = ReadFile(model_path);
-			const auto replacement_model = std::string(
-			    R"([{"id":0,"time":1,"label":"rollback-failure-replacement","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.8,0.9]]}])");
-			PreservingRegularFileSwap hook{
-			    .replacement_path = temp_root / "rollback-failure-replacement.dat",
-			    .displaced_path   = temp_root / "rollback-failure-original.dat",
+			struct RollbackFailureCase {
+				const char        *slug;
+				const char        *label;
+				std::optional<int> rollback_exchange_errno;
+				bool               fail_parent_sync;
+				bool               expect_replacement_at_canonical;
 			};
-			ok &= Expect(WriteFile(hook.replacement_path, replacement_model),
-			             "write replacement before rollback-failure test");
-			const auto hooked_store = WithTestHooks(
-			    store_config, {
-			                      .after_write_identity_check =
-			                          [&hook](const std::filesystem::path &path) -> void {
-				                      ReplacePathPreservingOriginal(&hook, path);
-			                      },
-			                      .rollback_exchange_errno = EINVAL,
-			                  });
-			const auto result = hooked_store.AppendEntry("alice", second_entry);
-			ok &= Expect(hook.calls == 1 && hook.swapped && !hook.rollback_failed,
-			             "rollback-failure hook replaces model after final identity check");
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kCommitStateUncertain,
-			             "append distinguishes failed post-commit recovery");
-			ok &= Expect(result.error_message.contains("inspect state before retrying"),
-			             "failed post-commit recovery requires state inspection");
-			ok &= Expect(result.entry.id == -1 && !result.removed_last,
-			             "uncertain commit result makes no mutation-state claim");
-			ok &= Expect((CountFilesWithPrefix(models_dir, ".howdy-user-model-") != 0),
-			             "failed rollback retains staged file for uncertain state");
-			ok &= Expect(CanonicalShowsChangedEntry(model_path, replacement_model),
-			             "failed rollback leaves changed canonical namespace visible");
 
-			RemoveStagedModelFiles(models_dir, &ec);
-			fs::remove(model_path, ec);
-			ec.clear();
-			fs::remove(hook.displaced_path, ec);
-			ec.clear();
-			ok &= Expect(WriteFile(model_path, original_content),
-			             "restore model after rollback-failure test");
+			const auto rollback_cases = std::to_array<RollbackFailureCase>({
+			    {
+			        .slug                            = "rollback-failure",
+			        .label                           = "failed rollback exchange",
+			        .rollback_exchange_errno         = EINVAL,
+			        .fail_parent_sync                = false,
+			        .expect_replacement_at_canonical = false,
+			    },
+			    {
+			        .slug                            = "rollback-sync-failure",
+			        .label                           = "failed rollback directory sync",
+			        .rollback_exchange_errno         = std::nullopt,
+			        .fail_parent_sync                = true,
+			        .expect_replacement_at_canonical = true,
+			    },
+			});
+
+			for (const auto &test_case : rollback_cases) {
+				const auto original_content = ReadFile(model_path);
+				const auto replacement_model =
+				    std::string(R"([{"id":0,"time":1,"label":")") + test_case.slug +
+				    R"(","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.8,0.9]]}])";
+				PreservingRegularFileSwap hook{
+				    .replacement_path = temp_root / (std::string(test_case.slug) + "-rep.dat"),
+				    .displaced_path   = temp_root / (std::string(test_case.slug) + "-orig.dat"),
+				};
+				ok &= Expect(WriteFile(hook.replacement_path, replacement_model),
+				             std::string("write replacement before ") + test_case.label);
+				const auto hooked_store = WithTestHooks(
+				    store_config, {
+				                      .after_write_identity_check =
+				                          [&hook](const std::filesystem::path &path) -> void {
+					                      ReplacePathPreservingOriginal(&hook, path);
+				                      },
+				                      .fail_parent_sync        = test_case.fail_parent_sync,
+				                      .rollback_exchange_errno = test_case.rollback_exchange_errno,
+				                  });
+				const auto result = hooked_store.AppendEntry("alice", second_entry);
+				ok &= Expect(hook.calls == 1 && hook.swapped && !hook.rollback_failed,
+				             std::string(test_case.label) +
+				                 ": hook replaces model after final identity check");
+				ok &= Expect(result.status == howdy::native::UserModelStatus::kCommitStateUncertain,
+				             std::string(test_case.label) + ": reports kCommitStateUncertain");
+				ok &= Expect(result.error_message.contains("inspect state before retrying"),
+				             std::string(test_case.label) + ": requires state inspection");
+				ok &= Expect(result.entry.id == -1 && !result.removed_last,
+				             std::string(test_case.label) + ": makes no mutation-state claim");
+				ok &= Expect((CountFilesWithPrefix(models_dir, ".howdy-user-model-") != 0),
+				             std::string(test_case.label) +
+				                 ": retains staged file for uncertain state");
+				if (test_case.expect_replacement_at_canonical) {
+					ok &= Expect(ReadFile(model_path) == replacement_model,
+					             std::string(test_case.label) +
+					                 ": rollback exchange restored replacement at canonical path");
+				} else {
+					ok &= Expect(CanonicalShowsChangedEntry(model_path, replacement_model),
+					             std::string(test_case.label) +
+					                 ": leaves changed canonical namespace visible");
+				}
+
+				RemoveStagedModelFiles(models_dir, &ec);
+				fs::remove(model_path, ec);
+				ec.clear();
+				fs::remove(hook.displaced_path, ec);
+				ec.clear();
+				ok &= Expect(WriteFile(model_path, original_content),
+				             std::string("restore model after ") + test_case.label);
+			}
 		}
 		ok &= ExpectModelRemovedDuringCommit(store_config, model_path, second_entry);
 		ok &= ExpectClearMutationFailures(store_config, model_path, backend);

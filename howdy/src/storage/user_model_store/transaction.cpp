@@ -174,12 +174,14 @@ namespace howdy::native::user_model_store_internal {
 				return FailedAtomicRenameCommitResult(exchange_result);
 			}
 			// The exchange must have swapped out the opened model. If another actor replaced it
-			// after the identity check, exchange back and report the model changed.
+			// after the identity check, exchange back and sync the directory before unlinking the
+			// staged file so a crash cannot leave the replacement under the staged name.
 			if (const auto failure = IdentityFailure(staged.Path(), opened_fd);
 			    failure.has_value()) {
 				if (RenameUnlessInjected(staged.Path(), path, AtomicRenameMode::kExchange,
 				                         hooks.rollback_exchange_errno) ==
-				    AtomicRenameResult::kSuccess) {
+				        AtomicRenameResult::kSuccess &&
+				    SyncModelsDirectory(path, hooks)) {
 					return *failure;
 				}
 				staged.Disarm();
