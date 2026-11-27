@@ -34,6 +34,58 @@ namespace {
 		}
 	}
 
+	auto ExpectNonEnoentLstatFailsClosed(const std::filesystem::path &temp_root) -> bool {
+		namespace fs = std::filesystem;
+		using howdy::native::StagedFileMetadataPolicy;
+		using howdy::native::StagedFileParentPolicy;
+		bool ok = true;
+
+		// A leaf exceeding NAME_MAX fails lstat with ENAMETOOLONG while its parent exists and is
+		// writable; PrepareStagedFile must fail closed without creating any staged temp file.
+		const auto overlong_destination = temp_root / std::string(300U, 'a');
+		for (const auto metadata_policy : {
+		         StagedFileMetadataPolicy::kPreserveExisting,
+		         StagedFileMetadataPolicy::kUseDefaultMode,
+		     }) {
+			for (const auto parent_policy :
+			     {StagedFileParentPolicy::kCreate, StagedFileParentPolicy::kRequireExisting}) {
+				const auto staged = howdy::native::PrepareStagedFile(
+				    overlong_destination, ".howdy-lstat-fail-",
+				    howdy::native::kDefaultAtomicFileMode, metadata_policy, parent_policy);
+				ok &= Expect(!staged.has_value(),
+				             "PrepareStagedFile rejects non-ENOENT lstat failure (ENAMETOOLONG)");
+				ok &= Expect(CountFilesWithPrefix(temp_root, ".howdy-lstat-fail-") == 0,
+				             "non-ENOENT lstat failure creates no staged file");
+			}
+		}
+		ok &= Expect(howdy::native::WriteAtomicFile(overlong_destination, "content") ==
+		                 howdy::native::AtomicFileCommitResult::kNotCommitted,
+		             "WriteAtomicFile fails closed on non-ENOENT lstat failure");
+		ok &= Expect(CountFilesWithPrefix(temp_root, ".howdy-atomic-") == 0,
+		             "WriteAtomicFile creates no staged file on non-ENOENT lstat failure");
+
+		// An unsearchable (0400) parent allows open(O_DIRECTORY) under kRequireExisting while
+		// lstat(parent/leaf) fails with EACCES for non-root callers.
+		if (geteuid() != 0) {
+			const auto      unsearchable_parent = temp_root / "unsearchable-parent";
+			std::error_code ec;
+			fs::create_directory(unsearchable_parent, ec);
+			ok &= Expect(!ec && chmod(unsearchable_parent.c_str(), 0400) == 0,
+			             "prepare unsearchable parent directory");
+			const auto staged = howdy::native::PrepareStagedFile(
+			    unsearchable_parent / "target", ".howdy-eacces-",
+			    howdy::native::kDefaultAtomicFileMode, StagedFileMetadataPolicy::kPreserveExisting,
+			    StagedFileParentPolicy::kRequireExisting);
+			ok &= Expect(!staged.has_value(),
+			             "PrepareStagedFile rejects EACCES lstat failure under unsearchable dir");
+			(void)chmod(unsearchable_parent.c_str(), 0700);
+			ok &= Expect(CountFilesWithPrefix(unsearchable_parent, ".howdy-eacces-") == 0,
+			             "EACCES lstat failure creates no staged file");
+			fs::remove_all(unsearchable_parent, ec);
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -339,5 +391,6 @@ auto main() -> int {
 	ok &=
 	    Expect(CountFilesWithPrefix(atomic_write_failure_path.parent_path(), ".howdy-atomic-") == 0,
 		       "failed atomic write removes staged file");
+	ok &= ExpectNonEnoentLstatFailsClosed(temp_root);
 	return ok ? 0 : 1;
 }

@@ -238,6 +238,9 @@ namespace howdy::native {
 
 		struct stat current_stat{};
 		const bool  have_current_stat = lstat(destination.c_str(), &current_stat) == 0;
+		if (!have_current_stat && errno != ENOENT) {
+			return std::nullopt;
+		}
 		if (have_current_stat && !S_ISREG(current_stat.st_mode)) {
 			return std::nullopt;
 		}
