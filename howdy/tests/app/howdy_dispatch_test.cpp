@@ -213,6 +213,55 @@ namespace {
 		return ok;
 	}
 
+	auto TestCommandOptionValueBoundary() -> bool {
+		bool ok = true;
+		for (const auto &arguments : std::vector<std::vector<std::string>>{
+		         {"howdy", "test", "--device", "--plain"},
+		         {"howdy", "test", "--device", "--plain", "/dev/video0"},
+		         {"howdy", "test", "--device", "-y", "/dev/video0"},
+		         {"howdy", "test", "--device", "-U", "alice", "/dev/video0"},
+		         {"howdy", "test", "--device", "--user", "alice", "/dev/video0"},
+		         {"howdy", "test", "--device", "--help"},
+		         {"howdy", "test", "--device", "-h"},
+		         {"howdy", "test", "--device", "--", "--help"},
+		         {"howdy", "test", "--device", "--", "/dev/video0"},
+		         {"howdy", "test", "--device", "--device", "/dev/video0"},
+		         {"howdy", "test", "--device", "-"},
+		     }) {
+			Context    context;
+			const auto result = Run(context, arguments);
+			ok &= Expect(result.status == 2 && result.output.empty() &&
+			                 result.error.contains("error: a value is required for '--device "
+			                                       "<DEVICE>' but none was supplied\n") &&
+			                 !context.command_id.has_value(),
+			             "global option or terminator after --device reports missing option value");
+			ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+			             "missing --device value skips user and privilege work");
+		}
+		{
+			Context    context;
+			const auto result =
+			    Run(context, {"howdy", "test", "--device", "/dev/video9", "-U", "bob"});
+			ok &= Expect(result.status == 0 && context.command_id == CommandId::kTest &&
+			                 context.command_invocation.has_value() &&
+			                 context.command_invocation->device ==
+			                     std::optional<std::string>{"/dev/video9"} &&
+			                 context.command_invocation->resolved_user ==
+			                     std::optional<std::string>{"bob"},
+			             "global option after consumed --device value still parses");
+		}
+		{
+			Context    context;
+			const auto result =
+			    Run(context, {"howdy", "test", "--device", "/dev/video9", "--help"});
+			ok &= Expect(result.status == 0 &&
+			                 result.output.contains("Usage: howdy test [OPTIONS]\n") &&
+			                 !context.command_id.has_value(),
+			             "help option after consumed --device value still prints command help");
+		}
+		return ok;
+	}
+
 	auto TestUnknownCommandPrecedence() -> bool {
 		bool ok = true;
 		for (const uid_t effective_uid : {static_cast<uid_t>(1000), static_cast<uid_t>(0)}) {
@@ -622,6 +671,7 @@ namespace {
 		bool ok = true;
 		ok &= TestClapStyleUsageErrors();
 		ok &= TestStrictSyntaxCases();
+		ok &= TestCommandOptionValueBoundary();
 		ok &= TestCatalogDispatch();
 		return ok;
 	}
