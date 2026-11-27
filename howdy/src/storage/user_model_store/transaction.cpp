@@ -2,7 +2,6 @@
 #include "internal.hpp"
 #include "readiness/internal.hpp"
 #include "storage/user_model_limits.hpp"
-#include "storage/user_model_path.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_store.hpp"
 #include "storage/user_model_store/test_hooks.hpp"
@@ -14,7 +13,6 @@
 #include "support/file_lock.hpp"
 #include "support/file_security.hpp"
 #include "support/scoped_fd.hpp"
-#include "support/user_names.hpp"
 
 #include <cerrno>
 #include <expected>
@@ -598,47 +596,39 @@ namespace howdy::native::user_model_store_internal {
 		// other step uses the read-only ResolvePath.
 		auto ResolveWritablePath(const UserModelStoreConfig &config, const std::string &user,
 		                         bool create_directory) -> UserModelPathResult {
+			auto resolved = ResolvePath(config, user);
 			if (!create_directory) {
-				return ResolvePath(config, user);
+				return resolved;
+			}
+			if (resolved.status == UserModelStatus::kNoModel) {
+				return UserModelPathResult{
+				    .status = UserModelStatus::kOk,
+				    .path   = std::move(resolved.path),
+				};
+			}
+			if (resolved.status != UserModelStatus::kNoModelDirectory) {
+				return resolved;
 			}
 
-			const auto model_path = ResolveUserModelPath(config.models_dir, user);
-			if (!model_path) {
+			const auto create_result = CreateSecureDirectoryTree(
+			    config.models_dir, kUserModelsDirectoryLabel, kUserModelsDirMode, 0700,
+			    config.owner_uid, config.validation_root);
+			if (!create_result.ok) {
 				return UserModelPathResult{
-				    .status        = UserModelStatus::kInvalidUser,
-				    .error_message = kInvalidUserNameMessage,
+				    .status        = create_result.error_code == 0
+					                     ? UserModelStatus::kInsecurePath
+					                     : UserModelStatus::kDirectoryCreateFailed,
+				    .error_message = create_result.error_code == 0
+					                     ? create_result.error_message
+					                     : "Failed to create secure user models directory: " +
+					                           config.models_dir.string(),
 				};
 			}
 
-			std::error_code ec;
-			if (!std::filesystem::exists(config.models_dir, ec)) {
-				if (ec) {
-					return UserModelPathResult{
-					    .status        = UserModelStatus::kParseError,
-					    .error_message = WithErrno("Failed to inspect user models directory: " +
-						                               config.models_dir.string(),
-						                           ec.value()),
-					};
-				}
-				const auto create_result = CreateSecureDirectoryTree(
-				    config.models_dir, kUserModelsDirectoryLabel, kUserModelsDirMode, 0700,
-				    config.owner_uid, config.validation_root);
-				if (!create_result.ok) {
-					return UserModelPathResult{
-					    .status        = create_result.error_code == 0
-						                     ? UserModelStatus::kInsecurePath
-						                     : UserModelStatus::kDirectoryCreateFailed,
-					    .error_message = create_result.error_code == 0
-						                     ? create_result.error_message
-						                     : "Failed to create secure user models directory: " +
-						                           config.models_dir.string(),
-					};
-				}
-			}
-
-			// Then the same walk and classification readers use. A free model path is no failure
-			// here; a models directory gone since the check above was removed under this writer.
-			auto resolved = ResolvePath(config, user);
+			// Re-run the same lstat-based walk readers use. A free model path is no failure here;
+			// a models directory gone since CreateSecureDirectoryTree was removed under this
+			// writer.
+			resolved = ResolvePath(config, user);
 			if (resolved.status == UserModelStatus::kNoModel) {
 				return UserModelPathResult{
 				    .status = UserModelStatus::kOk,

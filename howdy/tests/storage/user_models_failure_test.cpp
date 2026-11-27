@@ -52,6 +52,89 @@ namespace howdy::test::user_models {
 			}
 		}
 
+		auto ExpectWritablePathSecurityFailures(const std::filesystem::path            &temp_root,
+		                                        const howdy::native::NewUserModelEntry &first_entry)
+		    -> bool {
+			namespace fs = std::filesystem;
+			using howdy::native::UserModelStatus;
+			using howdy::native::UserModelStore;
+
+			bool            ok = true;
+			std::error_code ec;
+			const auto      base = temp_root / "writable-path-security";
+			fs::remove_all(base, ec);
+			ec.clear();
+			fs::create_directories(base, ec);
+			ok &= Expect(!ec, "create writable-path security base directory");
+
+			const auto self_loop = base / "self-loop";
+			fs::create_symlink(self_loop, self_loop, ec);
+			ok &= Expect(!ec, "create self-referential symlink loop");
+
+			const auto mutual_a = base / "mutual-a";
+			const auto mutual_b = base / "mutual-b";
+			fs::create_symlink(mutual_b, mutual_a, ec);
+			ok &= Expect(!ec, "create mutual symlink A");
+			fs::create_symlink(mutual_a, mutual_b, ec);
+			ok &= Expect(!ec, "create mutual symlink B");
+
+			const auto dangling_target = base / "dangling-target";
+			const auto dangling_link   = base / "dangling-link";
+			fs::create_symlink(dangling_target, dangling_link, ec);
+			ok &= Expect(!ec, "create dangling models symlink");
+
+			const auto real_dir = base / "real-dir";
+			fs::create_directory(real_dir, ec);
+			ok &= Expect(!ec, "create real directory for symlink target");
+			const auto dir_symlink = base / "dir-symlink";
+			fs::create_symlink(real_dir, dir_symlink, ec);
+			ok &= Expect(!ec, "create symlink to real directory");
+
+			const auto regular_file = base / "regular-file";
+			ok &= Expect(WriteFile(regular_file, "not a dir"), "create regular file models path");
+
+			const auto nested_under_symlink = dir_symlink / "models";
+
+			struct InsecureDirCase {
+				const char *label;
+				fs::path    models_dir;
+			};
+
+			const auto cases = std::to_array<InsecureDirCase>({
+			    {.label = "self symlink loop", .models_dir = self_loop},
+			    {.label = "mutual symlink loop", .models_dir = mutual_a},
+			    {.label = "dangling symlink", .models_dir = dangling_link},
+			    {.label = "symlink to directory", .models_dir = dir_symlink},
+			    {.label = "regular file models path", .models_dir = regular_file},
+			    {.label = "missing leaf under symlink parent", .models_dir = nested_under_symlink},
+			});
+
+			for (const auto &test_case : cases) {
+				const UserModelStore store(MakeTestStoreConfig(test_case.models_dir, temp_root));
+				const auto           append = store.AppendEntry("alice", first_entry);
+				ok &= Expect(append.status == UserModelStatus::kInsecurePath,
+				             std::string("AppendEntry classifies ") + test_case.label +
+				                 " as kInsecurePath");
+				const auto listed =
+				    store.ListEntries("alice", first_entry.backend, first_entry.model);
+				ok &= Expect(listed.status == UserModelStatus::kInsecurePath,
+				             std::string("ListEntries classifies ") + test_case.label +
+				                 " as kInsecurePath");
+			}
+			ok &= Expect(!fs::exists(dangling_target, ec) && !ec,
+			             "dangling symlink append does not create symlink target");
+
+			const auto           missing_models_dir = base / "fresh-parent" / "models";
+			const UserModelStore fresh_store(MakeTestStoreConfig(missing_models_dir, temp_root));
+			const auto           created_append = fresh_store.AppendEntry("alice", first_entry);
+			ok &= Expect(created_append.status == UserModelStatus::kOk &&
+			                 fs::is_directory(missing_models_dir, ec) && !ec,
+			             "AppendEntry still creates missing secure models directory tree");
+
+			fs::remove_all(base, ec);
+			return ok;
+		}
+
 		auto ExpectChangedSnapshotComponents(const howdy::native::UserModelStore &store,
 		                                     const std::filesystem::path &model_path) -> bool {
 			const auto snapshot = RequireSnapshot(store, "alice");
@@ -871,6 +954,7 @@ namespace howdy::test::user_models {
 		ec.clear();
 
 		ok &= ExpectChangedSnapshotComponents(store, model_path);
+		ok &= ExpectWritablePathSecurityFailures(temp_root, first_entry);
 
 		fs::remove_all(temp_root, ec);
 		return ok;
