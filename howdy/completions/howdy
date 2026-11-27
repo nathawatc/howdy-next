@@ -4,10 +4,6 @@ _howdy() {
 	COMPREPLY=()
 
 	local current_word="${COMP_WORDS[COMP_CWORD]-}"
-	local previous_word=""
-	if ((COMP_CWORD > 0)); then
-		previous_word="${COMP_WORDS[COMP_CWORD - 1]}"
-	fi
 
 	local -a global_option_spellings=()
 	local -A global_option_takes_argument=()
@@ -28,6 +24,7 @@ _howdy() {
 	local -a pre_command_global_options=()
 	local completion_disabled=0
 	local options_ended=0
+	local pending_option=""
 	local index=1
 	while ((index < COMP_CWORD && command_index < 0)); do
 		local word="${COMP_WORDS[index]}"
@@ -47,7 +44,11 @@ _howdy() {
 				completion_disabled=1
 			fi
 			if [[ ${global_option_takes_argument[$word]} == "1" ]]; then
-				if ((index + 1 < COMP_CWORD)) && [[ -z ${COMP_WORDS[index + 1]} ]]; then
+				if ((index + 1 == COMP_CWORD)); then
+					pending_option="$word"
+					break
+				fi
+				if [[ -z ${COMP_WORDS[index + 1]} ]]; then
 					completion_disabled=1
 					break
 				fi
@@ -115,7 +116,8 @@ _howdy() {
 				fi
 
 				if [[ ${command_option_takes_argument[$word]} == "1" ]]; then
-					if ((index + 1 >= COMP_CWORD)); then
+					if ((index + 1 == COMP_CWORD)); then
+						pending_option="$word"
 						break
 					fi
 					local option_value="${COMP_WORDS[index + 1]}"
@@ -147,21 +149,10 @@ _howdy() {
 		return 0
 	fi
 
-	if ((! options_ended)) && [[ $previous_word == -* ]] \
-		&& [[ -n ${global_option_takes_argument[$previous_word]+set} ]] \
-		&& [[ ${global_option_takes_argument[$previous_word]} == "1" ]]; then
-		if ((command_index >= 0)) \
-			&& [[ -z ${command_option_takes_argument[$previous_word]+set} ]]; then
-			return 0
-		fi
-		if [[ ${global_option_completion[$previous_word]} == user ]]; then
+	if [[ -n $pending_option ]]; then
+		if [[ ${global_option_completion[$pending_option]-} == user ]]; then
 			mapfile -t COMPREPLY < <(compgen -u -- "$current_word")
 		fi
-		return 0
-	fi
-	if [[ $previous_word == -* ]] \
-		&& [[ -n ${command_option_takes_argument[$previous_word]+set} ]] \
-		&& [[ ${command_option_takes_argument[$previous_word]} == "1" ]]; then
 		return 0
 	fi
 
