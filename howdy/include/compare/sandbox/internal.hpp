@@ -3,9 +3,11 @@
 #include "compare/sandbox.hpp"
 #include "support/prctl_types.hpp"
 
+#include <string_view>
 #include <vector>
 
 #include <sys/resource.h>
+#include <sys/types.h>
 
 #include <linux/filter.h>
 #include <linux/seccomp.h>
@@ -45,6 +47,9 @@ namespace howdy::native::compare_sandbox_internal {
 	using PrctlFn        = howdy::native::PrctlFn;
 	using SeccompFn      = int (*)(void *context, unsigned int operation, unsigned int flags,
 	                               void *args);
+	// Stores the first nonzero TracerPid across /proc/self/task/*/status, or 0 when no thread is
+	// traced; returns -1 with errno set on failure.
+	using FindTracerPidFn = int (*)(void *context, pid_t *tracer_pid);
 
 	struct CompareSandboxDependencies {
 		void       *context   = nullptr;
@@ -53,12 +58,23 @@ namespace howdy::native::compare_sandbox_internal {
 		PrctlFn     prctl     = nullptr;
 	};
 
+	struct CompareTracingDependencies {
+		void           *context         = nullptr;
+		PrctlFn         prctl           = nullptr;
+		FindTracerPidFn find_tracer_pid = nullptr;
+	};
+
 	struct CompareSeccompDependencies {
 		void     *context = nullptr;
 		SeccompFn seccomp = nullptr;
 	};
 
 	[[nodiscard]] auto BuildCompareSeccompFilter() -> std::vector<struct sock_filter>;
+
+	[[nodiscard]] auto DisableCompareTracing(const CompareTracingDependencies &dependencies)
+	    -> CompareSandboxResult;
+
+	[[nodiscard]] auto ParseTracerPid(std::string_view status, pid_t *tracer_pid) -> bool;
 
 	[[nodiscard]] auto ApplyCompareSandbox(int                               timeout_seconds,
 	                                       const CompareSandboxDependencies &dependencies)

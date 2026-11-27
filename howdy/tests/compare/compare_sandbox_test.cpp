@@ -14,6 +14,7 @@ auto main(int argc, char **argv) -> int {
 
 	bool ok = true;
 	ok &= RunCompareSandboxLimitTests();
+	ok &= RunCompareSandboxTracingTests();
 	ok &= RunCompareSandboxSeccompTests();
 	return ok ? 0 : 1;
 }

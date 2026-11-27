@@ -23,7 +23,14 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related:
 - Delegate fd type, owner, mode, and link checks to `LoadRuntimeConfigFromFd` and
   `LoadUserModelsFromFd` rather than duplicating them here.
 - Preserve privilege-transition ordering, capability clearing, UID/GID/fs-ID checks, root-regain
-  verification, rlimit/`PR_SET_NO_NEW_PRIVS`/seccomp-BPF ordering, and fatal fail-closed exits.
+  verification, and fatal fail-closed exits. Keep the hardening order: `DisableCompareTracing`
+  (clear `PR_SET_DUMPABLE`, then reject a tracer on any thread) before argument parsing or config
+  loading; `ApplyCompareSandbox` (`PR_SET_NO_NEW_PRIVS`, then rlimits) before model loading;
+  `DropComparePrivileges`, which clears dumpable again after any credential change; then
+  seccomp-BPF.
+- `DisableCompareTracing` needs a readable `/proc/self/task` and fails closed without it. Its
+  check is best effort; see the known limitations next to the code. The entrypoint runs it again
+  after `DropComparePrivileges`, before seccomp.
 - Install seccomp right after the privilege drop and before engine construction, warm-up, or any
   extra thread, so `WarmUpRecognizer` runs inside the filter.
 - Seccomp is best-effort only for `CompareSeccompStatus::kUnsupported` (kernel without seccomp

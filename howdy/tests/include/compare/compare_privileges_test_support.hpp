@@ -60,6 +60,8 @@ namespace howdy::test::compare_privileges {
 		kGetresgid,
 		kGetresuid,
 		kRegainSucceeds,
+		kClearDumpable,
+		kDumpableStillSet,
 	};
 
 	enum class NonzeroCapability : std::uint8_t {
@@ -94,6 +96,7 @@ namespace howdy::test::compare_privileges {
 		FailureOperation failure     = FailureOperation::kNone;
 
 		int                securebits                                  = 0;
+		int                dumpable                                    = 1;
 		bool               gid_mismatch                                = false;
 		bool               uid_mismatch                                = false;
 		bool               fsuid_mismatch                              = false;
@@ -169,6 +172,23 @@ namespace howdy::test::compare_privileges {
 	                      howdy::native::PrctlArgument argument4,
 	                      howdy::native::PrctlArgument argument5) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
+		if (operation == PR_SET_DUMPABLE) {
+			context.events.emplace_back("clear dumpable");
+			if (argument2 != 0 || argument3 != 0 || argument4 != 0 || argument5 != 0 ||
+			    context.failure == FailureOperation::kClearDumpable) {
+				errno = EPERM;
+				return -1;
+			}
+			// Models a kernel where the prctl reports success but dumpable stays set.
+			if (context.failure != FailureOperation::kDumpableStillSet) {
+				context.dumpable = 0;
+			}
+			return 0;
+		}
+		if (operation == PR_GET_DUMPABLE) {
+			context.events.emplace_back("query dumpable");
+			return context.dumpable;
+		}
 		if (operation == PR_GET_SECUREBITS) {
 			context.events.emplace_back("query securebits");
 			if (argument2 != 0 || argument3 != 0 || argument4 != 0 || argument5 != 0) {
@@ -377,6 +397,8 @@ namespace howdy::test::compare_privileges {
 		    "query fsgid",
 		    "query supplementary groups",
 		    "root-regain probe",
+		    "clear dumpable",
+		    "query dumpable",
 		};
 	}
 
@@ -421,6 +443,8 @@ namespace howdy::test::compare_privileges {
 		    "clear capability sets",
 		    "read capability sets",
 		    "root-regain probe",
+		    "clear dumpable",
+		    "query dumpable",
 		};
 	}
 

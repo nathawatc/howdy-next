@@ -7,7 +7,7 @@
 
 namespace howdy::native {
 
-	// Test seam for capture, inference, and the privilege transition.
+	// Test seam for capture, inference, tracing hardening, and the privilege transition.
 	struct CompareEntrypointDependencies {
 		CompareCaptureDependencies capture;
 		FaceInferenceOperations    inference;
@@ -15,6 +15,7 @@ namespace howdy::native {
 		ComparePrivilegeResult (*drop_privileges)(void *) = nullptr;
 		bool (*warm_model)(void *)                        = nullptr;
 		CompareSeccompResult (*apply_seccomp)(void *)     = nullptr;
+		CompareSandboxResult (*disable_tracing)(void *)   = nullptr;
 	};
 
 }  // namespace howdy::native

@@ -54,6 +54,8 @@ namespace {
 		int              encode_calls  = 0;
 		int              drop_calls    = 0;
 		int              seccomp_calls = 0;
+		int              tracing_calls = 0;
+		int              traced_call   = 0;
 		std::atomic<int> warm_calls{0};
 		bool             encoded_after_warm = false;
 		float            probe_value        = 1.0F;
@@ -137,6 +139,14 @@ namespace {
 		return true;
 	}
 
+	auto DisableTracing(void *raw_context) -> howdy::native::CompareSandboxResult {
+		auto &context = *static_cast<FixtureContext *>(raw_context);
+		if (++context.tracing_calls == context.traced_call) {
+			return {.status = howdy::native::CompareSandboxStatus::kTracerAttached};
+		}
+		return {};
+	}
+
 	auto ApplySeccomp(void *raw_context) -> howdy::native::CompareSeccompResult {
 		++static_cast<FixtureContext *>(raw_context)->seccomp_calls;
 		return {};
@@ -198,6 +208,7 @@ namespace {
 		    .drop_privileges = DropPrivileges,
 		    .warm_model      = WarmModel,
 		    .apply_seccomp   = ApplySeccomp,
+		    .disable_tracing = DisableTracing,
 		};
 	}
 
@@ -295,12 +306,12 @@ auto main() -> int {
 	}
 	ok &= Expect(result == static_cast<int>(howdy::native::CompareExit::kSuccess),
 	             "production compare entrypoint returns kSuccess after matching fixture face");
-	ok &=
-	    Expect(success.open_calls == 1 && success.read_calls == 1 && success.prepare_calls == 1 &&
-		           success.detect_calls == 1 && success.encode_calls == 1 &&
-		           success.drop_calls == 1 && success.seccomp_calls == 1 &&
-		           success.warm_calls.load() == 1 && success.encoded_after_warm,
-		       "entrypoint runs capture, preprocessing, inference, sandbox, and privilege stages");
+	ok &= Expect(
+	    success.open_calls == 1 && success.read_calls == 1 && success.prepare_calls == 1 &&
+	        success.detect_calls == 1 && success.encode_calls == 1 && success.drop_calls == 1 &&
+	        success.seccomp_calls == 1 && success.tracing_calls == 2 &&
+	        success.warm_calls.load() == 1 && success.encoded_after_warm,
+	    "entrypoint runs capture, preprocessing, inference, sandbox, and privilege stages");
 	ok &= Expect(report.str().contains("Winning model: 7 (\"fixture\")"),
 	             "success report identifies the model read from its descriptor");
 
@@ -316,6 +327,22 @@ auto main() -> int {
 	                 rejection.seccomp_calls == 1 &&
 	                 rejection_error.str().contains("Unexpected second capture read"),
 	             "nonmatching embedding continues capture and does not authenticate");
+
+	FixtureContext traced_after_drop;
+	traced_after_drop.traced_call = 2;
+	const std::ostringstream traced_after_drop_error;
+	{
+		const howdy::test::StreamRedirect redirect(std::cerr, traced_after_drop_error.rdbuf());
+		result = run(geteuid(), DependenciesFor(traced_after_drop));
+	}
+	ok &= Expect(
+	    result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
+	        traced_after_drop.drop_calls == 1 && traced_after_drop.seccomp_calls == 0 &&
+	        traced_after_drop.read_calls == 0 &&
+	        traced_after_drop_error.str().contains(
+	            "Compare is being traced; refusing to authenticate") &&
+	        traced_after_drop_error.str().contains("tracer check after credential change failed"),
+	    "tracer attached during the privilege drop aborts before seccomp or any frame");
 
 	FixtureContext unsupported;
 	auto           unsupported_dependencies = DependenciesFor(unsupported);
@@ -407,6 +434,16 @@ auto main() -> int {
 	    [](howdy::native::CompareEntrypointDependencies &case_dependencies) -> void {
 		case_dependencies.apply_seccomp = nullptr;
 	};
+	const auto traced =
+	    [](howdy::native::CompareEntrypointDependencies &case_dependencies) -> void {
+		case_dependencies.disable_tracing = [](void *) -> howdy::native::CompareSandboxResult {
+			return {.status = howdy::native::CompareSandboxStatus::kTracerAttached};
+		};
+	};
+	const auto missing_tracing =
+	    [](howdy::native::CompareEntrypointDependencies &case_dependencies) -> void {
+		case_dependencies.disable_tracing = nullptr;
+	};
 	const auto config_file = root / "config.ini";
 	const auto model_file  = root / "models" / "fixture-user.dat";
 
@@ -414,6 +451,10 @@ auto main() -> int {
 	                   fail_drop, "Failed to drop compare privileges: injected");
 	ok &= expect_abort("missing injected seccomp hook aborts instead of running unsandboxed",
 	                   geteuid(), missing_seccomp, "Invalid compare seccomp dependencies");
+	ok &= expect_abort("attached tracer aborts before reading any frame", geteuid(), traced,
+	                   "Compare is being traced; refusing to authenticate");
+	ok &= expect_abort("missing injected tracing hook aborts instead of skipping the check",
+	                   geteuid(), missing_tracing, "Invalid compare sandbox dependencies");
 	ok &= expect_abort("untrusted config owner aborts", geteuid() + 1, keep,
 	                   "Config file must be owned by UID");
 	ok &= Expect(chmod(config_file.c_str(), 0666) == 0, "make config world-writable");

@@ -7,6 +7,9 @@ namespace howdy::native {
 	enum class CompareSandboxStatus : std::uint8_t {
 		kOk,
 		kNoNewPrivilegesFailure,
+		kDumpableFailure,
+		kTracerInspectionFailure,
+		kTracerAttached,
 		kLimitInspectionFailure,
 		kLimitBelowMinimum,
 		kLimitApplicationFailure,
@@ -42,6 +45,10 @@ namespace howdy::native {
 		CompareSeccompStatus status       = CompareSeccompStatus::kOk;
 		int                  error_number = 0;
 	};
+
+	// Clears PR_SET_DUMPABLE and fails if a tracer is already attached to any thread. Run it before
+	// compare parses arguments or reads its config and model descriptors.
+	[[nodiscard]] auto DisableCompareTracing() -> CompareSandboxResult;
 
 	[[nodiscard]] auto ApplyCompareSandbox(int timeout_seconds) -> CompareSandboxResult;
 

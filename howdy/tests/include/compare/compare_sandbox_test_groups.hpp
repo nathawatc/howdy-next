@@ -12,6 +12,7 @@ namespace howdy::test::compare_sandbox {
 }  // namespace howdy::test::compare_sandbox
 
 auto RunCompareSandboxLimitTests() -> bool;
+auto RunCompareSandboxTracingTests() -> bool;
 auto RunCompareSandboxSeccompTests() -> bool;
 auto RunCompareSandboxSeccompExecTests() -> bool;
 auto RunCompareSandboxSeccompProbe(std::string_view action) -> int;

@@ -44,6 +44,17 @@ namespace howdy::native::compare_entrypoint_private {
 				EmitStderrWithErrno("Failed to enable no_new_privs sandboxing",
 				                    result.error_number);
 				return;
+			case howdy::native::CompareSandboxStatus::kDumpableFailure:
+				EmitStderrWithErrno("Failed to disable compare process dumpability",
+				                    result.error_number);
+				return;
+			case howdy::native::CompareSandboxStatus::kTracerInspectionFailure:
+				EmitStderrWithErrno("Failed to check whether compare is being traced",
+				                    result.error_number);
+				return;
+			case howdy::native::CompareSandboxStatus::kTracerAttached:
+				std::cerr << "Compare is being traced; refusing to authenticate\n";
+				return;
 			case howdy::native::CompareSandboxStatus::kLimitInspectionFailure:
 				EmitStderrWithErrno(std::string("Failed to inspect ") +
 				                        SandboxResourceName(result.resource) + " sandbox limit",

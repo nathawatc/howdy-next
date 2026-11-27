@@ -1,9 +1,12 @@
 #include "compare/compare_privileges_test_groups.hpp"
 #include "compare/compare_privileges_test_support.hpp"
 #include "compare/privileges.hpp"
+#include "support/error_message.hpp"
 
 #include <array>
+#include <cerrno>
 #include <cstddef>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -409,6 +412,56 @@ namespace howdy::test::compare_privileges {
 			return ok;
 		}
 
+		auto TestDumpableClearedAfterDrop() -> bool {
+			bool ok = true;
+
+			FakePrivilegeContext context;
+			const auto           result = Drop(context);
+			ok &= Expect(context.dumpable == 0,
+			             "privileged drop leaves compare non-dumpable after the UID change");
+			ok &= Expect(howdy::native::ComparePrivilegeSucceeded(result),
+			             "privileged drop succeeds once dumpable is cleared");
+
+			FakePrivilegeContext non_root_context;
+			SetNonRootIdentity(non_root_context);
+			(void)Drop(non_root_context);
+			ok &= Expect(non_root_context.dumpable == 0, "non-root drop also clears dumpable");
+
+			for (const auto &[failure, events, message, label] :
+			     std::vector<std::tuple<FailureOperation, std::vector<std::string>, std::string,
+			                            std::string>>{
+			         {
+			             FailureOperation::kClearDumpable,
+			             {"clear dumpable"},
+			             "failed to clear dumpable after credential change: " +
+			                 howdy::native::SystemErrorMessage(EPERM),
+			             "PR_SET_DUMPABLE failure",
+			         },
+			         {
+			             FailureOperation::kDumpableStillSet,
+			             {"clear dumpable", "query dumpable"},
+			             "compare is still dumpable after credential change",
+			             "dumpable still set after prctl",
+			         },
+			     }) {
+				FakePrivilegeContext failure_context;
+				failure_context.failure   = failure;
+				const auto failure_result = Drop(failure_context);
+				ok &= Expect(failure_result.status ==
+				                 howdy::native::ComparePrivilegeStatus::kVerificationFailure,
+				             label + " fails the drop");
+				ok &= Expect(failure_result.error_message == message,
+				             label + " reports which dumpable step failed");
+				ok &= Expect(failure_context.fatal_calls == 0,
+				             label + " aborts without the fatal path; credentials are verified");
+				auto expected = ExpectedPrivilegedEvents();
+				expected.resize(expected.size() - 2);
+				expected.insert(expected.end(), events.begin(), events.end());
+				ok &= ExpectEvents(failure_context, expected, label + " stops after dumpable");
+			}
+			return ok;
+		}
+
 	}  // namespace
 
 	namespace {
@@ -419,6 +472,7 @@ namespace howdy::test::compare_privileges {
 			ok &= TestLookupAndIdentityFailures();
 			ok &= TestPrivilegedPreMutationFailures();
 			ok &= TestPrivilegedFailurePaths();
+			ok &= TestDumpableClearedAfterDrop();
 			return ok;
 		}
 	}  // namespace

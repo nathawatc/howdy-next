@@ -111,6 +111,7 @@ howdy_add_native_test(
  native-compare-sandbox
  tests/compare/compare_sandbox_test.cpp
  tests/compare/compare_sandbox_limit_test.cpp
+ tests/compare/compare_sandbox_tracing_test.cpp
  tests/compare/compare_sandbox_seccomp_test.cpp
  tests/compare/compare_sandbox_seccomp_exec_test.cpp
 )
@@ -123,6 +124,7 @@ howdy_add_native_test(
  native-compare-sandbox-unsupported-arch
  tests/compare/compare_sandbox_test.cpp
  tests/compare/compare_sandbox_limit_test.cpp
+ tests/compare/compare_sandbox_tracing_test.cpp
  tests/compare/compare_sandbox_seccomp_test.cpp
  tests/compare/compare_sandbox_seccomp_exec_test.cpp
  src/compare/sandbox.cpp

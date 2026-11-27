@@ -22,6 +22,7 @@
 #include "vision/face_model.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -74,8 +75,24 @@ namespace {
 		return context.capture_session.get().Open();
 	}
 
-	auto DropPrivileges(void *raw_context) -> howdy::native::ComparePrivilegeResult {
-		auto const &context = *static_cast<CompareProductionContext *>(raw_context);
+	auto DisableTracing(const howdy::native::CompareEntrypointDependencies *dependencies)
+	    -> howdy::native::CompareSandboxResult {
+		if (dependencies == nullptr) {
+			return howdy::native::DisableCompareTracing();
+		}
+		if (dependencies->disable_tracing != nullptr) {
+			return dependencies->disable_tracing(dependencies->context);
+		}
+		// Mirror apply_seccomp: a missing injected hook must not skip the check.
+		return {
+		    .status       = howdy::native::CompareSandboxStatus::kInvalidDependencies,
+		    .resource     = howdy::native::CompareSandboxResource::kNone,
+		    .error_number = EINVAL,
+		};
+	}
+
+	auto DropCredentials(const CompareProductionContext &context)
+	    -> howdy::native::ComparePrivilegeResult {
 		if (context.dependencies != nullptr) {
 			if (context.dependencies->drop_privileges == nullptr) {
 				return {
@@ -86,6 +103,25 @@ namespace {
 			return context.dependencies->drop_privileges(context.dependencies->context);
 		}
 		return howdy::native::DropComparePrivileges();
+	}
+
+	auto DropPrivileges(void *raw_context) -> howdy::native::ComparePrivilegeResult {
+		auto const &context = *static_cast<CompareProductionContext *>(raw_context);
+		auto        result  = DropCredentials(context);
+		if (!howdy::native::ComparePrivilegeSucceeded(result)) {
+			return result;
+		}
+		// The UID change made compare dumpable until DropComparePrivileges cleared it again, and
+		// a tracer that attached in between stays attached. Check again before seccomp.
+		const auto tracing_result = DisableTracing(context.dependencies);
+		if (tracing_result.status != howdy::native::CompareSandboxStatus::kOk) {
+			entrypoint_private::ReportSandboxFailure(tracing_result);
+			return {
+			    .status        = howdy::native::ComparePrivilegeStatus::kVerificationFailure,
+			    .error_message = "tracer check after credential change failed",
+			};
+		}
+		return result;
 	}
 
 	void ConstructEngine(void *raw_context) {
@@ -318,7 +354,13 @@ namespace {
 	                              const howdy::native::CompareEntrypointDependencies *dependencies,
 	                              entrypoint_private::RuntimeDescriptors &descriptors) -> int {
 		try {
-			const auto start_time   = std::chrono::steady_clock::now();
+			const auto start_time = std::chrono::steady_clock::now();
+			// First thing in the body: the model and config descriptors are already open.
+			const auto tracing_result = DisableTracing(dependencies);
+			if (tracing_result.status != howdy::native::CompareSandboxStatus::kOk) {
+				entrypoint_private::ReportSandboxFailure(tracing_result);
+				return static_cast<int>(CompareExit::kAbort);
+			}
 			const auto parse_result = howdy::native::ParseCompareArgs(argc, argv);
 			if (parse_result.status == howdy::native::CompareArgsStatus::kHelp) {
 				std::cout << parse_result.message;

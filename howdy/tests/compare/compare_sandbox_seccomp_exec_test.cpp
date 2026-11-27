@@ -26,6 +26,7 @@
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 
 #include <linux/bpf_common.h>
@@ -119,10 +120,16 @@ namespace {
 		return ProbeMremapDenied() ? ProbeIoctlFilter(ioctl_probe_fd) : 10;
 	}
 
+	// Clears dumpable directly rather than through DisableCompareTracing so the probe still runs
+	// under strace or a debugger, where the tracer check would fail it.
+	auto ApplyNonDumpableSandbox() -> bool {
+		return prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) == 0 &&
+		       howdy::native::ApplyCompareSandbox(1).status ==
+		           howdy::native::CompareSandboxStatus::kOk &&
+		       prctl(PR_GET_DUMPABLE, 0, 0, 0, 0) == 0;
+	}
+
 	auto RunSeccompChildProbe(std::string_view action) -> int {
-#ifdef PR_SET_DUMPABLE
-		(void)prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
-#endif
 		constexpr std::size_t non_main_arena_block_size = 256UZ * 1024UZ;
 		void                 *non_main_arena_block      = nullptr;
 		std::thread           arena_worker([&non_main_arena_block] -> void {
@@ -143,8 +150,7 @@ namespace {
 			return 1;
 		}
 
-		const auto sandbox_result = howdy::native::ApplyCompareSandbox(1);
-		if (sandbox_result.status != howdy::native::CompareSandboxStatus::kOk) {
+		if (!ApplyNonDumpableSandbox()) {
 			free(non_main_arena_block);
 			return 1;
 		}
