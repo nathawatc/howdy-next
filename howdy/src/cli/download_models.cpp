@@ -15,7 +15,6 @@
 
 #include <array>
 #include <cerrno>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -273,42 +272,6 @@ namespace {
 		       status_code < 400;
 	}
 
-	enum class ExistingModelAction : std::uint8_t {
-		kDownload,
-		kSkip,
-		kAbort,
-	};
-
-	auto InspectExistingModel(
-	    const std::filesystem::path &destination, const howdy::native::OpenCvModelDescriptor &model,
-	    const howdy::native::download_models_internal::DownloadModelsDependencies &dependencies)
-	    -> ExistingModelAction {
-		const ScopedFd existing_fd(open(destination.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
-		if (!existing_fd.Valid()) {
-			std::cout << "Failed to open existing model: " << destination.string() << "\n";
-			return ExistingModelAction::kAbort;
-		}
-		struct stat existing_stat{};
-		if (dependencies.fstat_file(existing_fd.Get(), &existing_stat) != 0) {
-			const int error_number = errno;
-			std::cout << "Failed to fstat existing model '" << destination.string()
-			          << "': " << howdy::native::SystemErrorMessage(error_number) << "\n";
-			return ExistingModelAction::kAbort;
-		}
-		if (existing_stat.st_size < 0 || std::cmp_not_equal(existing_stat.st_size, model.size)) {
-			std::cout << "Size mismatch for " << destination.string() << ": expected " << model.size
-			          << ", actual " << existing_stat.st_size << "\n";
-			return ExistingModelAction::kDownload;
-		}
-		const auto actual_sha256 = dependencies.sha256_file(existing_fd.Get());
-		if (!actual_sha256.has_value()) {
-			std::cout << "Failed to calculate SHA-256 for " << model.filename << "\n";
-			return ExistingModelAction::kAbort;
-		}
-		return model.sha256 == *actual_sha256 ? ExistingModelAction::kSkip
-		                                      : ExistingModelAction::kDownload;
-	}
-
 	auto DownloadModel(
 	    const howdy::native::OpenCvModelDescriptor &model, const std::filesystem::path &destination,
 	    const std::optional<uid_t>                                                 owner_uid,
@@ -363,6 +326,50 @@ namespace {
 
 }  // namespace
 
+auto howdy::native::download_models_internal::InspectExistingModel(
+    const std::filesystem::path &destination, const howdy::native::OpenCvModelDescriptor &model,
+    const std::optional<uid_t> owner_uid, const DownloadModelsDependencies &dependencies)
+    -> ExistingModelAction {
+	if (dependencies.fstat_file == nullptr || dependencies.sha256_file == nullptr) {
+		return ExistingModelAction::kAbort;
+	}
+	// O_NONBLOCK prevents blocking indefinitely if a FIFO replaces the regular file between
+	// CheckOpencvModelReadiness() and open(); CheckSecurePathStat() rejects non-regular or
+	// insecure replacements before hashing.
+	const ScopedFd existing_fd(
+	    open(destination.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+	if (!existing_fd.Valid()) {
+		std::cout << "Failed to open existing model: " << destination.string() << "\n";
+		return ExistingModelAction::kAbort;
+	}
+	struct stat existing_stat{};
+	if (dependencies.fstat_file(existing_fd.Get(), &existing_stat) != 0) {
+		const int error_number = errno;
+		std::cout << "Failed to fstat existing model '" << destination.string()
+		          << "': " << howdy::native::SystemErrorMessage(error_number) << "\n";
+		return ExistingModelAction::kAbort;
+	}
+	if (const auto security = howdy::native::CheckSecurePathStat(
+	        existing_stat, howdy::native::SecurePathKind::kRegularFile, destination,
+	        kModelFileLabel, owner_uid);
+	    !security.ok) {
+		std::cout << security.error_message << "\n";
+		return ExistingModelAction::kAbort;
+	}
+	if (existing_stat.st_size < 0 || std::cmp_not_equal(existing_stat.st_size, model.size)) {
+		std::cout << "Size mismatch for " << destination.string() << ": expected " << model.size
+		          << ", actual " << existing_stat.st_size << "\n";
+		return ExistingModelAction::kDownload;
+	}
+	const auto actual_sha256 = dependencies.sha256_file(existing_fd.Get());
+	if (!actual_sha256.has_value()) {
+		std::cout << "Failed to calculate SHA-256 for " << model.filename << "\n";
+		return ExistingModelAction::kAbort;
+	}
+	return model.sha256 == *actual_sha256 ? ExistingModelAction::kSkip
+	                                      : ExistingModelAction::kDownload;
+}
+
 auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies(
     [[maybe_unused]] const howdy::native::CommandInvocation &invocation,
     const DownloadModelsDependencies                        &dependencies) -> int {
@@ -398,7 +405,7 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 
 		bool replace_existing = readiness.status == howdy::native::OpenCvModelStatus::kInvalid;
 		if (readiness.status == howdy::native::OpenCvModelStatus::kOk) {
-			const auto action = InspectExistingModel(destination, model, dependencies);
+			const auto action = InspectExistingModel(destination, model, owner_uid, dependencies);
 			if (action == ExistingModelAction::kAbort) {
 				return kDownloadModelsExitAbort;
 			}

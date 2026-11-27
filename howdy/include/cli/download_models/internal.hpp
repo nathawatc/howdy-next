@@ -6,6 +6,8 @@
 #include "support/file_security/validation_root.hpp"
 
 #include <cstddef>
+#include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
@@ -57,6 +59,18 @@ namespace howdy::native::download_models_internal {
 		std::span<const OpenCvModelDescriptor> models               = OfficialOpencvModels();
 		file_security_internal::ValidationRoot validation_root{};
 	};
+
+	enum class ExistingModelAction : std::uint8_t {
+		kDownload,
+		kSkip,
+		kAbort,
+	};
+
+	[[nodiscard]] auto InspectExistingModel(const std::filesystem::path      &destination,
+	                                        const OpenCvModelDescriptor      &model,
+	                                        std::optional<uid_t>              owner_uid,
+	                                        const DownloadModelsDependencies &dependencies)
+	    -> ExistingModelAction;
 
 	[[nodiscard]] auto DownloadModelsWriteCallback(void *contents, std::size_t size,
 	                                               std::size_t nmemb, void *userp) -> std::size_t;

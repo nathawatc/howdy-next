@@ -185,6 +185,13 @@ auto main() -> int {
 	ok &= Expect(!ec && Readiness(hard_link).status == OpenCvModelStatus::kInsecure,
 	             "hard-linked model remains insecure");
 
+	const auto fifo = temp_root / "fifo.onnx";
+	ok &= Expect(mkfifo(fifo.c_str(), 0644) == 0, "create FIFO model path");
+	const auto fifo_readiness = Readiness(fifo);
+	ok &= Expect(fifo_readiness.status == OpenCvModelStatus::kInsecure &&
+	                 fifo_readiness.error_message.contains("regular file"),
+	             "FIFO model path is rejected as insecure without blocking");
+
 	fs::remove_all(temp_root, ec);
 	return ok ? 0 : 1;
 }
