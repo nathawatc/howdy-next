@@ -129,6 +129,12 @@ struct NativeTerminalDescriptors {
 	int error  = -1;
 };
 
+struct NativeStdioDescriptors {
+	int input  = -1;
+	int output = -1;
+	int error  = -1;
+};
+
 struct NativePromptTtyTarget {
 	std::string path;
 	dev_t       device  = 0;
@@ -140,6 +146,13 @@ struct NativePromptTtyTarget {
 // /dev/; the returned identity lets the caller verify that the opened descriptor is that node.
 [[nodiscard]] __attribute__((visibility("hidden"))) auto
 ResolveNativePromptTty(std::string_view pam_tty) -> std::optional<NativePromptTtyTarget>;
+
+// Pre-open eligibility check: true only when at least one standard descriptor is a foreground TTY
+// matching `target` (directly by rdev, via TIOCGDEV on a stdio TTY alias, or via a known kernel
+// TTY alias path), so OpenTtyFd never opens non-matching /dev/* character devices O_RDWR.
+[[nodiscard]] __attribute__((visibility("hidden"))) auto
+NativePromptTtyMatchesForegroundStdio(const NativePromptTtyTarget  &target,
+                                      const NativeStdioDescriptors &stdio) -> bool;
 
 [[nodiscard]] __attribute__((visibility("hidden"))) auto
 NativePromptTerminalIsInteractive(const NativeTerminalDescriptors &descriptors) -> bool;

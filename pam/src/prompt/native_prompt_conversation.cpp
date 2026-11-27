@@ -38,6 +38,7 @@
 #include <sys/poll.h>
 #include <sys/stat.h>
 #include <sys/syslog.h>
+#include <sys/sysmacros.h>
 
 namespace {
 
@@ -63,14 +64,75 @@ namespace {
 		return pam_set_item(pamh, item_type, item);
 	}
 
+	auto DescriptorIsForegroundTty(int fd) noexcept -> bool {
+		if (fd < 0 || isatty(fd) == 0) {
+			return false;
+		}
+		const pid_t foreground_group = tcgetpgrp(fd);
+		return foreground_group >= 0 && foreground_group == getpgrp();
+	}
+
+	auto IsKnownTtyAliasPath(std::string_view path) noexcept -> bool {
+		return path == "/dev/tty" || path == "/dev/tty0" || path == "/dev/console";
+	}
+
+#ifdef TIOCGDEV
+	auto TiocgdevMatchesTarget(unsigned int                 tiocgdev_device,
+	                           const NativePromptTtyTarget &target) noexcept -> bool {
+		constexpr unsigned int major_shift      = 8U;
+		constexpr unsigned int major_mask       = 0xfffU;
+		constexpr unsigned int minor_low_mask   = 0xffU;
+		constexpr unsigned int minor_high_shift = 12U;
+		constexpr unsigned int minor_high_mask  = ~0xffU;
+		const unsigned int     resolved_major   = (tiocgdev_device >> major_shift) & major_mask;
+		const unsigned int     resolved_minor =
+		    (tiocgdev_device & minor_low_mask) |
+		    ((tiocgdev_device >> minor_high_shift) & minor_high_mask);
+		return major(target.rdevice) == resolved_major && minor(target.rdevice) == resolved_minor;
+	}
+#endif
+
+	auto StdioDescriptorMatchesTarget(int fd, const NativePromptTtyTarget &target) noexcept
+	    -> bool {
+		if (!DescriptorIsForegroundTty(fd)) {
+			return false;
+		}
+		struct stat descriptor_stat{};
+		if (fstat(fd, &descriptor_stat) != 0 || !S_ISCHR(descriptor_stat.st_mode)) {
+			return false;
+		}
+		if (descriptor_stat.st_rdev == target.rdevice || IsKnownTtyAliasPath(target.path)) {
+			return true;
+		}
+#ifdef TIOCGDEV
+		unsigned int descriptor_device = 0;
+		return ioctl(fd, TIOCGDEV, &descriptor_device) == 0 &&
+		       TiocgdevMatchesTarget(descriptor_device, target);
+#else
+		return false;
+#endif
+	}
+
 	auto OpenTtyFd(pam_handle_t *pamh) -> howdy::native::ScopedFd {
 		const void *tty_item = nullptr;
 		if (pam_get_item(pamh, PAM_TTY, &tty_item) != PAM_SUCCESS || tty_item == nullptr) {
 			return {};
 		}
 
+		// Require a foreground stdio TTY before resolving or opening PAM_TTY so a non-interactive
+		// host never touches arbitrary /dev/* character devices O_RDWR.
+		if (!std::ranges::any_of(std::array{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO},
+		                         DescriptorIsForegroundTty)) {
+			return {};
+		}
+
 		const auto target = ResolveNativePromptTty(static_cast<const char *>(tty_item));
-		if (!target.has_value()) {
+		if (!target.has_value() ||
+		    !NativePromptTtyMatchesForegroundStdio(*target, {
+		                                                        .input  = STDIN_FILENO,
+		                                                        .output = STDOUT_FILENO,
+		                                                        .error  = STDERR_FILENO,
+		                                                    })) {
 			return {};
 		}
 
@@ -244,6 +306,17 @@ auto ResolveNativePromptTty(std::string_view pam_tty) -> std::optional<NativePro
 	    .inode   = metadata.st_ino,
 	    .rdevice = metadata.st_rdev,
 	};
+}
+
+auto NativePromptTtyMatchesForegroundStdio(const NativePromptTtyTarget  &target,
+                                           const NativeStdioDescriptors &stdio) -> bool {
+	if (target.path.empty()) {
+		return false;
+	}
+	return std::ranges::any_of(std::array{stdio.input, stdio.output, stdio.error},
+	                           [&target](const int fd) -> bool {
+		                           return StdioDescriptorMatchesTarget(fd, target);
+	                           });
 }
 
 auto NativePromptTerminalIsInteractive(const NativeTerminalDescriptors &descriptors) -> bool {
