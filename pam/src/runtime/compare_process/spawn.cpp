@@ -23,6 +23,7 @@
 
 #include <fcntl.h>
 #include <spawn.h>
+#include <unistd.h>
 
 #include <sys/socket.h>
 #include <sys/syslog.h>
@@ -44,11 +45,20 @@ namespace {
 	    .context                   = nullptr,
 	    .socketpair                = howdy::pam::runtime::internal::Socketpair,
 	    .file_actions_init         = howdy::pam::runtime::internal::ActionsInit,
+	    .file_actions_addopen      = howdy::pam::runtime::internal::ActionsAddopen,
 	    .file_actions_adddup2      = howdy::pam::runtime::internal::ActionsAdddup2,
 	    .file_actions_addclosefrom = howdy::pam::runtime::internal::ActionsAddclosefrom,
 	    .file_actions_destroy      = howdy::pam::runtime::internal::ActionsDestroy,
 	    .spawn                     = howdy::pam::runtime::internal::Spawn,
 	};
+
+	// True when `fd` is open in this process and remains open across execve. Any closed or
+	// FD_CLOEXEC stdout/stderr would otherwise be left unassigned in compare and could be taken by
+	// a camera or model file descriptor that std::cout/std::cerr then writes into.
+	auto StdioDescriptorSurvivesExec(int fd) noexcept -> bool {
+		const int flags = fcntl(fd, F_GETFD);
+		return flags >= 0 && !howdy::native::HasAnyBits(flags, FD_CLOEXEC);
+	}
 
 	// The private socket pair compare reports its verdict on (protocol/compare_verdict.hpp). A
 	// PAM application that auto-reaps SIGCHLD, or reaps every child, takes compare's exit status
@@ -162,6 +172,25 @@ namespace {
 			return file_actions.InitResult();
 		}
 		const auto add_actions = [&] -> int {
+			// Compare never reads stdin; unconditionally bind fd 0 to /dev/null so it cannot
+			// inherit a host password pipe (e.g. sudo -S) or active TTY during concurrent prompts.
+			if (const int result = operations.file_actions_addopen(
+			        operations.context, file_actions.Get(), STDIN_FILENO,
+			        howdy::pam::runtime::internal::kNullDevice, O_RDONLY);
+			    result != 0) {
+				return result;
+			}
+			for (const int fd : {STDOUT_FILENO, STDERR_FILENO}) {
+				if (StdioDescriptorSurvivesExec(fd)) {
+					continue;
+				}
+				if (const int result = operations.file_actions_addopen(
+				        operations.context, file_actions.Get(), fd,
+				        howdy::pam::runtime::internal::kNullDevice, O_WRONLY);
+				    result != 0) {
+					return result;
+				}
+			}
 			for (const auto &[source, target] : {
 			         std::pair{descriptors.verdict, howdy::native::compare_verdict::kFd},
 			         std::pair{descriptors.config, protocol::kConfigFd},
@@ -204,6 +233,7 @@ namespace howdy::pam::compare_process {
 		if (child_pid == nullptr || child_pidfd == nullptr || verdict_fd == nullptr ||
 		    request.username.empty() || request.config_fd < 0 || request.model_fd < 0 ||
 		    operations.socketpair == nullptr || operations.file_actions_init == nullptr ||
+		    operations.file_actions_addopen == nullptr ||
 		    operations.file_actions_adddup2 == nullptr ||
 		    operations.file_actions_addclosefrom == nullptr ||
 		    operations.file_actions_destroy == nullptr || operations.spawn == nullptr) {

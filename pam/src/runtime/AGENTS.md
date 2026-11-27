@@ -33,7 +33,8 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Child:
 - Launch compare (`compare_process/spawn.cpp`) with a fixed environment, never inherited:
   `OPENBLAS_NUM_THREADS=1`, `OMP_NUM_THREADS=1` (both pins required; rationale in `spawn.cpp`), plus
   the `protocol/compare_verdict.hpp` and `protocol/compare_descriptors.hpp` entries (`fds 3..5`),
-  `argv {howdy-compare, user}`, closing every descriptor above 5.
+  `argv {howdy-compare, user}`, binding `STDIN_FILENO` and any closed or `FD_CLOEXEC`
+  `STDOUT_FILENO`/`STDERR_FILENO` to `/dev/null`, and closing every descriptor above 5.
 
 ## Known Limitation: SSH Detection (Won't Fix)
 
