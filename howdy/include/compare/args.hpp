@@ -16,6 +16,11 @@ namespace howdy::native {
 		kError,
 	};
 
+	enum class CompareArgsMode : std::uint8_t {
+		kStandalone,
+		kProtocol,
+	};
+
 	struct CompareArgsParseResult {
 		CompareArgsStatus status    = CompareArgsStatus::kError;
 		CompareExit       exit_code = CompareExit::kAbort;
@@ -24,7 +29,10 @@ namespace howdy::native {
 	};
 
 	// Compare takes one argument, the user; its config and model come as descriptors
-	// (protocol/compare_descriptors.hpp).
-	[[nodiscard]] auto ParseCompareArgs(int argc, char **argv) -> CompareArgsParseResult;
+	// (protocol/compare_descriptors.hpp). In kProtocol mode, argv[1] is always treated as the
+	// user position and never interpreted as interactive --help/-h.
+	[[nodiscard]] auto ParseCompareArgs(int argc, char **argv,
+	                                    CompareArgsMode mode = CompareArgsMode::kStandalone)
+	    -> CompareArgsParseResult;
 
 }  // namespace howdy::native

@@ -72,8 +72,11 @@ namespace howdy::native::compare_entrypoint_private {
 	// value is compare's from here on and is closed on every path; type, owner, mode and link
 	// checks are left to the loaders.
 	auto TakeRuntimeDescriptors(bool verdict_announced) noexcept -> RuntimeDescriptors {
-		namespace descriptors = howdy::native::compare_descriptors;
-		const auto announced  = [](const char *name, std::string_view expected) -> bool {
+		namespace descriptors  = howdy::native::compare_descriptors;
+		const auto env_present = [](const char *name) -> bool {
+			return std::getenv(name) != nullptr;
+		};
+		const auto announced = [](const char *name, std::string_view expected) -> bool {
 			const char *const value = std::getenv(name);
 			return value != nullptr && std::string_view(value) == expected;
 		};
@@ -85,7 +88,11 @@ namespace howdy::native::compare_entrypoint_private {
 			return true;
 		};
 		RuntimeDescriptors result;
-		const bool         config_announced =
+		result.protocol_mode = verdict_announced ||
+		                       env_present(howdy::native::compare_verdict::kEnvironmentName) ||
+		                       env_present(descriptors::kConfigEnvironmentName) ||
+		                       env_present(descriptors::kModelEnvironmentName);
+		const bool config_announced =
 		    announced(descriptors::kConfigEnvironmentName, descriptors::kConfigEnvironmentValue);
 		const bool model_announced =
 		    announced(descriptors::kModelEnvironmentName, descriptors::kModelEnvironmentValue);

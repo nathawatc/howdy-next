@@ -16,7 +16,8 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md). Related:
 
 - Read config and user model strictly from inherited fds announced by
   `protocol/compare_descriptors.hpp` together with `protocol/compare_verdict.hpp`, with `user` as
-  the sole positional argument.
+  the sole positional argument; never accept `--help`/`-h` when any compare protocol environment
+  variable is present.
 - Call `TakeRuntimeDescriptors` before compare opens any file so announced numbers cannot alias
   compare's own fds. Abort on any missing or mismatched announcement or closed descriptor; take
   ownership of every announced fd and close each immediately after loading.

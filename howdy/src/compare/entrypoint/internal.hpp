@@ -29,7 +29,10 @@ namespace howdy::native::compare_entrypoint_private {
 			kNoVerdict,
 		};
 
-		Mode                    mode = Mode::kNotAnnounced;
+		Mode mode = Mode::kNotAnnounced;
+		// True whenever any compare protocol environment variable was set (or the verdict socket
+		// was announced), so interactive --help/-h can never exit 0 or write verdict 0 in PAM mode.
+		bool                    protocol_mode = false;
 		howdy::native::ScopedFd config;
 		howdy::native::ScopedFd model;
 	};

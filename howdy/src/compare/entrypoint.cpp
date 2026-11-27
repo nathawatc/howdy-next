@@ -350,6 +350,28 @@ namespace {
 		return result;
 	}
 
+	// Returns an early exit code for --help or parse errors, or nullopt to continue the scan.
+	auto ParseEntrypointArgs(int argc, char **argv, bool protocol_mode) -> std::optional<int> {
+		const auto parse_result = howdy::native::ParseCompareArgs(
+		    argc, argv,
+		    protocol_mode ? howdy::native::CompareArgsMode::kProtocol
+			              : howdy::native::CompareArgsMode::kStandalone);
+		if (parse_result.status == howdy::native::CompareArgsStatus::kHelp) {
+			if (protocol_mode) {
+				return static_cast<int>(CompareExit::kAbort);
+			}
+			std::cout << parse_result.message;
+			return static_cast<int>(parse_result.exit_code);
+		}
+		if (parse_result.status == howdy::native::CompareArgsStatus::kError) {
+			if (!parse_result.message.empty()) {
+				std::cerr << parse_result.message;
+			}
+			return static_cast<int>(parse_result.exit_code);
+		}
+		return std::nullopt;
+	}
+
 	auto RunCompareEntrypointBody(int argc, char **argv, const uid_t trusted_owner_uid,
 	                              const howdy::native::CompareEntrypointDependencies *dependencies,
 	                              entrypoint_private::RuntimeDescriptors &descriptors) -> int {
@@ -361,16 +383,9 @@ namespace {
 				entrypoint_private::ReportSandboxFailure(tracing_result);
 				return static_cast<int>(CompareExit::kAbort);
 			}
-			const auto parse_result = howdy::native::ParseCompareArgs(argc, argv);
-			if (parse_result.status == howdy::native::CompareArgsStatus::kHelp) {
-				std::cout << parse_result.message;
-				return static_cast<int>(parse_result.exit_code);
-			}
-			if (parse_result.status == howdy::native::CompareArgsStatus::kError) {
-				if (!parse_result.message.empty()) {
-					std::cerr << parse_result.message;
-				}
-				return static_cast<int>(parse_result.exit_code);
+			if (const auto arg_exit = ParseEntrypointArgs(argc, argv, descriptors.protocol_mode);
+			    arg_exit.has_value()) {
+				return *arg_exit;
 			}
 			if (const auto error = entrypoint_private::RuntimeDescriptorsError(descriptors)) {
 				std::cerr << *error << "\n";
