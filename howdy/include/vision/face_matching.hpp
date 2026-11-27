@@ -24,7 +24,9 @@ namespace howdy::native {
 	};
 
 	namespace face_matching_detail {
-		[[nodiscard]] inline auto VectorNorm(std::span<const float> values)
+		inline constexpr float kMinSquaredNorm = 1.0e-12F;
+
+		[[nodiscard]] inline auto SquaredNorm(std::span<const float> values)
 		    -> std::optional<float> {
 			float squared_norm = 0.0F;
 			for (float const value : values) {
@@ -36,20 +38,42 @@ namespace howdy::native {
 			if (squared_norm == 0.0F || !std::isfinite(squared_norm)) {
 				return std::nullopt;
 			}
-			const float norm = std::sqrt(std::max(squared_norm, 1.0e-12F));
+			return squared_norm;
+		}
+
+		// Cosine denominator norm: flooring at sqrt(kMinSquaredNorm) shrinks near-zero vectors
+		// toward score 0, which fails closed against every positive cosine threshold.
+		[[nodiscard]] inline auto VectorNorm(std::span<const float> values)
+		    -> std::optional<float> {
+			const auto squared_norm = SquaredNorm(values);
+			if (!squared_norm.has_value()) {
+				return std::nullopt;
+			}
+			const float norm = std::sqrt(std::max(*squared_norm, kMinSquaredNorm));
 			return std::isfinite(norm) ? std::optional<float>{norm} : std::nullopt;
 		}
 
 		// Empty result marks a vector that cannot be normalized; distance scoring skips it.
+		// Reject vectors below kMinSquaredNorm instead of flooring their norm up: dividing by a
+		// larger floored norm shrinks the vector toward the origin, collapsing its L2 distance to
+		// any unit vector to ~1.0 (below the 1.41 l2norm cap) and failing open.
 		[[nodiscard]] inline auto UnitVector(std::span<const float> values) -> std::vector<float> {
-			const auto norm = VectorNorm(values);
-			if (!norm.has_value()) {
+			const auto squared_norm = SquaredNorm(values);
+			if (!squared_norm.has_value() || *squared_norm < kMinSquaredNorm) {
+				return {};
+			}
+			const float norm = std::sqrt(*squared_norm);
+			if (!std::isfinite(norm) || norm == 0.0F) {
 				return {};
 			}
 			std::vector<float> unit;
 			unit.reserve(values.size());
 			for (const float value : values) {
-				unit.push_back(value / *norm);
+				const float component = value / norm;
+				if (!std::isfinite(component)) {
+					return {};
+				}
+				unit.push_back(component);
 			}
 			return unit;
 		}
@@ -66,7 +90,7 @@ namespace howdy::native {
 			if (!std::isfinite(dot)) {
 				return std::nullopt;
 			}
-			const float score = dot / std::max(candidate_norm * probe_norm, 1.0e-12F);
+			const float score = dot / std::max(candidate_norm * probe_norm, kMinSquaredNorm);
 			return std::isfinite(score) ? std::optional<float>{score} : std::nullopt;
 		}
 
