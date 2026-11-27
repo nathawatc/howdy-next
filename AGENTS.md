@@ -22,6 +22,8 @@ local guides add detail without relaxing these invariants.
   CMake `Requires` bug).
 - A CTest logical suite may span multiple translation units; inspect `howdy/cmake/tests/*.cmake` or
   `pam/cmake/tests/*.cmake` before assuming one file owns a suite.
+- Cover every install-time path rule in `cmake/install_config.cmake.in` with a case in
+  `tests/cmake/install_config_test.cmake` (`native-howdy-install-config`).
 
 ## Code and Layout
 

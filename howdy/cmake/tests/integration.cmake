@@ -53,6 +53,13 @@ add_test(
   "${CMAKE_COMMAND}"
   -P "${PROJECT_SOURCE_DIR}/tests/cmake/privileged_install_paths_test.cmake"
 )
+add_test(
+ NAME native-howdy-install-config
+ COMMAND
+  "${CMAKE_COMMAND}"
+  "-DBUILD_DIR=${PROJECT_BINARY_DIR}"
+  -P "${PROJECT_SOURCE_DIR}/tests/cmake/install_config_test.cmake"
+)
 add_executable(howdy_docs_generator_integration_test
               tests/integration/docs_generator_test.cpp)
 howdy_configure_native_test_target(howdy_docs_generator_integration_test)

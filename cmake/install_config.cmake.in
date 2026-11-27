@@ -3,27 +3,200 @@ set(_howdy_config_path "@HOWDY_CONFIG_PATH@")
 set(_howdy_packaged_config_path "@HOWDY_PACKAGED_CONFIG_PATH@")
 set(_howdy_user_models_dir "@HOWDY_USER_MODELS_DIR@")
 
-if(NOT EXISTS "${_howdy_packaged_config_path}" OR IS_DIRECTORY "${_howdy_packaged_config_path}")
+# Mirror the structural half of runtime file_security.hpp on Howdy's config and
+# model trees: no symlinks, no '..', directories where directories are
+# expected, and a single-link regular config.ini. Ownership stays a runtime
+# check because staged (DESTDIR/fakeroot) installs legitimately own the tree as
+# the packager. Group/world-writable directories that already exist only warn:
+# earlier installs created parents with the installer's umask, and chmod-ing a
+# directory this script did not create could clobber an admin's choice; runtime
+# rejects them either way. Only the configured paths are walked, so rootfs
+# symlinks off those paths (usrmerge /lib, /usr/lib64) are never inspected; a
+# symlink on a configured path itself (e.g. /usr/local -> /var/usrlocal on
+# Fedora Atomic) is rejected here because runtime would reject it anyway.
+#
+# Every check runs before anything is created, so a rejected install leaves no
+# new directories behind.
+#
+# Known limitation: components are checked with IS_SYMLINK before
+# file(MAKE_DIRECTORY)/file(INSTALL) act on them, and both follow symlinks.
+# CMake has no O_NOFOLLOW/openat primitive, so a process that can write into the
+# staging tree can swap a component between check and use. Staging trees must
+# not be writable by untrusted users; runtime lstat-based checks still reject
+# the installed result.
+
+# if() cannot report file type, link count, or mode, and opening a FIFO would
+# block, so lstat via stat(1). Fall back to fixed locations so a sanitized PATH
+# still finds it.
+find_program(_howdy_stat_program stat PATHS /usr/bin /bin NO_CACHE)
+if(NOT _howdy_stat_program)
   message(
-  FATAL_ERROR
-  "Generated Howdy config is missing: ${_howdy_packaged_config_path}. "
-  "Build target howdy_packaged_config before installing."
- )
+    WARNING
+    "stat(1) not found; skipping Howdy install directory mode checks. "
+    "Reinstalling over an existing config.ini will fail."
+  )
+endif()
+
+# Sets <out_mode> (decimal st_mode) and <out_links> (st_nlink) for <path>
+# without following a final symlink. Fails closed when stat(1) is unusable.
+function(_howdy_lstat path out_mode out_links)
+  if(NOT _howdy_stat_program)
+    message(FATAL_ERROR "stat(1) is required to inspect Howdy install path: ${path}")
+  endif()
+  execute_process(
+    COMMAND "${_howdy_stat_program}" -c "%f %h" -- "${path}"
+    RESULT_VARIABLE stat_result
+    OUTPUT_VARIABLE stat_output
+    ERROR_VARIABLE stat_error
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(NOT stat_result STREQUAL "0" OR NOT stat_output MATCHES "^([0-9a-fA-F]+) ([0-9]+)$")
+    message(FATAL_ERROR "Could not inspect Howdy install path ${path}: ${stat_error}")
+  endif()
+  math(EXPR mode "0x${CMAKE_MATCH_1}")
+  set(${out_mode} "${mode}" PARENT_SCOPE)
+  set(${out_links} "${CMAKE_MATCH_2}" PARENT_SCOPE)
+endfunction()
+
+# Walks <directory> below <destdir> one component at a time. CHECK validates
+# existing components; CREATE makes missing ones with explicit permissions so
+# new parents do not inherit the installer's umask.
+#
+# Components are split with string(FIND) rather than a CMake list because list
+# expansion keeps ';' inside '[...]' together: a component containing '[' or ']'
+# would merge with its neighbours and the check would inspect a nonexistent path.
+function(_howdy_walk_directory_tree destdir directory action)
+  string(REGEX REPLACE "/+$" "" current "${destdir}")
+  string(REGEX REPLACE "^/+" "" remaining "${directory}")
+  # Drop trailing '/' and '/.' so the leaf test below sees the real leaf.
+  string(REGEX REPLACE "(/+\\.?)+$" "" remaining "${remaining}")
+  while(NOT remaining STREQUAL "")
+    string(FIND "${remaining}" "/" slash)
+    if(slash EQUAL -1)
+      set(component "${remaining}")
+      set(remaining "")
+    else()
+      string(SUBSTRING "${remaining}" 0 ${slash} component)
+      math(EXPR next "${slash} + 1")
+      string(SUBSTRING "${remaining}" ${next} -1 remaining)
+    endif()
+    if(component STREQUAL "" OR component STREQUAL ".")
+      continue()
+    endif()
+    if(component STREQUAL "..")
+      message(FATAL_ERROR "Howdy configuration path must not contain '..': ${directory}")
+    endif()
+    set(current "${current}/${component}")
+    if(action STREQUAL "CHECK")
+      if(IS_SYMLINK "${current}")
+        message(
+          FATAL_ERROR
+          "Howdy configuration path must not be a symlink (configure "
+          "HOWDY_CONFIG_DIR/HOWDY_USER_MODELS_DIR without symlinked components): ${current}"
+        )
+      endif()
+      if(EXISTS "${current}")
+        if(NOT IS_DIRECTORY "${current}")
+          message(FATAL_ERROR "Howdy configuration path is not a directory: ${current}")
+        endif()
+        get_property(warned GLOBAL PROPERTY "_howdy_mode_warned:${current}" SET)
+        if(NOT warned AND _howdy_stat_program)
+          set_property(GLOBAL PROPERTY "_howdy_mode_warned:${current}" TRUE)
+          _howdy_lstat("${current}" mode links)
+          math(EXPR writable "${mode} & 18") # S_IWGRP | S_IWOTH (0022)
+          if(NOT writable EQUAL 0)
+            message(
+              WARNING
+              "Howdy configuration path is group- or world-writable and will be "
+              "rejected at runtime: ${current}"
+            )
+          endif()
+        endif()
+      endif()
+    elseif(NOT EXISTS "${current}")
+      file(MAKE_DIRECTORY "${current}")
+      if(remaining STREQUAL "")
+        file(CHMOD "${current}" PERMISSIONS
+             OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE)
+      else()
+        file(CHMOD "${current}" PERMISSIONS
+             OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE
+             WORLD_READ WORLD_EXECUTE)
+      endif()
+    endif()
+  endwhile()
+endfunction()
+
+if(IS_SYMLINK "${_howdy_packaged_config_path}")
+  message(
+    FATAL_ERROR
+    "Generated Howdy config must not be a symlink: ${_howdy_packaged_config_path}."
+  )
+endif()
+if(NOT EXISTS "${_howdy_packaged_config_path}"
+   OR IS_DIRECTORY "${_howdy_packaged_config_path}")
+  message(
+    FATAL_ERROR
+    "Generated Howdy config is missing: ${_howdy_packaged_config_path}. "
+    "Build target howdy_packaged_config before installing."
+  )
+endif()
+
+string(REGEX REPLACE "/+$" "" _howdy_destdir "$ENV{DESTDIR}")
+cmake_path(GET _howdy_config_path PARENT_PATH _howdy_config_parent)
+foreach(directory IN ITEMS "${_howdy_config_dir}" "${_howdy_user_models_dir}"
+                           "${_howdy_config_parent}")
+  _howdy_walk_directory_tree("${_howdy_destdir}" "${directory}" CHECK)
+endforeach()
+
+string(REGEX REPLACE "/+$" "" _howdy_clean_config_path "${_howdy_config_path}")
+set(_howdy_staged_config "${_howdy_destdir}${_howdy_clean_config_path}")
+if(IS_SYMLINK "${_howdy_staged_config}")
+  message(
+    FATAL_ERROR
+    "Howdy configuration file must not be a symlink: ${_howdy_staged_config}"
+  )
+endif()
+if(IS_DIRECTORY "${_howdy_staged_config}")
+  message(
+    FATAL_ERROR
+    "Howdy configuration file is a directory: ${_howdy_staged_config}"
+  )
+endif()
+set(_howdy_keep_config FALSE)
+if(EXISTS "${_howdy_staged_config}")
+  # Reinstall keeps the admin's config, but a FIFO, socket, device node, or
+  # hard-linked file would pass EXISTS and leave runtime failing every load.
+  _howdy_lstat("${_howdy_staged_config}" _howdy_config_mode _howdy_config_links)
+  math(EXPR _howdy_config_type "${_howdy_config_mode} & 61440") # S_IFMT (0170000)
+  if(NOT _howdy_config_type EQUAL 32768) # S_IFREG (0100000)
+    message(
+      FATAL_ERROR
+      "Howdy configuration file is not a regular file: ${_howdy_staged_config}"
+    )
+  endif()
+  if(NOT _howdy_config_links EQUAL 1)
+    message(
+      FATAL_ERROR
+      "Howdy configuration file must not be a hard link: ${_howdy_staged_config}"
+    )
+  endif()
+  math(EXPR _howdy_config_writable "${_howdy_config_mode} & 18") # S_IWGRP | S_IWOTH
+  if(NOT _howdy_config_writable EQUAL 0)
+    message(
+      WARNING
+      "Howdy configuration file is group- or world-writable and will be "
+      "rejected at runtime: ${_howdy_staged_config}"
+    )
+  endif()
+  set(_howdy_keep_config TRUE)
 endif()
 
 foreach(directory IN ITEMS "${_howdy_config_dir}" "${_howdy_user_models_dir}")
-  set(staged_directory "$ENV{DESTDIR}${directory}")
-  if(EXISTS "${staged_directory}" AND NOT IS_DIRECTORY "${staged_directory}")
-    message(FATAL_ERROR "Howdy configuration path is not a directory: ${staged_directory}")
-  endif()
-  if(NOT EXISTS "${staged_directory}")
-    file(MAKE_DIRECTORY "${staged_directory}")
-    file(CHMOD "${staged_directory}" PERMISSIONS
-         OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE)
-  endif()
+  _howdy_walk_directory_tree("${_howdy_destdir}" "${directory}" CREATE)
 endforeach()
 
-if(NOT EXISTS "$ENV{DESTDIR}${_howdy_config_path}")
+if(NOT _howdy_keep_config)
   file(INSTALL DESTINATION "${_howdy_config_dir}" TYPE FILE
        FILES "${_howdy_packaged_config_path}"
        FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ)
