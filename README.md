@@ -66,15 +66,8 @@ cmake --build --preset release --parallel "$(nproc)"
 ctest --preset release
 ```
 
-PAM configuration uses `pam_howdy.so`. By default, Howdy installs it under
-`${CMAKE_INSTALL_FULL_LIBDIR}/security`. If your distribution uses a different
-PAM module directory, override it during configuration:
-
-```sh
-cmake --preset release \
-  -DCMAKE_INSTALL_PREFIX=/usr \
-  -DHOWDY_PAM_DIR=/path/to/pam/security
-```
+See the [CMake Flags wiki page](https://github.com/nathawatc/howdy-next/wiki/CMake-Flags) for all
+`HOWDY_*` CMake options and their default values.
 
 Install with the configured prefix:
 
