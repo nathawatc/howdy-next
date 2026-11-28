@@ -6,6 +6,7 @@
 #include "internal.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/auth_helper_process.hpp"
+#include "runtime/auth_helper_process/internal.hpp"
 #include "runtime/child_process.hpp"
 #include "support/bit_flags.hpp"
 #include "support/error_message.hpp"

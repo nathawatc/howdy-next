@@ -3,7 +3,7 @@
 #endif
 
 #include "../child_process/internal.hpp"
-#include "internal.hpp"
+#include "runtime/auth_helper_process/internal.hpp"
 #include "runtime/child_process.hpp"
 
 #include <algorithm>

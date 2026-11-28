@@ -5,7 +5,9 @@ Parent: [`../AGENTS.md`](../AGENTS.md). Related:
 
 ## Boundaries
 
-- `internal.hpp` (`HelperSpawn`) is private cross-TU plumbing, not a public or test seam.
+- `src/runtime/auth_helper_process/internal.hpp` (`HelperSpawn`) is private cross-TU plumbing, not
+  a public or test seam; the test-facing helper wait/timeout contract lives under
+  `pam/include/runtime/auth_helper_process/internal.hpp`.
 - Keep `auth_helper_process` intact as one auditable lifecycle rather than fragmenting it for LOC.
 
 ## Invariants
