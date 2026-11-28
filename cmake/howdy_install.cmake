@@ -1,7 +1,14 @@
 # Keep destination registration and installation together. Every file and empty
 # directory uses this wrapper; custom config preservation registers its paths too.
 function(howdy_install)
-  cmake_parse_arguments(PARSE_ARGV 0 rule "" "DESTINATION" "FILES;TARGETS;DIRECTORY;RUNTIME;LIBRARY;PERMISSIONS;DIRECTORY_PERMISSIONS")
+  cmake_parse_arguments(
+    PARSE_ARGV
+    0
+    rule
+    ""
+    "DESTINATION"
+    "FILES;TARGETS;DIRECTORY;RUNTIME;LIBRARY;PERMISSIONS;DIRECTORY_PERMISSIONS"
+  )
   if(NOT DEFINED rule_DESTINATION OR rule_UNPARSED_ARGUMENTS)
     message(FATAL_ERROR "Unsupported howdy_install rule: ${ARGV}")
   endif()

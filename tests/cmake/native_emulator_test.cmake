@@ -10,7 +10,9 @@ file(REMOVE_RECURSE "${HOWDY_TEST_ROOT}")
 file(MAKE_DIRECTORY "${HOWDY_TEST_ROOT}")
 
 set(test_emulator "/usr/bin/qemu-dummy")
-set(block_regex "set\\(howdy_preflight_emulator\\)[\r\n\t ]*if\\([^)]*\\)[\r\n\t ]*set\\(howdy_preflight_emulator [^)]*\\)[\r\n\t ]*endif\\(\\)")
+set(block_regex "set\\(howdy_preflight_emulator\\)[\r\n\t ]*if\\([^)]*\\)")
+string(APPEND block_regex "[\r\n\t ]*set\\(howdy_preflight_emulator [^)]*\\)")
+string(APPEND block_regex "[\r\n\t ]*endif\\(\\)")
 
 # Native mode: CMAKE_CROSSCOMPILING FALSE
 set(CMAKE_CROSSCOMPILING FALSE)
@@ -34,17 +36,26 @@ if(NOT native_block MATCHES "if\\(\"FALSE\" STREQUAL \"TRUE\"\\)")
   message(FATAL_ERROR "Native install preflight did not disable cross-compiling condition")
 endif()
 
-file(WRITE "${HOWDY_TEST_ROOT}/eval_native.cmake"
- "set(howdy_preflight_emulator \"sentinel\")\n${native_block}\nif(NOT \"\${howdy_preflight_emulator}\" STREQUAL \"\")\n  message(FATAL_ERROR \"Native preflight set emulator: \${howdy_preflight_emulator}\")\nendif()\n"
+file(
+  WRITE
+  "${HOWDY_TEST_ROOT}/eval_native.cmake"
+  "set(howdy_preflight_emulator \"sentinel\")\n"
+  "${native_block}\n"
+  "if(NOT \"\${howdy_preflight_emulator}\" STREQUAL \"\")\n"
+  "  message(FATAL_ERROR \"Native preflight set emulator: \${howdy_preflight_emulator}\")\n"
+  "endif()\n"
 )
 execute_process(
- COMMAND "${CMAKE_COMMAND}" -P "${HOWDY_TEST_ROOT}/eval_native.cmake"
- RESULT_VARIABLE native_eval_result
- OUTPUT_VARIABLE native_eval_output
- ERROR_VARIABLE native_eval_error
+  COMMAND "${CMAKE_COMMAND}" -P "${HOWDY_TEST_ROOT}/eval_native.cmake"
+  RESULT_VARIABLE native_eval_result
+  OUTPUT_VARIABLE native_eval_output
+  ERROR_VARIABLE native_eval_error
 )
 if(NOT native_eval_result EQUAL 0)
-  message(FATAL_ERROR "Native preflight evaluation failed:\n${native_eval_output}\n${native_eval_error}")
+  message(
+    FATAL_ERROR
+    "Native preflight evaluation failed:\n${native_eval_output}\n${native_eval_error}"
+  )
 endif()
 
 # Cross mode: CMAKE_CROSSCOMPILING TRUE
@@ -72,17 +83,27 @@ if(NOT cross_block MATCHES "\\[==\\[${test_emulator}\\]==\\]")
   message(FATAL_ERROR "Cross install preflight missing configured emulator path")
 endif()
 
-file(WRITE "${HOWDY_TEST_ROOT}/eval_cross.cmake"
- "set(howdy_preflight_emulator)\n${cross_block}\nif(NOT \"\${howdy_preflight_emulator}\" STREQUAL \"${test_emulator}\")\n  message(FATAL_ERROR \"Cross preflight failed to set emulator: \${howdy_preflight_emulator}\")\nendif()\n"
+file(
+  WRITE
+  "${HOWDY_TEST_ROOT}/eval_cross.cmake"
+  "set(howdy_preflight_emulator)\n"
+  "${cross_block}\n"
+  "if(NOT \"\${howdy_preflight_emulator}\" STREQUAL \"${test_emulator}\")\n"
+  "  message(FATAL_ERROR "
+  "\"Cross preflight failed to set emulator: \${howdy_preflight_emulator}\")\n"
+  "endif()\n"
 )
 execute_process(
- COMMAND "${CMAKE_COMMAND}" -P "${HOWDY_TEST_ROOT}/eval_cross.cmake"
- RESULT_VARIABLE cross_eval_result
- OUTPUT_VARIABLE cross_eval_output
- ERROR_VARIABLE cross_eval_error
+  COMMAND "${CMAKE_COMMAND}" -P "${HOWDY_TEST_ROOT}/eval_cross.cmake"
+  RESULT_VARIABLE cross_eval_result
+  OUTPUT_VARIABLE cross_eval_output
+  ERROR_VARIABLE cross_eval_error
 )
 if(NOT cross_eval_result EQUAL 0)
-  message(FATAL_ERROR "Cross preflight evaluation failed:\n${cross_eval_output}\n${cross_eval_error}")
+  message(
+    FATAL_ERROR
+    "Cross preflight evaluation failed:\n${cross_eval_output}\n${cross_eval_error}"
+  )
 endif()
 
 file(REMOVE_RECURSE "${HOWDY_TEST_ROOT}")
