@@ -137,6 +137,32 @@ namespace {
 		return ok;
 	}
 
+	auto GrayscaleFramePassesThroughToGray() -> bool {
+		const cv::Mat source(2, 3, CV_8UC1, cv::Scalar(42));
+		auto const    context = std::make_shared<ReadContext>(source);
+		auto          capture = howdy::native::VideoCaptureTestAccess::Create(
+		    howdy::native::CaptureSettings{.device_path = "none"}, context);
+		cv::Mat    raw;
+		cv::Mat    gray;
+		const bool read_ok = capture.Read(raw, &gray);
+		bool       ok      = true;
+		ok &= Expect(read_ok && capture.ErrorMessage().empty(), "CV_8UC1 read succeeds");
+		ok &= Expect(read_ok && raw.type() == CV_8UC1 && raw.size() == source.size() &&
+		                 cv::norm(raw, source, cv::NORM_INF) == 0.0,
+		             "CV_8UC1 preserves raw frame");
+		ok &= Expect(read_ok && gray.type() == CV_8UC1 && gray.size() == source.size() &&
+		                 cv::norm(gray, source, cv::NORM_INF) == 0.0,
+		             "CV_8UC1 passes grayscale pixels through unchanged");
+
+		cv::Mat    raw_only;
+		const bool read_without_gray = capture.Read(raw_only, nullptr);
+		ok &= Expect(read_without_gray && raw_only.type() == CV_8UC1 &&
+		                 cv::norm(raw_only, source, cv::NORM_INF) == 0.0,
+		             "CV_8UC1 read without gray output succeeds");
+		ok &= Expect(context->Calls() == 2, "CV_8UC1 reads twice");
+		return ok;
+	}
+
 	auto ReadFailureIsReported(ReadContext::Behavior behavior, const std::string &label) -> bool {
 		auto const context = std::make_shared<ReadContext>(cv::Mat(), behavior);
 		auto       capture = howdy::native::VideoCaptureTestAccess::Create(
@@ -197,6 +223,7 @@ auto main() -> int {
 	ok &= Non8uFrameIsRejectedWithoutGrayscaleConversion();
 	ok &= ColorFrameConvertsToGray(cv::Mat(1, 1, CV_8UC3, cv::Scalar(0, 0, 255)), "BGR");
 	ok &= ColorFrameConvertsToGray(cv::Mat(1, 1, CV_8UC4, cv::Scalar(0, 0, 255, 17)), "BGRA");
+	ok &= GrayscaleFramePassesThroughToGray();
 	ok &= ReadFailureIsReported(ReadContext::Behavior::kFailure, "false read");
 	ok &= ReadFailureIsReported(ReadContext::Behavior::kException, "OpenCV exception");
 	ok &= UnconfiguredDeviceIsRejectedBeforeOpen();
