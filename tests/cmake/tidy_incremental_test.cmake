@@ -20,6 +20,7 @@ file(MAKE_DIRECTORY
  "${fixture_root}/howdy/include"
  "${fixture_root}/howdy/src"
  "${fixture_root}/pam/src"
+ "${fixture_root}/tests/include"
  "${fixture_root}/howdy/generated"
  "${fixture_root}/other"
  "${fake_bin}"
@@ -47,6 +48,11 @@ file(WRITE "${fixture_root}/howdy/src/tracked.cpp"
      "int tracked() { return 1; }\n")
 file(WRITE "${fixture_root}/howdy/src/consumer.cpp"
      "int consumer() { return 1; }\n")
+file(WRITE "${fixture_root}/howdy/src/shared_tracked_consumer.cpp"
+     "int shared_tracked_consumer() { return 1; }\n")
+file(WRITE "${fixture_root}/pam/src/shared_untracked_consumer.cpp"
+     "int shared_untracked_consumer() { return 1; }\n")
+file(WRITE "${fixture_root}/tests/include/shared_tracked.hpp" "#pragma once\n")
 file(WRITE "${fixture_root}/howdy/src/ignored_consumer.cpp"
      "int ignored_consumer() { return 1; }\n")
 run_git(init --quiet)
@@ -54,12 +60,16 @@ run_git(config user.email howdy-tidy-test@example.invalid)
 run_git(config user.name Howdy-Tidy-Test)
 run_git(
  add .gitignore howdy/src/tracked.cpp howdy/src/consumer.cpp
- howdy/src/ignored_consumer.cpp
+ howdy/src/shared_tracked_consumer.cpp pam/src/shared_untracked_consumer.cpp
+ tests/include/shared_tracked.hpp howdy/src/ignored_consumer.cpp
 )
 run_git(-c commit.gpgsign=false commit --quiet -m baseline)
 
 file(WRITE "${fixture_root}/howdy/src/tracked.cpp"
      "int tracked() { return 2; }\n")
+file(WRITE "${fixture_root}/tests/include/shared_tracked.hpp"
+     "#pragma once\n// updated\n")
+file(WRITE "${fixture_root}/tests/include/shared new.hpp" "#pragma once\n")
 file(WRITE "${fixture_root}/pam/src/new file.cpp" "int added() { return 1; }\n")
 file(WRITE "${fixture_root}/howdy/include/new header.hpp" "#pragma once\n")
 file(WRITE "${fixture_root}/howdy/generated/ignored.hpp" "#pragma once\n")
@@ -75,12 +85,20 @@ set(new_source "${fixture_root}/pam/src/new file.cpp")
 set(unicode_source "${fixture_root}/pam/src/café.cpp")
 set(semicolon_source "${fixture_root}/pam/src/semi;colon.cpp")
 set(consumer_source "${fixture_root}/howdy/src/consumer.cpp")
+set(shared_tracked_consumer_source
+    "${fixture_root}/howdy/src/shared_tracked_consumer.cpp")
+set(shared_untracked_consumer_source
+    "${fixture_root}/pam/src/shared_untracked_consumer.cpp")
 set(ignored_consumer_source "${fixture_root}/howdy/src/ignored_consumer.cpp")
 set(unrelated_source "${fixture_root}/other/unrelated.cpp")
 set(new_header "${fixture_root}/howdy/include/new header.hpp")
+set(shared_tracked_header "${fixture_root}/tests/include/shared_tracked.hpp")
+set(shared_untracked_header "${fixture_root}/tests/include/shared new.hpp")
 set(ignored_header "${fixture_root}/howdy/generated/ignored.hpp")
 string(REPLACE " " "\\ " new_source_make "${new_source}")
 string(REPLACE " " "\\ " new_header_make "${new_header}")
+string(REPLACE " " "\\ " shared_untracked_header_make
+       "${shared_untracked_header}")
 set(scan_deps "${fake_bin}/clang-scan-deps")
 file(WRITE "${scan_deps}" "#!/bin/sh\ncat <<'EOF'\n")
 file(APPEND "${scan_deps}" "tracked.o: ${tracked_source}\n")
@@ -89,6 +107,14 @@ file(APPEND "${scan_deps}" "unicode.o: ${unicode_source}\n")
 file(APPEND "${scan_deps}" "semicolon.o: ${semicolon_source}\n")
 file(APPEND "${scan_deps}"
      "consumer.o: ${consumer_source} ${new_header_make}\n")
+file(
+ APPEND "${scan_deps}"
+ "shared_tracked.o: ${shared_tracked_consumer_source} ${shared_tracked_header}\n"
+)
+file(
+ APPEND "${scan_deps}"
+ "shared_untracked.o: ${shared_untracked_consumer_source} ${shared_untracked_header_make}\n"
+)
 file(APPEND "${scan_deps}"
      "ignored.o: ${ignored_consumer_source} ${ignored_header}\n")
 file(APPEND "${scan_deps}" "unrelated.o: ${unrelated_source}\nEOF\n")
@@ -138,10 +164,12 @@ assert_tidy_contains("pam/src/new file[.]cpp$")
 assert_tidy_contains("pam/src/café[.]cpp$")
 assert_tidy_contains("pam/src/semi;colon[.]cpp$")
 assert_tidy_contains("howdy/src/consumer[.]cpp$")
+assert_tidy_contains("howdy/src/shared_tracked_consumer[.]cpp$")
+assert_tidy_contains("pam/src/shared_untracked_consumer[.]cpp$")
 assert_tidy_excludes("howdy/src/ignored_consumer[.]cpp$")
 assert_tidy_excludes("other/unrelated[.]cpp$")
 
-run_git(checkout -- howdy/src/tracked.cpp)
+run_git(checkout -- howdy/src/tracked.cpp tests/include/shared_tracked.hpp)
 file(REMOVE "${tidy_log}")
 execute_process(
  COMMAND "${CMAKE_COMMAND}" "-DBUILD_DIR=${build_dir}" -DBASE=HEAD
@@ -163,7 +191,9 @@ assert_tidy_contains("pam/src/new file[.]cpp$")
 assert_tidy_contains("pam/src/café[.]cpp$")
 assert_tidy_contains("pam/src/semi;colon[.]cpp$")
 assert_tidy_contains("howdy/src/consumer[.]cpp$")
+assert_tidy_contains("pam/src/shared_untracked_consumer[.]cpp$")
 assert_tidy_excludes("howdy/src/tracked[.]cpp$")
+assert_tidy_excludes("howdy/src/shared_tracked_consumer[.]cpp$")
 assert_tidy_excludes("howdy/src/ignored_consumer[.]cpp$")
 assert_tidy_excludes("other/unrelated[.]cpp$")
 

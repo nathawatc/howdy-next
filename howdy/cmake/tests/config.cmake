@@ -77,6 +77,12 @@ if(NOT CMAKE_CROSSCOMPILING)
     )
   endif()
   add_test(
+   NAME native-fuzzing-option
+   COMMAND
+    "${CMAKE_COMMAND}"
+    -P "${PROJECT_SOURCE_DIR}/tests/cmake/fuzzing_option_test.cmake"
+  )
+  add_test(
     NAME native-emulator-isolation
     COMMAND "${CMAKE_COMMAND}"
       "-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"

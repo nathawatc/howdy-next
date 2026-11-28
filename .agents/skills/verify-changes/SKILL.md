@@ -35,8 +35,8 @@ verification and incremental `clang-tidy`.
    ctest --preset debug
    ```
 
-3. **Incremental `clang-tidy`** — run whenever C/C++ files under `howdy/` or `pam/` changed
-   (matches `.github/workflows/clang_tidy.yml`):
+3. **Incremental `clang-tidy`** — run whenever C/C++ files under `howdy/`, `pam/`, or
+   `tests/include/` changed (matches `.github/workflows/clang_tidy.yml`):
 
    ```sh
    cmake --preset debug

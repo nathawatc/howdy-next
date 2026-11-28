@@ -27,19 +27,20 @@ find_program(git_executable NAMES git REQUIRED)
 find_program(clang_scan_deps_executable NAMES clang-scan-deps REQUIRED)
 find_program(run_clang_tidy_executable NAMES run-clang-tidy REQUIRED)
 
+set(watched_paths howdy pam tests/include)
 execute_process(COMMAND "${git_executable}" -c core.quotePath=false diff
-                --name-only "${BASE}" -- howdy pam WORKING_DIRECTORY
+                --name-only "${BASE}" -- ${watched_paths} WORKING_DIRECTORY
                 "${project_root}" OUTPUT_VARIABLE changed_output
                 COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${git_executable}" -c core.quotePath=false ls-files
-                --others --exclude-standard -- howdy pam WORKING_DIRECTORY
+                --others --exclude-standard -- ${watched_paths} WORKING_DIRECTORY
                 "${project_root}" OUTPUT_VARIABLE untracked_output
                 COMMAND_ERROR_IS_FATAL ANY)
 set(worktree_output "${changed_output}${untracked_output}")
 string(REPLACE "\r\n" "\n" worktree_output "${worktree_output}")
 string(REGEX REPLACE "\n+$" "" worktree_output "${worktree_output}")
 if(worktree_output STREQUAL "")
-  message(STATUS "No changed files under howdy/ or pam/")
+  message(STATUS "No changed files under howdy/, pam/, or tests/include/")
   return()
 endif()
 string(REPLACE ";" "\\;" worktree_output "${worktree_output}")
