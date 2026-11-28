@@ -1,10 +1,13 @@
 #include "auth_helper/auth_helper_test_groups.hpp"
 #include "auth_helper/runtime_descriptors.hpp"
+#include "config/config_utils.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
 #include "storage/user_model_store.hpp"
 #include "support/bit_flags.hpp"
 #include "test_support.hpp"
 
+#include <array>
+#include <cstdio>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -37,6 +40,102 @@ namespace {
 		       descriptor >= 0 && howdy::native::HasAnyBits(descriptor, FD_CLOEXEC) &&
 		       fstat(fd, &opened) == 0 && stat(path.c_str(), &named) == 0 &&
 		       opened.st_dev == named.st_dev && opened.st_ino == named.st_ino;
+	}
+
+	auto ExpectConfigReopenRetryLoop(const fs::path &root, const RuntimeDescriptorSources &sources)
+	    -> bool {
+		struct ReopenCase {
+			const char *label;
+			int         replacements;
+			bool        replacement_insecure;
+			bool        expect_ok;
+			int         expected_attempts;
+		};
+
+		const auto reopen_cases = std::to_array<ReopenCase>({
+		    {
+		        .label                = "recovers after single config replacement",
+		        .replacements         = 1,
+		        .replacement_insecure = false,
+		        .expect_ok            = true,
+		        .expected_attempts    = 2,
+		    },
+		    {
+		        .label                = "recovers at kMaxConfigReopens boundary",
+		        .replacements         = howdy::native::kMaxConfigReopens,
+		        .replacement_insecure = false,
+		        .expect_ok            = true,
+		        .expected_attempts    = howdy::native::kMaxConfigReopens + 1,
+		    },
+		    {
+		        .label                = "fails closed after kMaxConfigReopens exhaustion",
+		        .replacements         = howdy::native::kMaxConfigReopens + 2,
+		        .replacement_insecure = false,
+		        .expect_ok            = false,
+		        .expected_attempts    = howdy::native::kMaxConfigReopens + 1,
+		    },
+		    {
+		        .label                = "stops retrying when replacement config is insecure",
+		        .replacements         = 1,
+		        .replacement_insecure = true,
+		        .expect_ok            = false,
+		        .expected_attempts    = 2,
+		    },
+		});
+
+		struct ReopenHookState {
+			fs::path config_path;
+			fs::path staging_path;
+			int      remaining_replacements = 0;
+			bool     replacement_insecure   = false;
+			int      attempts               = 0;
+			bool     hook_ok                = true;
+		};
+
+		bool ok = true;
+		for (const auto &test_case : reopen_cases) {
+			const auto retry_config = root / "retry-config.ini";
+			const auto staging_file = root / "retry-config.next";
+			ok &= Expect(WriteFile(retry_config, "[core]\ndisabled = false\n") &&
+			                 chmod(retry_config.c_str(), 0644) == 0,
+			             std::string("write baseline config for ") + test_case.label);
+			ReopenHookState hook_state{
+			    .config_path            = retry_config,
+			    .staging_path           = staging_file,
+			    .remaining_replacements = test_case.replacements,
+			    .replacement_insecure   = test_case.replacement_insecure,
+			};
+			auto retry_sources                      = sources;
+			retry_sources.config                    = retry_config;
+			retry_sources.after_config_open_context = &hook_state;
+			retry_sources.after_config_open         = [](void *raw_context) -> void {
+				auto &state = *static_cast<ReopenHookState *>(raw_context);
+				++state.attempts;
+				if (state.remaining_replacements <= 0) {
+					return;
+				}
+				--state.remaining_replacements;
+				const mode_t mode = state.replacement_insecure ? 0666 : 0644;
+				state.hook_ok &=
+				    WriteFile(state.staging_path, "[core]\ndisabled = false\n") &&
+				    chmod(state.staging_path.c_str(), mode) == 0 &&
+				    std::rename(state.staging_path.c_str(), state.config_path.c_str()) == 0;
+			};
+
+			const auto opened = OpenRuntimeDescriptors("alice", retry_sources);
+			ok &= Expect(hook_state.hook_ok,
+			             std::string("replacement hook succeeded for ") + test_case.label);
+			ok &= Expect(hook_state.attempts == test_case.expected_attempts,
+			             std::string("attempt count matches for ") + test_case.label);
+			if (test_case.expect_ok) {
+				ok &= Expect(opened.ok && NamesFile(opened.config.Get(), retry_config),
+				             std::string("opener ") + test_case.label);
+			} else {
+				ok &= Expect(!opened.ok && !opened.config.Valid() && !opened.error_message.empty(),
+				             std::string("opener ") + test_case.label);
+			}
+		}
+		return ok;
 	}
 
 }  // namespace
@@ -177,6 +276,16 @@ auto RunAuthHelperDescriptorTests(const fs::path &temp_root) -> bool {
 		ok &= Expect(!opened.ok && opened.error_message.contains("missing.ini"),
 		             "opener reports a missing config");
 	}
+	{
+		const auto fifo_config = root / "config.fifo";
+		ok &= Expect(mkfifo(fifo_config.c_str(), 0644) == 0, "create FIFO config fixture");
+		auto fifo_sources   = sources;
+		fifo_sources.config = fifo_config;
+		const auto opened   = OpenRuntimeDescriptors("alice", fifo_sources);
+		ok &= Expect(!opened.ok && !opened.config.Valid() && !opened.error_message.empty(),
+		             "opener rejects a FIFO config without blocking");
+	}
+	ok &= ExpectConfigReopenRetryLoop(root, sources);
 
 	fs::remove_all(root, ec);
 	return ok;

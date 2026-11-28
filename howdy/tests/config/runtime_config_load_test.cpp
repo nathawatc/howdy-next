@@ -1,4 +1,5 @@
 #include "config/config_limits.hpp"
+#include "config/config_utils.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
 #include "config/test_hooks.hpp"
@@ -190,6 +191,45 @@ namespace {
 		return ok;
 	}
 
+	auto ExpectConfigReopenBounds(const std::filesystem::path &temp_root) -> bool {
+		using howdy::native::RuntimeConfigLoadStatus;
+		using howdy::test::Expect;
+		bool ok = true;
+		for (const bool exhaust_retries : {false, true}) {
+			const auto replaced_path = temp_root / "retry-bound.ini";
+			const auto staging_path  = temp_root / "retry-bound-next.ini";
+			ok &= Expect(WriteSecureConfig(replaced_path, "[video]\ntimeout = 7\n"),
+			             "write retry-bound config baseline");
+			int        open_calls   = 0;
+			const int  replacements = exhaust_retries ? howdy::native::kMaxConfigReopens + 2
+			                                          : howdy::native::kMaxConfigReopens;
+			bool       hook_ok      = true;
+			const auto load_result  = [&] -> howdy::native::RuntimeConfigLoadResult {
+				const howdy::native::config_test_hooks::ScopedHooks hooks([&] -> void {
+					++open_calls;
+					if (open_calls <= replacements) {
+						hook_ok &= WriteSecureConfig(staging_path, "[video]\ntimeout = 11\n") &&
+						           rename(staging_path.c_str(), replaced_path.c_str()) == 0;
+					}
+				});
+				return howdy::native::LoadRuntimeConfig(replaced_path, std::nullopt, {temp_root});
+			}();
+			ok &= Expect(hook_ok, "retry-bound replacement hook succeeded");
+			ok &= Expect(open_calls == howdy::native::kMaxConfigReopens + 1,
+			             exhaust_retries ? "config reopen stops after kMaxConfigReopens retries"
+			                             : "config reopen succeeds on final allowed retry");
+			if (exhaust_retries) {
+				ok &= ExpectFailure(load_result, RuntimeConfigLoadStatus::kPathError,
+				                    "config reopen exhaustion fails closed");
+			} else {
+				ok &= Expect(load_result.ok && load_result.config.has_value() &&
+				                 load_result.config->video.timeout == 11,
+				             "config reopen boundary loads final replacement");
+			}
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -343,6 +383,8 @@ auto main() -> int {
 			                    "insecure replacement during the load");
 		}
 	}
+
+	ok &= ExpectConfigReopenBounds(temp_root);
 
 	const auto missing_path = temp_root / "missing.ini";
 	const auto missing = howdy::native::LoadRuntimeConfig(missing_path, std::nullopt, {temp_root});

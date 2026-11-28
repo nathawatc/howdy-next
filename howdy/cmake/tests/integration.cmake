@@ -60,6 +60,18 @@ add_test(
   "-DBUILD_DIR=${PROJECT_BINARY_DIR}"
   -P "${PROJECT_SOURCE_DIR}/tests/cmake/install_config_test.cmake"
 )
+add_executable(howdy_install_preflight_integration_test
+               tests/integration/install_preflight_test.cpp)
+howdy_configure_native_test_target(howdy_install_preflight_integration_test)
+add_dependencies(howdy_install_preflight_integration_test howdy_install_preflight)
+add_test(
+ NAME native-howdy-install-preflight
+ COMMAND
+  howdy_install_preflight_integration_test
+  "$<TARGET_FILE:howdy_install_preflight>"
+  "${PROJECT_BINARY_DIR}/install-preflight-test"
+  ${howdy_test_emulator}
+)
 add_executable(howdy_docs_generator_integration_test
               tests/integration/docs_generator_test.cpp)
 howdy_configure_native_test_target(howdy_docs_generator_integration_test)

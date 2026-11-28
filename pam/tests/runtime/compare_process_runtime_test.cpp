@@ -58,6 +58,8 @@ namespace {
 		int               fail_poll_call = 0;
 		int               term_calls     = 0;
 		int               kill_calls     = 0;
+		int               waitid_calls   = 0;
+		int               waitpid_calls  = 0;
 		int               reaped_status  = 0;
 	};
 
@@ -165,6 +167,7 @@ auto TestPidfdSendSignal(int pidfd, int signal, siginfo_t *info, unsigned int fl
 
 // Records what a pidfd reap consumed, in wait(2) form, ignoring peeks and empty polls.
 auto TestWaitid(idtype_t id_type, id_t id, siginfo_t *info, int options) -> int {
+	++WaitState().waitid_calls;
 	if (WaitState().waitid_any_error != 0) {
 		errno = WaitState().waitid_any_error;
 		return -1;
@@ -186,6 +189,7 @@ auto TestWaitid(idtype_t id_type, id_t id, siginfo_t *info, int options) -> int 
 }
 
 auto TestWaitpid(pid_t pid, int *status, int options) -> pid_t {
+	++WaitState().waitpid_calls;
 	const pid_t result = RealWaitpid(pid, status, options);
 	if (result == pid && status != nullptr) {
 		WaitState().reaped_status = *status;
@@ -1104,6 +1108,85 @@ namespace {
 		return ok;
 	}
 
+	// On Linux 5.3 (waitid(P_PIDFD) returns EINVAL), OpenChildPidfd falls back to P_PID to accept
+	// our own child and still reject a non-child with ECHILD.
+	auto TestOpenChildPidfdLinux53EinvalFallback() -> bool {
+		bool        ok        = true;
+		const pid_t child_pid = SpawnBlockedChild();
+		if (!Expect(child_pid > 0, "Linux 5.3 OpenChildPidfd test spawns child")) {
+			return false;
+		}
+		WaitState().waitid_error = EINVAL;
+		const howdy::native::ScopedFd child_pidfd(howdy::pam::runtime::OpenChildPidfd(child_pid));
+		errno                    = 0;
+		const int self_pidfd     = howdy::pam::runtime::OpenChildPidfd(getpid());
+		const int self_error     = errno;
+		WaitState().waitid_error = 0;
+
+		ok &= Expect(child_pidfd.Get() > STDERR_FILENO,
+		             "OpenChildPidfd accepts our child via P_PID fallback on Linux 5.3 EINVAL");
+		ok &= Expect(self_pidfd < 0 && self_error == ECHILD,
+		             "OpenChildPidfd rejects non-child with ECHILD via P_PID fallback on EINVAL");
+		howdy::pam::runtime::TrackedChild child(child_pid, child_pidfd.Get());
+		(void)howdy::pam::runtime::KillAndReap(child);
+		ok &= Expect(ChildReaped(child_pid), "Linux 5.3 OpenChildPidfd child is reaped");
+		return ok;
+	}
+
+	// Without a usable PID (pid <= 0), Wait() and AwaitExit() fail closed with ECHILD / false and
+	// never call waitpid() or waitid(P_PID, <=0).
+	auto TestTrackedChildWithoutPidFailsClosed() -> bool {
+		const pid_t child_pid = SpawnBlockedChild();
+		if (!Expect(child_pid > 0, "tracked-child-without-pid test spawns child")) {
+			return false;
+		}
+		const howdy::native::ScopedFd pidfd(howdy::pam::runtime::OpenChildPidfd(child_pid));
+		if (!Expect(pidfd.Valid(), "tracked-child-without-pid test opens pidfd")) {
+			(void)kill(child_pid, SIGKILL);
+			(void)waitpid(child_pid, nullptr, 0);
+			return false;
+		}
+
+		bool ok = true;
+		for (const pid_t bad_pid : {pid_t{-1}, pid_t{0}}) {
+			// 1. Wait with pid <= 0 and no pidfd fails closed without waitpid().
+			howdy::pam::runtime::TrackedChild no_pidfd(bad_pid, -1);
+			int                               status = 0;
+			WaitState().waitpid_calls                = 0;
+			errno                                    = 0;
+			const auto wait_no_pidfd                 = no_pidfd.Wait(false, &status);
+			ok &= Expect(wait_no_pidfd == howdy::pam::runtime::ChildState::kError &&
+			                 errno == ECHILD && no_pidfd.WasReapedElsewhere() &&
+			                 WaitState().waitpid_calls == 0,
+			             "Wait with pid <= 0 and no pidfd fails closed without waitpid");
+
+			// 2. Wait with pid <= 0 and pidfd on Linux 5.3 EINVAL fails closed without waitpid().
+			howdy::pam::runtime::TrackedChild einval_pidfd(bad_pid, pidfd.Get());
+			WaitState().waitid_error  = EINVAL;
+			WaitState().waitpid_calls = 0;
+			errno                     = 0;
+			const auto wait_einval    = einval_pidfd.Wait(false, &status);
+			WaitState().waitid_error  = 0;
+			ok &=
+			    Expect(wait_einval == howdy::pam::runtime::ChildState::kError && errno == ECHILD &&
+				           einval_pidfd.WasReapedElsewhere() && WaitState().waitpid_calls == 0,
+				       "Wait with pid <= 0 on Linux 5.3 EINVAL fails closed without waitpid");
+
+			// 3. AwaitExit with pid <= 0 and no pidfd fails closed without waitid().
+			howdy::pam::runtime::TrackedChild await_no_pidfd(bad_pid, -1);
+			WaitState().waitid_calls = 0;
+			const bool exited        = await_no_pidfd.AwaitExit(500ms);
+			ok &= Expect(!exited && await_no_pidfd.WasReapedElsewhere() &&
+			                 WaitState().waitid_calls == 0,
+			             "AwaitExit with pid <= 0 and no pidfd fails closed without waitid");
+		}
+
+		howdy::pam::runtime::TrackedChild cleanup(-1, pidfd.Get());
+		(void)howdy::pam::runtime::KillAndReap(cleanup);
+		ok &= Expect(ChildReaped(child_pid), "tracked-child-without-pid child is reaped");
+		return ok;
+	}
+
 	// A pidfd wait refused for any reason but a missing P_PIDFD fails closed instead of moving to
 	// a waitpid that could reap another child which reused the PID.
 	auto TestFilteredPidfdWaitDoesNotUsePid() -> bool {
@@ -1640,6 +1723,8 @@ auto main(int argc, char **argv) -> int {
 	ok &= TestUnconfirmedPidIsNotSignalled();
 	ok &= TestPeekTrackedLinux53EinvalFallback();
 	ok &= TestSignalWithoutPidPreservesNonEsrchError();
+	ok &= TestOpenChildPidfdLinux53EinvalFallback();
+	ok &= TestTrackedChildWithoutPidFailsClosed();
 	ok &= TestFilteredPidfdWaitDoesNotUsePid();
 	return ok ? 0 : 1;
 }

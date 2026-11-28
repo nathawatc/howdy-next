@@ -17,6 +17,9 @@ namespace howdy::native::auth_helper {
 		UserModelStore                         user_models;
 		uid_t                                  config_owner_uid = 0;
 		file_security_internal::ValidationRoot config_validation_root;
+		// Test-only hook invoked right after open() and before CheckSecureConfigFd().
+		void (*after_config_open)(void *context) = nullptr;
+		void *after_config_open_context          = nullptr;
 	};
 
 	struct OpenedRuntimeDescriptors {

@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include <fcntl.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include <sys/socket.h>
@@ -53,16 +54,25 @@ namespace howdy::native::compare_entrypoint_private {
 
 	// Also reports the exit code on the verdict socket, so PAM still learns it if the application
 	// reaps compare first. Best effort: a failed write leaves PAM with only the exit status, which
-	// fails closed when it is gone.
+	// fails closed when it is gone. Suppress SIGPIPE around write() via sigaction (allowed by
+	// seccomp) so a closed peer turns into EPIPE instead of killing compare before it returns.
 	auto ReportVerdict(const VerdictSocket &socket, int exit_code) noexcept -> int {
 		struct stat status{};
 		if (socket.announced && fstat(howdy::native::compare_verdict::kFd, &status) == 0 &&
 		    S_ISSOCK(status.st_mode) && status.st_dev == socket.device &&
 		    status.st_ino == socket.inode) {
-			const auto verdict = static_cast<unsigned char>(exit_code);
+			struct sigaction ignore_pipe{};
+			ignore_pipe.sa_handler = SIG_IGN;
+			sigemptyset(&ignore_pipe.sa_mask);
+			struct sigaction previous_pipe{};
+			const bool       suppressed = sigaction(SIGPIPE, &ignore_pipe, &previous_pipe) == 0;
+			const auto       verdict    = static_cast<unsigned char>(exit_code);
 			(void)howdy::native::RetryOnEintr([&] -> ssize_t {
 				return write(howdy::native::compare_verdict::kFd, &verdict, sizeof(verdict));
 			});
+			if (suppressed) {
+				(void)sigaction(SIGPIPE, &previous_pipe, nullptr);
+			}
 		}
 		return exit_code;
 	}

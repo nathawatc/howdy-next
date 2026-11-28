@@ -104,6 +104,8 @@ namespace howdy::test::prompt_coordinator {
 		bool                                  release_conversation               = false;
 		bool                                  release_token                      = false;
 		bool                                  preflight_result                   = true;
+		bool                                  throw_preflight                    = false;
+		bool                                  throw_preflight_unknown            = false;
 		bool                                  fail_prompt_submitter_construction = false;
 		bool                                  return_null_prompt_submitter       = false;
 		bool                                  throw_native_prompt                = false;
@@ -379,6 +381,12 @@ namespace howdy::test::prompt_coordinator {
 	inline auto InputPreflight(void *context) -> bool {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.preflight_calls;
+		if (fake.throw_preflight) {
+			throw std::runtime_error("Simulated input preflight failure");
+		}
+		if (fake.throw_preflight_unknown) {
+			howdy::test::ThrowNonStandardExceptionForTest();
+		}
 		return fake.preflight_result;
 	}
 

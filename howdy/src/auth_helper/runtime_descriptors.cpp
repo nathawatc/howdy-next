@@ -32,6 +32,9 @@ namespace howdy::native::auth_helper {
 					    ConfigAccessErrorHint(error_number);
 					return false;
 				}
+				if (sources.after_config_open != nullptr) {
+					sources.after_config_open(sources.after_config_open_context);
+				}
 				// The ancestors are checked after the open, so they vouch for the file it names.
 				auto security =
 				    CheckSecureConfigFd(config.Get(), sources.config, sources.config_owner_uid,

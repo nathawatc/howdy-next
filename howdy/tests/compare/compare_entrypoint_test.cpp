@@ -1,5 +1,7 @@
 #include "compare/compare_descriptor_test_support.hpp"
 #include "compare/entrypoint.hpp"
+#include "compare/entrypoint/dependencies.hpp"
+#include "compare/sandbox.hpp"
 #include "model_assets/opencv_model_manifest.hpp"
 #include "protocol/compare_descriptors.hpp"
 #include "protocol/compare_exit.hpp"
@@ -9,6 +11,7 @@
 
 #include <array>
 #include <cerrno>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
@@ -16,11 +19,13 @@
 #include <system_error>
 
 #include <fcntl.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #ifndef HOWDY_PACKAGED_CONFIG_PATH
 #	error "HOWDY_PACKAGED_CONFIG_PATH must be defined by CMake"
@@ -597,6 +602,119 @@ namespace {
 		return ok;
 	}
 
+	auto ExpectVerdictReportMismatchAndClosedPeer(const fs::path &root) -> bool {
+		using howdy::native::CompareEntrypointDependencies;
+		using howdy::native::CompareExit;
+		using howdy::native::CompareSandboxResource;
+		using howdy::native::CompareSandboxResult;
+		using howdy::native::CompareSandboxStatus;
+		using howdy::test::Expect;
+		using howdy::test::ScopedEnvironmentVariable;
+		using howdy::test::compare::OpenAboveProtocol;
+		using howdy::test::compare::ScopedDescriptorAt;
+		namespace descriptors = howdy::native::compare_descriptors;
+		namespace verdict     = howdy::native::compare_verdict;
+
+		bool       ok         = true;
+		const auto model_path = root / "verdict-edge-model.dat";
+		ok &=
+		    Expect(howdy::test::WriteFile(model_path, "[]") && chmod(model_path.c_str(), 0600) == 0,
+			       "write verdict-edge model");
+		const auto                 config = OpenAboveProtocol(root / "config.ini", O_RDONLY);
+		const auto                 model  = OpenAboveProtocol(model_path, O_RDONLY);
+		const uid_t                owner  = geteuid();
+		std::array<std::string, 2> arguments{"howdy-compare", "coverage-user"};
+		std::array<char *, 2>      argv{arguments.at(0).data(), arguments.at(1).data()};
+
+		// 1. If fd 3 is replaced with a different SOCK_SEQPACKET socket after FindVerdictSocket,
+		// ReportVerdict detects the st_dev/st_ino mismatch and writes to neither socket.
+		{
+			const auto                original_pair    = howdy::test::compare::MakeVerdictPair();
+			const auto                replacement_pair = howdy::test::compare::MakeVerdictPair();
+			const ScopedDescriptorAt  verdict_at(verdict::kFd, original_pair.compare_end.Get());
+			const ScopedDescriptorAt  config_at(descriptors::kConfigFd, config.Get());
+			const ScopedDescriptorAt  model_at(descriptors::kModelFd, model.Get());
+			ScopedEnvironmentVariable verdict_env(verdict::kEnvironmentName);
+			ScopedEnvironmentVariable config_env(descriptors::kConfigEnvironmentName);
+			ScopedEnvironmentVariable model_env(descriptors::kModelEnvironmentName);
+			verdict_env.Set(verdict::kEnvironmentValue);
+			config_env.Set(descriptors::kConfigEnvironmentValue);
+			model_env.Set(descriptors::kModelEnvironmentValue);
+
+			struct SwapContext {
+				int  replacement_fd = -1;
+				bool swapped        = false;
+			};
+
+			SwapContext swap_context{.replacement_fd = replacement_pair.compare_end.Get()};
+			const CompareEntrypointDependencies dependencies{
+			    .context         = &swap_context,
+			    .disable_tracing = [](void *raw_context) -> CompareSandboxResult {
+				    auto &context   = *static_cast<SwapContext *>(raw_context);
+				    context.swapped = dup2(context.replacement_fd, verdict::kFd) == verdict::kFd;
+				    return {
+				        .status   = CompareSandboxStatus::kTracerAttached,
+				        .resource = CompareSandboxResource::kNone,
+				    };
+			    },
+			};
+
+			const std::ostringstream errors;
+			int                      status = -1;
+			{
+				const howdy::test::StreamRedirect redirect(std::cerr, errors.rdbuf());
+				status = howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()),
+				                                             argv.data(), owner, dependencies);
+			}
+			unsigned char byte = 0;
+			ok &= Expect(swap_context.swapped && status == static_cast<int>(CompareExit::kAbort),
+			             "verdict fd swap returns compare abort status");
+			ok &= Expect(read(original_pair.pam_end.Get(), &byte, 1) < 0 && errno == EAGAIN &&
+			                 read(replacement_pair.pam_end.Get(), &byte, 1) < 0 && errno == EAGAIN,
+			             "ReportVerdict writes nothing when fd 3 st_dev/st_ino changed");
+		}
+
+		// 2. When PAM's end of the verdict socket is already closed (EPIPE) under default SIGPIPE,
+		// ReportVerdict suppresses SIGPIPE, restores SIG_DFL, and returns exit_code instead of
+		// terminating compare with SIGPIPE.
+		{
+			const pid_t child = fork();
+			if (child == 0) {
+				struct sigaction default_pipe{};
+				default_pipe.sa_handler = SIG_DFL;
+				sigemptyset(&default_pipe.sa_mask);
+				if (sigaction(SIGPIPE, &default_pipe, nullptr) != 0) {
+					_exit(EXIT_FAILURE);
+				}
+				auto                      pair = howdy::test::compare::MakeVerdictPair();
+				const ScopedDescriptorAt  verdict_at(verdict::kFd, pair.compare_end.Get());
+				const ScopedDescriptorAt  config_at(descriptors::kConfigFd, config.Get());
+				const ScopedDescriptorAt  model_at(descriptors::kModelFd, model.Get());
+				ScopedEnvironmentVariable verdict_env(verdict::kEnvironmentName);
+				ScopedEnvironmentVariable config_env(descriptors::kConfigEnvironmentName);
+				ScopedEnvironmentVariable model_env(descriptors::kModelEnvironmentName);
+				verdict_env.Set(verdict::kEnvironmentValue);
+				config_env.Set(descriptors::kConfigEnvironmentValue);
+				model_env.Set(descriptors::kModelEnvironmentValue);
+
+				pair.pam_end.Reset();
+				const int status = howdy::native::RunCompareEntrypoint(
+				    static_cast<int>(argv.size()), argv.data(), owner);
+				struct sigaction after_pipe{};
+				const bool       restored = sigaction(SIGPIPE, nullptr, &after_pipe) == 0 &&
+				                            after_pipe.sa_handler == SIG_DFL;
+				_exit(status == static_cast<int>(CompareExit::kNoFaceModel) && restored
+				          ? EXIT_SUCCESS
+						  : EXIT_FAILURE);
+			}
+			int wait_status = 0;
+			ok &= Expect(child > 0 && waitpid(child, &wait_status, 0) == child &&
+			                 WIFEXITED(wait_status) && WEXITSTATUS(wait_status) == EXIT_SUCCESS,
+			             "ReportVerdict handles closed verdict peer (EPIPE) without SIGPIPE death");
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -610,6 +728,7 @@ auto main() -> int {
 	bool ok = true;
 	ok &= ExpectDescriptorMode(root);
 	ok &= ExpectHelpProtocolHandling(root);
+	ok &= ExpectVerdictReportMismatchAndClosedPeer(root);
 
 	std::error_code cleanup_error;
 	fs::remove_all(root, cleanup_error);

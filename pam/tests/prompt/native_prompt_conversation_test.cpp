@@ -376,6 +376,7 @@ auto main() -> int {
 	ok &= ExpectPamTtyResolution();
 	ok &= ExpectPreOpenStdioTtyGate();
 	ok &= ExpectIsolated(ExpectAbortRequestUnblocksWithoutPipeWakeup, "abort wake test");
+	ok &= ExpectPromptInputAfterPriorAbortFailsClosed();
 	ok &= ExpectIsolated(ExpectPtyHangupAbortsPrompt, "PTY hangup test");
 	ok &= ExpectPollEintrWithoutAbortDoesNotAbortPrompt();
 	ok &= ExpectPollEintrWithAbortFailsClosed();

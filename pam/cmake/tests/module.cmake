@@ -60,6 +60,11 @@ target_link_libraries(
  PRIVATE pam_entrypoint pam_module pam_production_entrypoint
          pam_explicit_config_path
 )
+# Lets auth-flow tests simulate module-context PAM_AUTHTOK items via pam_get_item.
+target_link_options(
+ pam_auth_flow_helpers_test
+ PRIVATE "LINKER:--wrap=pam_get_item"
+)
 
 add_test(
  NAME pam-module-exports

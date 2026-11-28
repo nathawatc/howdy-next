@@ -31,6 +31,7 @@ auto AbortPipeFirstNormalizationFailureIsTransactional() -> bool;
 auto AbortPipeSecondNormalizationFailureIsTransactional() -> bool;
 auto ExpectInvalidPamTtyIsUnavailable() -> bool;
 auto ExpectAbortRequestUnblocksWithoutPipeWakeup() -> bool;
+auto ExpectPromptInputAfterPriorAbortFailsClosed() -> bool;
 auto ExpectPtyHangupAbortsPrompt() -> bool;
 auto ExpectPollEintrWithoutAbortDoesNotAbortPrompt() -> bool;
 auto ExpectPollEintrWithAbortFailsClosed() -> bool;
