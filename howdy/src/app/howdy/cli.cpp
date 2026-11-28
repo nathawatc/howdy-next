@@ -270,7 +270,7 @@ namespace howdy::native::howdy_cli_internal {
 
 	namespace {
 		auto ValidateArgv(int argc, char **argv) -> std::optional<std::span<char *>> {
-			if (argv == nullptr) {
+			if (argc <= 0 || argv == nullptr) {
 				return std::nullopt;
 			}
 			const auto arguments = std::span(argv, static_cast<std::size_t>(argc));
@@ -285,9 +285,6 @@ namespace howdy::native::howdy_cli_internal {
 
 	auto ParseCommandLine(int argc, char **argv, ParsedCommandLine &parsed)
 	    -> std::optional<CliSyntaxError> {
-		if (argc <= 0) {
-			return std::nullopt;
-		}
 		const auto validated_arguments = ValidateArgv(argc, argv);
 		if (!validated_arguments.has_value()) {
 			return CliSyntaxError{

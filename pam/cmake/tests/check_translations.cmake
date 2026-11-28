@@ -15,6 +15,15 @@ foreach(required IN LISTS required_inputs)
   endif()
 endforeach()
 
+function(assert_no_duplicate_entries entries_var error_message)
+  set(entries "${${entries_var}}")
+  set(unique_entries "${entries}")
+  list(REMOVE_DUPLICATES unique_entries)
+  if(NOT "${entries}" STREQUAL "${unique_entries}")
+    message(FATAL_ERROR "${error_message}")
+  endif()
+endfunction()
+
 file(REMOVE_RECURSE "${WORK_DIR}")
 file(MAKE_DIRECTORY "${WORK_DIR}")
 
@@ -29,11 +38,10 @@ foreach(source IN LISTS potfile_lines)
 endforeach()
 list(SORT listed_sources)
 
-set(listed_sources_unique ${listed_sources})
-list(REMOVE_DUPLICATES listed_sources_unique)
-if(NOT listed_sources STREQUAL listed_sources_unique)
-  message(FATAL_ERROR "POTFILES contains duplicate translation sources")
-endif()
+assert_no_duplicate_entries(
+  listed_sources
+  "POTFILES contains duplicate translation sources"
+)
 
 file(
  GLOB_RECURSE translation_candidates
@@ -112,11 +120,7 @@ string(REGEX REPLACE "#[^\n]*" "" languages_text "${languages_text}")
 string(REGEX REPLACE "[ \t\r\n]+" ";" languages "${languages_text}")
 list(FILTER languages EXCLUDE REGEX "^$")
 
-set(languages_unique ${languages})
-list(REMOVE_DUPLICATES languages_unique)
-if(NOT languages STREQUAL languages_unique)
-  message(FATAL_ERROR "LINGUAS contains duplicate locale entries")
-endif()
+assert_no_duplicate_entries(languages "LINGUAS contains duplicate locale entries")
 
 function(extract_active_msgids input_file output_variable)
   set(canonical_file "${WORK_DIR}/canonical-${output_variable}.properties")

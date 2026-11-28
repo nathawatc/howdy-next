@@ -699,25 +699,63 @@ namespace {
 			return howdy::test::dispatch::RunRaw(context, argc, argv);
 		};
 
-		const auto null_argv = run_raw(2, nullptr);
-		ok &= Expect(null_argv.status == 2 && !null_argv.error.empty(),
-		             "positive argc with null argv fails closed");
-
 		std::string           program = "howdy";
 		std::string           help    = "--help";
 		std::string           list    = "list";
+		std::array<char *, 1> null_only{nullptr};
+		std::array<char *, 1> program_only{program.data()};
 		std::array<char *, 2> null_argv0{nullptr, help.data()};
-		const auto            res0 = run_raw(2, null_argv0.data());
-		ok &= Expect(res0.status == 2 && !res0.error.empty(),
-		             "null argv[0] with --help fails closed");
-
 		std::array<char *, 2> null_argv1{program.data(), nullptr};
-		const auto            res1 = run_raw(2, null_argv1.data());
-		ok &= Expect(res1.status == 2 && !res1.error.empty(), "null argv[1] fails closed");
-
 		std::array<char *, 3> null_argv2{program.data(), list.data(), nullptr};
-		const auto            res2 = run_raw(3, null_argv2.data());
-		ok &= Expect(res2.status == 2 && !res2.error.empty(), "null argv[2] fails closed");
+
+		struct MalformedArgvCase {
+			const char *label;
+			int         argc;
+			char      **argv;
+		};
+
+		const auto cases = std::to_array<MalformedArgvCase>({
+		    {.label = "zero argc with null argv fails closed", .argc = 0, .argv = nullptr},
+		    {.label = "negative argc with null argv fails closed", .argc = -1, .argv = nullptr},
+		    {.label = "argc 1 with null argv fails closed", .argc = 1, .argv = nullptr},
+		    {.label = "argc 2 with null argv fails closed", .argc = 2, .argv = nullptr},
+		    {
+		        .label = "zero argc with non-null argv fails closed",
+		        .argc  = 0,
+		        .argv  = null_only.data(),
+		    },
+		    {
+		        .label = "negative argc with valid argv fails closed",
+		        .argc  = -1,
+		        .argv  = program_only.data(),
+		    },
+		    {
+		        .label = "null argv[0] alone fails closed",
+		        .argc  = 1,
+		        .argv  = null_only.data(),
+		    },
+		    {
+		        .label = "null argv[0] with --help fails closed",
+		        .argc  = 2,
+		        .argv  = null_argv0.data(),
+		    },
+		    {
+		        .label = "null argv[1] fails closed",
+		        .argc  = 2,
+		        .argv  = null_argv1.data(),
+		    },
+		    {
+		        .label = "null argv[2] fails closed",
+		        .argc  = 3,
+		        .argv  = null_argv2.data(),
+		    },
+		});
+
+		for (const auto &test_case : cases) {
+			const auto result = run_raw(test_case.argc, test_case.argv);
+			ok &= Expect(result.status == 2 && result.output.empty() && !result.error.empty(),
+			             test_case.label);
+		}
 
 		return ok;
 	}
