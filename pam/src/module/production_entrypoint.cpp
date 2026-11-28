@@ -16,7 +16,6 @@
 #include <cerrno>
 #include <memory>
 #include <stdexcept>
-#include <tuple>
 
 #include <unistd.h>
 
@@ -38,11 +37,10 @@ namespace {
 		return true;
 	}
 
-	auto RequestAuthToken(void *context, pam_handle_t *pamh) -> std::tuple<int, const char *> {
+	auto RequestAuthToken(void *context, pam_handle_t *pamh) -> int {
 		(void)context;
 		const char *auth_tok_ptr = nullptr;
-		const int   auth_result  = pam_get_authtok(pamh, PAM_AUTHTOK, &auth_tok_ptr, nullptr);
-		return {auth_result, auth_tok_ptr};
+		return pam_get_authtok(pamh, PAM_AUTHTOK, &auth_tok_ptr, nullptr);
 	}
 
 	auto CreatePromptSubmitter(void *context) -> std::unique_ptr<howdy::pam::PromptSubmitter> {

@@ -434,7 +434,7 @@ namespace howdy::test::prompt_coordinator {
 		return std::make_unique<FakeSecretPromptConversation>(&fake);
 	}
 
-	inline auto RequestTokenUntilRelease(FakeContext &fake) -> std::tuple<int, const char *> {
+	inline auto RequestTokenUntilRelease(FakeContext &fake) -> int {
 		std::unique_lock<std::mutex> lock(fake.token_mutex);
 		fake.before_conversation = true;
 		fake.token_condition.notify_all();
@@ -442,16 +442,15 @@ namespace howdy::test::prompt_coordinator {
 			    return fake.release_token;
 		    })) {
 			fake.auth_token_active = false;
-			return {PAM_SYSTEM_ERR, nullptr};
+			return PAM_SYSTEM_ERR;
 		}
 		fake.auth_token_active = false;
 		fake.token_returned    = true;
 		fake.token_condition.notify_all();
-		return {fake.token_result, nullptr};
+		return fake.token_result;
 	}
 
-	inline auto RequestRealAuthToken(FakeContext &fake, pam_handle_t *pamh)
-	    -> std::tuple<int, const char *> {
+	inline auto RequestRealAuthToken(FakeContext &fake, pam_handle_t *pamh) -> int {
 		if (fake.block_before_conversation) {
 			std::unique_lock<std::mutex> lock(fake.token_mutex);
 			fake.before_conversation = true;
@@ -460,12 +459,12 @@ namespace howdy::test::prompt_coordinator {
 				    return fake.release_conversation;
 			    })) {
 				fake.auth_token_active = false;
-				return {PAM_SYSTEM_ERR, nullptr};
+				return PAM_SYSTEM_ERR;
 			}
 		}
 		if (fake.complete_without_conversation) {
 			fake.auth_token_active = false;
-			return {fake.token_result, nullptr};
+			return fake.token_result;
 		}
 		const void *item   = nullptr;
 		int         result = pam_get_item(pamh, PAM_CONV, &item);
@@ -484,11 +483,10 @@ namespace howdy::test::prompt_coordinator {
 			}
 		}
 		fake.auth_token_active = false;
-		return {result, nullptr};
+		return result;
 	}
 
-	inline auto RequestAuthToken(void *context, pam_handle_t *pamh)
-	    -> std::tuple<int, const char *> {
+	inline auto RequestAuthToken(void *context, pam_handle_t *pamh) -> int {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.auth_token_calls;
 		fake.auth_token_thread = std::this_thread::get_id();
@@ -565,18 +563,18 @@ namespace howdy::test::prompt_coordinator {
 					    return fake.native_prompt_completed.load();
 				    })) {
 					fake.auth_token_active = false;
-					return {PAM_SYSTEM_ERR, nullptr};
+					return PAM_SYSTEM_ERR;
 				}
 			}
 			if (fake.native_terminal_restore_failure_on_abort) {
 				fake.native_terminal_restore_failed = true;
 			}
 			fake.auth_token_active = false;
-			return {fake.token_result, nullptr};
+			return fake.token_result;
 		}
 		std::this_thread::sleep_for(fake.token_delay);
 		fake.auth_token_active = false;
-		return {fake.token_result, nullptr};
+		return fake.token_result;
 	}
 
 	inline auto

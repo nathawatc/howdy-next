@@ -21,7 +21,6 @@
 
 #include <fcntl.h>
 
-#include <sys/stat.h>
 #include <sys/types.h>
 
 namespace howdy::native {
@@ -131,14 +130,6 @@ namespace howdy::native {
 		    CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(), options.validation_root);
 		if (!final_security.ok) {
 			return config_utils_internal::PathFailure(std::move(final_security));
-		}
-
-		struct stat current_stat{};
-		const bool  inspected = lstat(config_path.c_str(), &current_stat) == 0;
-		if (!inspected || !S_ISREG(current_stat.st_mode)) {
-			return Failure(inspected ? ConfigWriteStatus::kInsecurePath
-			                         : ConfigWriteStatus::kReadFailed,
-			               config_utils_internal::kConfigFileInspectFailureMessage);
 		}
 
 		if (options.expected_current_content != nullptr) {

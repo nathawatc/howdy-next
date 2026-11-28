@@ -18,12 +18,11 @@
 
 namespace howdy::native::config_utils_internal {
 
-	constexpr auto kConfigFileOpenFailureMessage    = "Failed to open config file";
-	constexpr auto kConfigFileInspectFailureMessage = "Failed to inspect config file";
-	constexpr auto kConfigFileReadFailureMessage    = "Failed to read config file";
-	constexpr auto kConfigFileLockFailureMessage    = "Failed to lock config file";
-	constexpr auto kUpdatedConfigInvalidMessage     = "Updated config is invalid";
-	constexpr auto kUpdatedConfigTooLargeMessage    = "Updated config exceeds maximum size";
+	constexpr auto kConfigFileOpenFailureMessage = "Failed to open config file";
+	constexpr auto kConfigFileReadFailureMessage = "Failed to read config file";
+	constexpr auto kConfigFileLockFailureMessage = "Failed to lock config file";
+	constexpr auto kUpdatedConfigInvalidMessage  = "Updated config is invalid";
+	constexpr auto kUpdatedConfigTooLargeMessage = "Updated config exceeds maximum size";
 	constexpr auto kStaleEditedConfigMessage =
 	    "Config changed while editing; not installing stale edited config";
 

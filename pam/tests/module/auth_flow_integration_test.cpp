@@ -586,11 +586,9 @@ namespace {
 			const char *control_token = nullptr;
 			const int   control_result =
 			    pam_get_authtok(control_handle.Get(), PAM_AUTHTOK, &control_token, nullptr);
-			state.response_mode = howdy::test::auth_flow::ResponseMode::kSecret;
-			const auto [production_result, production_token] =
-			    production_prompt.RequestAuthToken(pam_handle.Get());
-			ok &= Expect(production_result == control_result &&
-			                 (production_token != nullptr) == (control_token != nullptr),
+			state.response_mode         = howdy::test::auth_flow::ResponseMode::kSecret;
+			const int production_result = production_prompt.RequestAuthToken(pam_handle.Get());
+			ok &= Expect(production_result == control_result,
 			             "production auth-token adapter matches pam_get_authtok semantics");
 			ok &= Expect(state.last_msg_type == control_state.last_msg_type &&
 			                 state.last_msg_type == PAM_PROMPT_ECHO_OFF,

@@ -75,7 +75,7 @@ namespace howdy::native {
 
 		auto LoadDocument(const UserModelStoreConfig &config, const std::string &user,
 		                  const UserModelExpectations &expectations) -> user_model_codec::Document {
-			const auto path_result = user_model_store_internal::ResolvePath(config, user);
+			const auto path_result = user_model_store_internal::CheckReadiness(config, user);
 			if (path_result.status != UserModelStatus::kOk) {
 				return user_model_codec::Document(
 				    StoreListFailure(path_result.status, path_result.error_message));
@@ -197,7 +197,7 @@ namespace howdy::native {
 	}
 
 	auto UserModelStore::InspectFile(const std::string &user) const -> UserModelInspectResult {
-		const auto path_result = user_model_store_internal::ResolvePath(config_, user);
+		const auto path_result = user_model_store_internal::CheckReadiness(config_, user);
 		if (path_result.status != UserModelStatus::kOk) {
 			return InspectFailure(path_result.status, path_result.error_message);
 		}
