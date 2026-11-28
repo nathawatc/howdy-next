@@ -1,3 +1,4 @@
+#include "model_assets/opencv_model_manifest.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/runtime_session.hpp"
 #include "storage/user_model_status.hpp"
@@ -82,7 +83,8 @@ auto main(int argc, char **argv) -> int {
 		}
 		// The model reads back through the same loader compare uses.
 		const auto models_loaded = howdy::native::LoadUserModelsFromFd(
-		    session.ModelFd(), "model descriptor", "opencv_dnn_sface", 0);
+		    session.ModelFd(), "model descriptor", "opencv_dnn_sface",
+		    std::string(howdy::native::kSfaceModelDescriptor.filename), 0);
 		if (models_loaded.status != howdy::native::UserModelStatus::kOk ||
 		    models_loaded.stored.encodings.empty()) {
 			return Fail("model descriptor does not load: " + models_loaded.error_message);

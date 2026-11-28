@@ -3,12 +3,15 @@
 #include "cli/test/preview_session.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
+#include "storage/user_model_status.hpp"
 #include "test_support.hpp"
 #include "vision/preview_engine.hpp"
 
+#include <array>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -634,6 +637,74 @@ namespace {
 		return ok;
 	}
 
+	auto UserModelLoadWarningCoversCompatibilityAndFailureStatuses() -> bool {
+		using howdy::native::UserModelStatus;
+		using howdy::native::test_cli_internal::UserModelLoadWarning;
+
+		struct WarningCase {
+			const char      *label;
+			UserModelStatus  status;
+			std::string_view expected_substring;
+			bool             expect_empty = false;
+		};
+
+		const auto cases = std::to_array<WarningCase>({
+		    {
+		        .label              = "ok",
+		        .status             = UserModelStatus::kOk,
+		        .expected_substring = {},
+		        .expect_empty       = true,
+		    },
+		    {
+		        .label              = "incompatible backend",
+		        .status             = UserModelStatus::kIncompatibleBackend,
+		        .expected_substring = "incompatible backend or model",
+		    },
+		    {
+		        .label              = "incompatible model",
+		        .status             = UserModelStatus::kIncompatibleModel,
+		        .expected_substring = "incompatible backend or model",
+		    },
+		    {
+		        .label              = "invalid user",
+		        .status             = UserModelStatus::kInvalidUser,
+		        .expected_substring = "Invalid user name",
+		    },
+		    {
+		        .label              = "no model",
+		        .status             = UserModelStatus::kNoModel,
+		        .expected_substring = "No face model found",
+		    },
+		    {
+		        .label              = "no model directory",
+		        .status             = UserModelStatus::kNoModelDirectory,
+		        .expected_substring = "No face model found",
+		    },
+		    {
+		        .label              = "insecure path",
+		        .status             = UserModelStatus::kInsecurePath,
+		        .expected_substring = "path is insecure",
+		    },
+		    {
+		        .label              = "parse error",
+		        .status             = UserModelStatus::kParseError,
+		        .expected_substring = "Failed to read stored face models",
+		    },
+		});
+
+		bool ok = true;
+		for (const auto &test_case : cases) {
+			const auto warning = UserModelLoadWarning(test_case.status);
+			if (test_case.expect_empty) {
+				ok &= Expect(warning.empty(), std::string(test_case.label) + " emits no warning");
+			} else {
+				ok &= Expect(warning.contains(test_case.expected_substring),
+				             std::string(test_case.label) + " warning mentions expected reason");
+			}
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -656,5 +727,6 @@ auto main() -> int {
 	ok &= GraphicalEnvironmentHelperChecksDisplayValues();
 	ok &= MissingPreflightDependencyCallbacksFailClosed();
 	ok &= MissingDependencyCallbacksFailClosed();
+	ok &= UserModelLoadWarningCoversCompatibilityAndFailureStatuses();
 	return ok ? 0 : 1;
 }

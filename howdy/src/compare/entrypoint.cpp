@@ -345,7 +345,8 @@ namespace {
 		    descriptors.model.Get(),
 		    std::string("user model descriptor ") +
 		        howdy::native::compare_descriptors::kModelEnvironmentValue,
-		    howdy::native::FaceModel::kBackendName, owner_uid);
+		    howdy::native::FaceModel::kBackendName, howdy::native::FaceModel::kSfaceModel,
+		    owner_uid);
 		descriptors.model.Reset();
 		return result;
 	}

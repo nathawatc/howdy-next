@@ -1,5 +1,6 @@
 #include "compare/compare_descriptor_test_support.hpp"
 #include "compare/entrypoint.hpp"
+#include "model_assets/opencv_model_manifest.hpp"
 #include "protocol/compare_descriptors.hpp"
 #include "protocol/compare_exit.hpp"
 #include "protocol/compare_verdict.hpp"
@@ -63,6 +64,81 @@ namespace {
 		                    fs::perms::others_read,
 		                fs::perm_options::replace, error);
 		return !error;
+	}
+
+	// Verifies that compare rejects stored models with an incompatible backend or model name,
+	// reports kNoFaceModel on both exit status and verdict socket, and closes all protocol fds.
+	auto ExpectIncompatibleDescriptorModels(int config_fd, const fs::path &root, uid_t owner)
+	    -> bool {
+		using howdy::native::CompareExit;
+		using howdy::test::Expect;
+		using howdy::test::ScopedEnvironmentVariable;
+		using howdy::test::compare::DescriptorOpen;
+		using howdy::test::compare::OpenAboveProtocol;
+		using howdy::test::compare::ScopedDescriptorAt;
+		namespace descriptors = howdy::native::compare_descriptors;
+		namespace verdict     = howdy::native::compare_verdict;
+
+		struct IncompatibleModelCase {
+			const char *label;
+			const char *filename;
+			std::string json;
+		};
+
+		const std::string sface_model(howdy::native::kSfaceModelDescriptor.filename);
+		const auto        cases = std::to_array<IncompatibleModelCase>({
+		    {
+		        .label    = "incompatible backend",
+		        .filename = "incompatible-backend-model.dat",
+		        .json     = R"([{"id":1,"label":"bad","backend":"other_backend","model":")" +
+				            sface_model + R"(","data":[[0.1,0.2]]}])",
+		    },
+		    {
+		        .label    = "incompatible model",
+		        .filename = "incompatible-model-name.dat",
+		        .json =
+		            R"([{"id":1,"label":"bad","backend":"opencv_dnn_sface","model":"other_model.onnx","data":[[0.1,0.2]]}])",
+		    },
+		});
+
+		std::array<std::string, 2> arguments{"howdy-compare", "coverage-user"};
+		std::array<char *, 2>      argv{arguments.at(0).data(), arguments.at(1).data()};
+		bool                       ok = true;
+		for (const auto &test_case : cases) {
+			const auto bad_path = root / test_case.filename;
+			ok &= Expect(howdy::test::WriteFile(bad_path, test_case.json) &&
+			                 chmod(bad_path.c_str(), 0600) == 0,
+			             std::string("write ") + test_case.label + " descriptor-mode model");
+			const auto                bad_model = OpenAboveProtocol(bad_path, O_RDONLY);
+			const auto                pair      = howdy::test::compare::MakeVerdictPair();
+			const ScopedDescriptorAt  verdict_at(verdict::kFd, pair.compare_end.Get());
+			const ScopedDescriptorAt  config_at(descriptors::kConfigFd, config_fd);
+			const ScopedDescriptorAt  model_at(descriptors::kModelFd, bad_model.Get());
+			ScopedEnvironmentVariable verdict_env(verdict::kEnvironmentName);
+			ScopedEnvironmentVariable config_env(descriptors::kConfigEnvironmentName);
+			ScopedEnvironmentVariable model_env(descriptors::kModelEnvironmentName);
+			verdict_env.Set(verdict::kEnvironmentValue);
+			config_env.Set(descriptors::kConfigEnvironmentValue);
+			model_env.Set(descriptors::kModelEnvironmentValue);
+
+			const std::ostringstream errors;
+			int                      status = -1;
+			{
+				const howdy::test::StreamRedirect redirect(std::cerr, errors.rdbuf());
+				status = howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()),
+				                                             argv.data(), owner);
+			}
+			unsigned char verdict_byte = 0;
+			const bool    has_verdict  = read(pair.pam_end.Get(), &verdict_byte, 1) == 1;
+			const bool    fds_closed =
+			    !DescriptorOpen(descriptors::kConfigFd) && !DescriptorOpen(descriptors::kModelFd);
+			ok &= Expect(status == static_cast<int>(CompareExit::kNoFaceModel) && has_verdict &&
+			                 verdict_byte == static_cast<int>(CompareExit::kNoFaceModel) &&
+			                 !errors.str().empty() && fds_closed,
+			             std::string("descriptor mode rejects ") + test_case.label +
+			                 " with kNoFaceModel and closes descriptors");
+		}
+		return ok;
 	}
 
 	// PAM hands compare the config at fd 4 and the model at fd 5 next to the verdict socket at
@@ -212,6 +288,7 @@ namespace {
 		});
 		ok &= Expect(aborted(invalid_shape_run, "") && !invalid_shape_run.diagnostics.empty(),
 		             "descriptor mode aborts with diagnostic on invalid-shape model JSON object");
+		ok &= ExpectIncompatibleDescriptorModels(config.Get(), root, owner);
 
 		ok &= Expect(aborted(run({
 		                         .config_fd = config.Get(),

@@ -158,26 +158,12 @@ namespace {
 		production_context->loaded_models = howdy::native::UserModelLoadResult{};
 		if (!user.empty()) {
 			production_context->loaded_models =
-			    production_context->store.LoadModels(user, howdy::native::FaceModel::kBackendName);
-			const auto status  = production_context->loaded_models.status;
-			const auto outcome = howdy::native::Classify(status);
-			if (status == howdy::native::UserModelStatus::kIncompatibleBackend) {
-				std::cout << "Warning: Stored face models use an incompatible backend; matching "
-				             "disabled\n";
-			} else if (status == howdy::native::UserModelStatus::kInvalidUser) {
-				std::cout << "Warning: Invalid user name; matching disabled\n";
-			} else if (outcome == howdy::native::UserModelOutcome::kAbsent) {
-				std::cout
-				    << "Warning: No face model found for this user, detection will run without "
-				       "matching\n";
-			} else if (outcome == howdy::native::UserModelOutcome::kInsecure) {
-				std::cout
-				    << "Warning: Stored face model path is insecure, detection will run without "
-				       "matching\n";
-			} else if (outcome != howdy::native::UserModelOutcome::kOk) {
-				std::cout
-				    << "Warning: Failed to read stored face models, detection will run without "
-				       "matching\n";
+			    production_context->store.LoadModels(user, howdy::native::FaceModel::kBackendName,
+				                                     howdy::native::FaceModel::kSfaceModel);
+			const auto warning =
+			    test_cli_internal::UserModelLoadWarning(production_context->loaded_models.status);
+			if (!warning.empty()) {
+				std::cout << warning << "\n";
 			}
 		}
 

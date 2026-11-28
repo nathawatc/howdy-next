@@ -2,6 +2,7 @@
 #include "cli/test/internal.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
+#include "storage/user_model_status.hpp"
 #include "support/capture_device_path.hpp"
 #include "support/invoking_user_env.hpp"
 #include "vision/video_capture.hpp"
@@ -101,6 +102,29 @@ auto howdy::native::test_cli_internal::HasGraphicalDisplayEnvironment(
 		return true;
 	}
 	return !wayland_display.empty() && !runtime_dir.empty();
+}
+
+auto howdy::native::test_cli_internal::UserModelLoadWarning(howdy::native::UserModelStatus status)
+    -> std::string_view {
+	const auto outcome = howdy::native::Classify(status);
+	if (status == howdy::native::UserModelStatus::kIncompatibleBackend ||
+	    status == howdy::native::UserModelStatus::kIncompatibleModel) {
+		return "Warning: Stored face models use an incompatible backend or model; matching "
+		       "disabled";
+	}
+	if (status == howdy::native::UserModelStatus::kInvalidUser) {
+		return "Warning: Invalid user name; matching disabled";
+	}
+	if (outcome == howdy::native::UserModelOutcome::kAbsent) {
+		return "Warning: No face model found for this user, detection will run without matching";
+	}
+	if (outcome == howdy::native::UserModelOutcome::kInsecure) {
+		return "Warning: Stored face model path is insecure, detection will run without matching";
+	}
+	if (outcome != howdy::native::UserModelOutcome::kOk) {
+		return "Warning: Failed to read stored face models, detection will run without matching";
+	}
+	return {};
 }
 
 auto howdy::native::test_cli_internal::TestMainWithDependencies(

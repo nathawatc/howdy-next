@@ -1,4 +1,5 @@
 #include "integration/process.hpp"
+#include "model_assets/opencv_model_manifest.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
 #include "support/bit_flags.hpp"
 #include "support/scoped_fd.hpp"
@@ -287,10 +288,10 @@ namespace {
 	                const std::string &second) -> void {
 		std::ofstream output(path, std::ios::trunc);
 		Require(output.good(), "cannot write source model: " + path.string());
-		output
-		    << R"([{"id":0,"time":)" << generation
-		    << R"(,"label":"e2e","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[)"
-		    << first << ',' << second << "]]}]\n";
+		output << R"([{"id":0,"time":)" << generation
+		       << R"(,"label":"e2e","backend":"opencv_dnn_sface","metric":"cosine","model":")"
+		       << howdy::native::kSfaceModelDescriptor.filename << R"(","data":[[)" << first << ','
+		       << second << "]]}]\n";
 		output.flush();
 		Require(output.good(), "cannot write source model: " + path.string());
 	}

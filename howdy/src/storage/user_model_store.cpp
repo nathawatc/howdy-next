@@ -219,11 +219,12 @@ namespace howdy::native {
 		};
 	}
 
-	auto UserModelStore::LoadModels(const std::string &user,
-	                                const std::string &expected_backend) const
+	auto UserModelStore::LoadModels(const std::string &user, const std::string &expected_backend,
+	                                const std::string &expected_model) const
 	    -> UserModelLoadResult {
 		auto document = LoadDocument(
-		    config_, user, {.backend = expected_backend, .model = {}, .strict_shape = false});
+		    config_, user,
+		    {.backend = expected_backend, .model = expected_model, .strict_shape = false});
 		return user_model_store_internal::FlattenLoadedModels(document);
 	}
 

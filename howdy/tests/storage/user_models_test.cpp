@@ -107,14 +107,73 @@ namespace howdy::test::user_models {
 			             "empty model list returns kNoModel");
 		}
 
-		ok &= Expect(
-		    WriteFile(model_path,
-			          R"([{"id":1,"label":"bad","backend":"other_backend","data":[[0.1,0.2]]}])"),
-		    "write incompatible backend model");
 		{
-			const auto result = store.LoadModels("alice", backend);
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kIncompatibleBackend,
-			             "incompatible backend is detected");
+			struct LoadCompatibilityCase {
+				const char                    *label;
+				const char                    *json;
+				const char                    *expected_backend;
+				const char                    *expected_model;
+				howdy::native::UserModelStatus expected_status;
+			};
+
+			const auto cases = std::to_array<LoadCompatibilityCase>({
+			    {
+			        .label = "matching backend and model",
+			        .json =
+			            R"([{"id":1,"label":"ok","backend":"opencv_dnn_sface","model":"sface.onnx","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "sface.onnx",
+			        .expected_status  = howdy::native::UserModelStatus::kOk,
+			    },
+			    {
+			        .label = "legacy model without model field",
+			        .json =
+			            R"([{"id":1,"label":"legacy","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "sface.onnx",
+			        .expected_status  = howdy::native::UserModelStatus::kOk,
+			    },
+			    {
+			        .label = "incompatible backend",
+			        .json =
+			            R"([{"id":1,"label":"bad","backend":"other_backend","model":"sface.onnx","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "sface.onnx",
+			        .expected_status  = howdy::native::UserModelStatus::kIncompatibleBackend,
+			    },
+			    {
+			        .label = "incompatible model",
+			        .json =
+			            R"([{"id":1,"label":"bad","backend":"opencv_dnn_sface","model":"other.onnx","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "sface.onnx",
+			        .expected_status  = howdy::native::UserModelStatus::kIncompatibleModel,
+			    },
+			    {
+			        .label = "mismatched backend and model prefers backend",
+			        .json =
+			            R"([{"id":1,"label":"bad","backend":"other_backend","model":"other.onnx","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "sface.onnx",
+			        .expected_status  = howdy::native::UserModelStatus::kIncompatibleBackend,
+			    },
+			    {
+			        .label = "empty expected model accepts any stored model",
+			        .json =
+			            R"([{"id":1,"label":"any","backend":"opencv_dnn_sface","model":"other.onnx","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "",
+			        .expected_status  = howdy::native::UserModelStatus::kOk,
+			    },
+			});
+			for (const auto &test_case : cases) {
+				ok &= Expect(WriteFile(model_path, test_case.json),
+				             std::string("write ") + test_case.label);
+				const auto result =
+				    store.LoadModels("alice", test_case.expected_backend, test_case.expected_model);
+				ok &= Expect(result.status == test_case.expected_status,
+				             std::string("LoadModels compatibility: ") + test_case.label);
+			}
 		}
 
 		ok &= Expect(WriteFile(model_path,
