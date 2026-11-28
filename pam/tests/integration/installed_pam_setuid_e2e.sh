@@ -154,7 +154,7 @@ chmod 0600 "$source_model"
 
 service_dir=$(mktemp -d -p "$install_prefix" 'pam service-ทดสอบ.XXXXXX')
 chmod 0755 "$service_dir"
-printf 'auth required %s workaround=off\n' "$module" > "$service_dir/howdy-e2e"
+printf 'auth required %s\n' "$module" > "$service_dir/howdy-e2e"
 chmod 0644 "$service_dir/howdy-e2e"
 sed -i 's/^disabled = true$/disabled = false/' "$config"
 mv -- "$source_model" "$source_model.absent"

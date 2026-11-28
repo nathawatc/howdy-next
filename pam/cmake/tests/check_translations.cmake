@@ -94,6 +94,7 @@ execute_process(
   "${XGETTEXT}"
   "--directory=${PAM_SOURCE_DIR}"
   "--files-from=${POTFILES}"
+  --language=C++
   --keyword
   --keyword=Translate:1
   --omit-header
@@ -110,6 +111,12 @@ file(READ "${LINGUAS}" languages_text)
 string(REGEX REPLACE "#[^\n]*" "" languages_text "${languages_text}")
 string(REGEX REPLACE "[ \t\r\n]+" ";" languages "${languages_text}")
 list(FILTER languages EXCLUDE REGEX "^$")
+
+set(languages_unique ${languages})
+list(REMOVE_DUPLICATES languages_unique)
+if(NOT languages STREQUAL languages_unique)
+  message(FATAL_ERROR "LINGUAS contains duplicate locale entries")
+endif()
 
 function(extract_active_msgids input_file output_variable)
   set(canonical_file "${WORK_DIR}/canonical-${output_variable}.properties")
