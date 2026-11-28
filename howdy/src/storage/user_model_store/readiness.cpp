@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <fcntl.h>
@@ -36,6 +37,17 @@ namespace howdy::native::user_model_store_internal {
 
 	auto WithErrno(std::string message, int error_number) -> std::string {
 		return std::move(message) + " (" + SystemErrorMessage(error_number) + ")";
+	}
+
+	// O_NOFOLLOW fails a symlink with ELOOP, a directory cannot be opened for writing, and a
+	// socket cannot be opened at all (ENXIO).
+	auto OpenErrorMeansNotRegularFile(int error_number) -> bool {
+		return error_number == ELOOP || error_number == EISDIR || error_number == ENXIO;
+	}
+
+	auto NotRegularFileMessage(std::string_view label, const std::filesystem::path &path)
+	    -> std::string {
+		return std::string(label) + " must be a regular file: " + path.string();
 	}
 
 	auto UserModelInspectionFailedMessage(const std::filesystem::path &path, int error_number)

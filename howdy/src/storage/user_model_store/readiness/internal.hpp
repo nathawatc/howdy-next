@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -39,6 +40,11 @@ namespace howdy::native::user_model_store_internal {
 	};
 
 	[[nodiscard]] auto WithErrno(std::string message, int error_number) -> std::string;
+
+	[[nodiscard]] auto OpenErrorMeansNotRegularFile(int error_number) -> bool;
+
+	[[nodiscard]] auto NotRegularFileMessage(std::string_view             label,
+	                                         const std::filesystem::path &path) -> std::string;
 
 	[[nodiscard]] auto UserModelInspectionFailedMessage(const std::filesystem::path &path,
 	                                                    int error_number) -> std::string;

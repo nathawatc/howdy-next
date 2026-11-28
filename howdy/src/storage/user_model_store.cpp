@@ -55,6 +55,13 @@ namespace howdy::native {
 					return user_model_codec::Document(
 					    UserModelListResult{.status = UserModelStatus::kNoModel});
 				}
+				if (user_model_store_internal::OpenErrorMeansNotRegularFile(error_number)) {
+					return user_model_codec::Document{
+					    StoreListFailure(UserModelStatus::kInsecurePath,
+						                 user_model_store_internal::NotRegularFileMessage(
+					                         kUserModelFileLabel, path)),
+					};
+				}
 				return user_model_codec::Document{
 				    StoreListFailure(
 				        UserModelStatus::kParseError,
@@ -72,6 +79,9 @@ namespace howdy::native {
 			if (path_result.status != UserModelStatus::kOk) {
 				return user_model_codec::Document(
 				    StoreListFailure(path_result.status, path_result.error_message));
+			}
+			if (config.hooks.before_read_open) {
+				config.hooks.before_read_open(path_result.path);
 			}
 			return LoadDocumentFromPath(path_result.path, expectations, config.owner_uid);
 		}
@@ -191,6 +201,9 @@ namespace howdy::native {
 		if (path_result.status != UserModelStatus::kOk) {
 			return InspectFailure(path_result.status, path_result.error_message);
 		}
+		if (config_.hooks.before_read_open) {
+			config_.hooks.before_read_open(path_result.path);
+		}
 		ScopedFd const input(
 		    open(path_result.path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
 		if (!input.Valid()) {
@@ -198,10 +211,10 @@ namespace howdy::native {
 			if (error_number == ENOENT) {
 				return InspectFailure(UserModelStatus::kNoModel, {});
 			}
-			if (error_number == ELOOP || error_number == EISDIR || error_number == ENXIO) {
+			if (user_model_store_internal::OpenErrorMeansNotRegularFile(error_number)) {
 				return InspectFailure(UserModelStatus::kInsecurePath,
-				                      std::string(kUserModelFileLabel) +
-				                          " must be a regular file: " + path_result.path.string());
+				                      user_model_store_internal::NotRegularFileMessage(
+				                          kUserModelFileLabel, path_result.path));
 			}
 			return InspectFailure(UserModelStatus::kParseError,
 			                      user_model_store_internal::UserModelInspectionFailedMessage(

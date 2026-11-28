@@ -335,17 +335,6 @@ namespace howdy::native::user_model_store_internal {
 			};
 		}
 
-		// O_NOFOLLOW fails a symlink with ELOOP, a directory cannot be opened for writing, and a
-		// socket cannot be opened at all (ENXIO).
-		auto OpenErrorMeansNotRegularFile(int error_number) -> bool {
-			return error_number == ELOOP || error_number == EISDIR || error_number == ENXIO;
-		}
-
-		auto NotRegularFileMessage(std::string_view label, const std::filesystem::path &path)
-		    -> std::string {
-			return std::string(label) + " must be a regular file: " + path.string();
-		}
-
 		// The writers' lock file, inside the models directory, which writers must be able to
 		// write anyway. User names cannot start with a dot, so it never names a model.
 		auto ModelNamespaceLockPath(const std::filesystem::path &model_path)
