@@ -5,6 +5,7 @@
 #include "support/invoking_user.hpp"
 #include "test_support.hpp"
 
+#include <array>
 #include <cstddef>
 #include <iostream>
 #include <optional>
@@ -135,6 +136,30 @@ namespace howdy::test::dispatch {
 		        .resolve_invoking_identity = ResolveInvokingIdentity,
 		        .effective_uid             = EffectiveUid,
 		        .command_mains             = command_mains,
+		    });
+		ActiveContext() = nullptr;
+		std::cout.rdbuf(old_output);
+		std::cerr.rdbuf(old_error);
+		return {
+		    .status = status,
+		    .output = output.str(),
+		    .error  = error.str(),
+		};
+	}
+
+	auto RunRaw(Context &context, int argc, char **argv) -> RunResult {
+		std::ostringstream const output;
+		std::ostringstream const error;
+		auto                    *old_output = std::cout.rdbuf(output.rdbuf());
+		auto                    *old_error  = std::cerr.rdbuf(error.rdbuf());
+		ActiveContext()                     = &context;
+		const auto status = howdy::native::howdy_internal::HowdyMainWithDependencies(
+		    argc, argv,
+		    HowdyDependencies{
+		        .context                   = &context,
+		        .resolve_invoking_identity = ResolveInvokingIdentity,
+		        .effective_uid             = EffectiveUid,
+		        .command_mains             = DefaultCommandMains(),
 		    });
 		ActiveContext() = nullptr;
 		std::cout.rdbuf(old_output);
@@ -667,12 +692,43 @@ namespace {
 		return ok;
 	}
 
+	auto TestNullArgvFailsClosed() -> bool {
+		bool       ok      = true;
+		const auto run_raw = [](int argc, char **argv) -> howdy::test::dispatch::RunResult {
+			Context context;
+			return howdy::test::dispatch::RunRaw(context, argc, argv);
+		};
+
+		const auto null_argv = run_raw(2, nullptr);
+		ok &= Expect(null_argv.status == 2 && !null_argv.error.empty(),
+		             "positive argc with null argv fails closed");
+
+		std::string           program = "howdy";
+		std::string           help    = "--help";
+		std::string           list    = "list";
+		std::array<char *, 2> null_argv0{nullptr, help.data()};
+		const auto            res0 = run_raw(2, null_argv0.data());
+		ok &= Expect(res0.status == 2 && !res0.error.empty(),
+		             "null argv[0] with --help fails closed");
+
+		std::array<char *, 2> null_argv1{program.data(), nullptr};
+		const auto            res1 = run_raw(2, null_argv1.data());
+		ok &= Expect(res1.status == 2 && !res1.error.empty(), "null argv[1] fails closed");
+
+		std::array<char *, 3> null_argv2{program.data(), list.data(), nullptr};
+		const auto            res2 = run_raw(3, null_argv2.data());
+		ok &= Expect(res2.status == 2 && !res2.error.empty(), "null argv[2] fails closed");
+
+		return ok;
+	}
+
 	auto TestSyntaxAndCatalog() -> bool {
 		bool ok = true;
 		ok &= TestClapStyleUsageErrors();
 		ok &= TestStrictSyntaxCases();
 		ok &= TestCommandOptionValueBoundary();
 		ok &= TestCatalogDispatch();
+		ok &= TestNullArgvFailsClosed();
 		return ok;
 	}
 

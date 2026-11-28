@@ -89,9 +89,11 @@ namespace {
 				auto       argv   = ArgvFrom(args);
 				const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
 				                                                    argv.data(), mode);
-				const bool message_ok = test_case.expected_message.empty()
-				                            ? result.message.empty()
-				                            : result.message.contains(test_case.expected_message);
+				const bool message_ok =
+				    test_case.expected_message.empty()
+				        ? result.message.empty()
+				        : (result.message.contains(test_case.expected_message) &&
+				           result.message.ends_with('\n'));
 				ok &= Expect(result.status == CompareArgsStatus::kError &&
 				                 result.exit_code == CompareExit::kAbort && message_ok,
 				             test_case.label);
@@ -235,11 +237,12 @@ auto main() -> int {
 		auto       argv = ArgvFrom(args);
 		const auto result =
 		    howdy::native::ParseCompareArgs(static_cast<int>(argv.size()), argv.data());
-		ok &= Expect(
-		    result.status == howdy::native::CompareArgsStatus::kError &&
-		        result.exit_code == howdy::native::CompareExit::kAbort &&
-		        (message.empty() ? result.message.empty() : result.message.contains(message)),
-		    label);
+		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kError &&
+		                 result.exit_code == howdy::native::CompareExit::kAbort &&
+		                 (message.empty() ? result.message.empty()
+		                                  : (result.message.contains(message) &&
+		                                     result.message.ends_with('\n'))),
+		             label);
 	};
 	expect_error({"howdy-compare", "--config", "/x.ini", "alice"}, "Unknown argument: --config",
 	             "--config is no longer accepted");

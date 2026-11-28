@@ -335,9 +335,78 @@ namespace {
 		return ok;
 	}
 
+	auto ExpectCommandArgvValidation() -> bool {
+		using howdy::native::ScopedStreamCapture;
+		using howdy::native::auth_helper::command::Run;
+
+		bool ok = true;
+
+		for (const int bad_argc : {0, -1, 2}) {
+			ScopedStreamCapture capture_out(std::cout);
+			const int           exit_code = Run(bad_argc, nullptr);
+			const auto          output    = capture_out.Release();
+			ok &= Expect(exit_code == 1 && output.contains("Usage: howdy-auth-helper open <user>"),
+			             "auth-helper Run rejects null argv");
+		}
+
+		std::string program = "howdy-auth-helper";
+		std::string help    = "--help";
+		std::string open    = "open";
+
+		struct ArgvCase {
+			const char           *label;
+			std::array<char *, 3> argv;
+			int                   argc;
+			int                   expected_exit;
+			const char           *expected_usage;
+		};
+
+		const auto cases = std::to_array<ArgvCase>({
+		    {
+		        .label          = "null argv[0] with --help fails closed",
+		        .argv           = {nullptr, help.data(), nullptr},
+		        .argc           = 2,
+		        .expected_exit  = 1,
+		        .expected_usage = "Usage: howdy-auth-helper open <user>",
+		    },
+		    {
+		        .label          = "null argv[1] fails closed",
+		        .argv           = {program.data(), nullptr, nullptr},
+		        .argc           = 2,
+		        .expected_exit  = 1,
+		        .expected_usage = "Usage: howdy-auth-helper open <user>",
+		    },
+		    {
+		        .label          = "null argv[2] for open subcommand fails closed",
+		        .argv           = {program.data(), open.data(), nullptr},
+		        .argc           = 3,
+		        .expected_exit  = 1,
+		        .expected_usage = "Usage: howdy-auth-helper open <user>",
+		    },
+		    {
+		        .label          = "valid --help succeeds",
+		        .argv           = {program.data(), help.data(), nullptr},
+		        .argc           = 2,
+		        .expected_exit  = 0,
+		        .expected_usage = "Usage: howdy-auth-helper open <user>",
+		    },
+		});
+
+		for (auto test_case : cases) {
+			ScopedStreamCapture capture_out(std::cout);
+			const int           exit_code = Run(test_case.argc, test_case.argv.data());
+			const auto          output    = capture_out.Release();
+			ok &= Expect(exit_code == test_case.expected_exit &&
+			                 output.contains(test_case.expected_usage),
+			             test_case.label);
+		}
+
+		return ok;
+	}
+
 }  // namespace
 
 auto RunAuthHelperDiagnosticsTests() -> bool {
 	return ExpectQuietDiagnostics() && ExpectGuardedExceptionTable() &&
-	       ExpectGuardedExceptionEdgeCases();
+	       ExpectGuardedExceptionEdgeCases() && ExpectCommandArgvValidation();
 }

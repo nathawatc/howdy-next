@@ -213,9 +213,18 @@ namespace howdy::native::auth_helper::command {
 		}
 
 		auto RunCommand(int argc, char **argv) -> int {
-			const auto arguments =
-			    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
-			const char *program = arguments.empty() ? "howdy-auth-helper" : arguments.front();
+			if (argc <= 0 || argv == nullptr) {
+				Usage("howdy-auth-helper");
+				return 1;
+			}
+			const auto arguments = std::span(argv, static_cast<std::size_t>(argc));
+			if (std::ranges::any_of(arguments, [](const char *argument) -> bool {
+				    return argument == nullptr;
+			    })) {
+				Usage("howdy-auth-helper");
+				return 1;
+			}
+			const char *program = arguments.front();
 			if (arguments.size() == 2) {
 				const std::string_view option = arguments.subspan(1, 1).front();
 				if (option == "--help" || option == "-h") {

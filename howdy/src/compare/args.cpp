@@ -60,7 +60,7 @@ namespace howdy::native {
 		if (!IsValidModelUserName(result.args.user)) {
 			result.status    = CompareArgsStatus::kError;
 			result.exit_code = CompareExit::kAbort;
-			result.message   = kInvalidUserNameMessage;
+			result.message   = std::string(kInvalidUserNameMessage) + "\n";
 			return result;
 		}
 

@@ -268,10 +268,34 @@ namespace howdy::native::howdy_cli_internal {
 		return 2;
 	}
 
+	namespace {
+		auto ValidateArgv(int argc, char **argv) -> std::optional<std::span<char *>> {
+			if (argv == nullptr) {
+				return std::nullopt;
+			}
+			const auto arguments = std::span(argv, static_cast<std::size_t>(argc));
+			if (std::ranges::any_of(arguments, [](const char *argument) -> bool {
+				    return argument == nullptr;
+			    })) {
+				return std::nullopt;
+			}
+			return arguments;
+		}
+	}  // namespace
+
 	auto ParseCommandLine(int argc, char **argv, ParsedCommandLine &parsed)
 	    -> std::optional<CliSyntaxError> {
-		const auto arguments =
-		    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
+		if (argc <= 0) {
+			return std::nullopt;
+		}
+		const auto validated_arguments = ValidateArgv(argc, argv);
+		if (!validated_arguments.has_value()) {
+			return CliSyntaxError{
+			    .kind  = CliSyntaxErrorKind::kUnexpectedArgument,
+			    .value = {},
+			};
+		}
+		const auto               arguments                      = *validated_arguments;
 		bool                     options_ended                  = false;
 		const CommandDescriptor *command                        = nullptr;
 		bool                     expecting_command_option_value = false;
