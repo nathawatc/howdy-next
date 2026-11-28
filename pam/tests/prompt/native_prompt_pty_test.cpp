@@ -183,6 +183,9 @@ auto ExpectKernelLineEditing() -> bool {
 	ok &= ExpectPtyPrompt({.input = "abc\r", .clear_iflag = ICRNL},
 	                      {.response = "abc", .output = hidden_output},
 	                      "Enter ends the line despite the caller's -icrnl");
+	ok &= ExpectPtyPrompt({.input = "abc\r", .extra_iflag = IGNCR},
+	                      {.response = "abc", .output = hidden_output},
+	                      "Enter ends the line despite the caller's igncr");
 	ok &= ExpectPtyPrompt({.input = "pwx\b\n"}, {.response = "pw", .output = hidden_output},
 	                      "a Backspace byte that is not stty erase still erases");
 	ok &= ExpectPtyPrompt({.input = "pv\177w zz\027\r", .raw = true},

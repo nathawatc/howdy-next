@@ -202,6 +202,7 @@ namespace {
 		struct termios prompt_termios = original_termios;
 		prompt_termios.c_iflag |= ICRNL;
 		prompt_termios.c_iflag &= static_cast<tcflag_t>(~INLCR);
+		prompt_termios.c_iflag &= static_cast<tcflag_t>(~IGNCR);
 		prompt_termios.c_oflag |= OPOST;
 		prompt_termios.c_oflag |= ONLCR;
 		prompt_termios.c_lflag |= ICANON;

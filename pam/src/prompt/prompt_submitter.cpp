@@ -1,6 +1,7 @@
 #include "prompt/prompt_submitter.hpp"
 
 #include "prompt/internal_fd.hpp"
+#include "support/eintr.hpp"
 #include "support/error_message.hpp"
 
 #include <array>
@@ -40,8 +41,10 @@ namespace {
 			if (libevdev_enable_event_code(raw_device.get(), EV_KEY, KEY_ENTER, nullptr) != 0) {
 				throw std::runtime_error("Failed to enable KEY_ENTER on virtual keyboard");
 			}
-			uinput_fd_ = howdy::pam::detail::NormalizeInternalFd(howdy::pam::detail::ScopedFd(
-			    open(howdy::pam::kUinputDevicePath, O_RDWR | O_NONBLOCK | O_CLOEXEC)));
+			uinput_fd_ = howdy::pam::detail::NormalizeInternalFd(
+			    howdy::pam::detail::ScopedFd(howdy::native::RetryOnEintr([] -> int {
+				    return open(howdy::pam::kUinputDevicePath, O_RDWR | O_NONBLOCK | O_CLOEXEC);
+			    })));
 			if (!uinput_fd_.Valid()) {
 				const int error_number = errno;
 				throw std::runtime_error(
@@ -71,8 +74,11 @@ namespace {
 			    },
 			};
 			for (const auto &event : events) {
-				const int write_result = libevdev_uinput_write_event(
-				    raw_uinput_device_.get(), event.type, event.code, event.value);
+				int write_result = -EINTR;
+				while (write_result == -EINTR) {
+					write_result = libevdev_uinput_write_event(raw_uinput_device_.get(), event.type,
+					                                           event.code, event.value);
+				}
 				if (write_result != 0) {
 					const int error_number = write_result < 0 ? -write_result : write_result;
 					throw std::runtime_error(
