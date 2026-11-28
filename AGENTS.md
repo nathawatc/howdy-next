@@ -28,8 +28,10 @@ local guides add detail without relaxing these invariants.
 
 ## Code and Layout
 
-- Use `snake_case` for files, functions, and tests; preserve tabs in C/C++ (`.clang-format`,
-  `.editorconfig`).
+- Use `snake_case` for filenames, `kebab-case` for CTest names, and follow `.clang-tidy` for C++
+  identifiers (`CamelCase` functions/methods/types, `kCamelCase` non-local/enum constants,
+  `lower_case` variables/parameters/local constants with trailing `_` on private/protected members,
+  `UPPER_CASE` macros); preserve tabs in C/C++ (`.clang-format`, `.editorconfig`).
 - Expose one module-level pair per production component (`src/<module>/<component>.cpp` +
   `include/<module>/<component>.hpp`). Place subordinate implementation under
   `src/<module>/<component>/`, private cross-TU contracts at

@@ -4,6 +4,7 @@
 #include "compare/entrypoint/dependencies.hpp"
 #include "compare/privileges.hpp"
 #include "compare/sandbox.hpp"
+#include "model_assets/opencv_model_manifest.hpp"
 #include "protocol/compare_descriptors.hpp"
 #include "protocol/compare_exit.hpp"
 #include "protocol/compare_verdict.hpp"
@@ -233,7 +234,9 @@ namespace {
 			return false;
 		}
 		std::string model =
-		    R"([{"id":7,"time":1,"label":"fixture","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[)";
+		    std::string(
+		        R"([{"id":7,"time":1,"label":"fixture","backend":"opencv_dnn_sface","metric":"cosine","model":")") +
+		    std::string(howdy::native::kSfaceModelDescriptor.filename) + R"(","data":[[)";
 		for (std::size_t index = 0; index < howdy::native::kSfaceEmbeddingSize; ++index) {
 			if (index != 0) {
 				model += ',';

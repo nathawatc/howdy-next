@@ -11,7 +11,7 @@
 
 namespace howdy::native {
 
-	auto ParseCompareArgs(int argc, char **argv) -> CompareArgsParseResult {
+	auto ParseCompareArgs(int argc, char **argv, CompareArgsMode mode) -> CompareArgsParseResult {
 		CompareArgsParseResult result;
 		if (argc <= 0 || argv == nullptr) {
 			return result;
@@ -24,7 +24,7 @@ namespace howdy::native {
 		}
 		bool user_seen = false;
 
-		if (arguments.size() == 2) {
+		if (mode == CompareArgsMode::kStandalone && arguments.size() == 2) {
 			const std::string_view option(arguments.subspan(1, 1).front());
 			if (option == "--help" || option == "-h") {
 				result.status    = CompareArgsStatus::kHelp;
@@ -60,7 +60,7 @@ namespace howdy::native {
 		if (!IsValidModelUserName(result.args.user)) {
 			result.status    = CompareArgsStatus::kError;
 			result.exit_code = CompareExit::kAbort;
-			result.message   = kInvalidUserNameMessage;
+			result.message   = std::string(kInvalidUserNameMessage) + "\n";
 			return result;
 		}
 

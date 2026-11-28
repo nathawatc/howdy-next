@@ -1,20 +1,164 @@
 #include "cli/download_models/internal.hpp"
 #include "cli/download_models_test_support.hpp"
 #include "support/atomic_files.hpp"
+#include "support/scoped_stream_capture.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <limits>
+#include <optional>
+#include <string>
 #include <system_error>
 
+#include <unistd.h>
+
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace howdy::test::download_models {
 
 	using howdy::test::Expect;
+
+	namespace {
+
+		auto TestExistingModelSecurity(const std::filesystem::path &temp_root) -> bool {
+			namespace fs = std::filesystem;
+			using howdy::native::ScopedStreamCapture;
+			using howdy::native::download_models_internal::DownloadModelsDependencies;
+			using howdy::native::download_models_internal::ExistingModelAction;
+			using howdy::native::download_models_internal::InspectExistingModel;
+
+			bool            ok = true;
+			std::error_code ec;
+			const auto      dir = temp_root / "inspect-existing-security";
+			fs::remove_all(dir, ec);
+			fs::create_directories(dir, ec);
+			ok &= Expect(!ec, "create inspect-existing-security dir");
+
+			const DownloadModelsDependencies dependencies{
+			    .download_file        = SuccessfulFakeDownloadFile,
+			    .model_file_owner_uid = TestModelFileOwnerUid,
+			};
+
+			// 1. FIFO with no writer must open non-blocking and abort as insecure.
+			const auto fifo_path = dir / "fifo.onnx";
+			ok &= Expect(mkfifo(fifo_path.c_str(), 0644) == 0, "create existing-model FIFO");
+			{
+				ScopedStreamCapture capture(std::cout);
+				const auto          action =
+				    InspectExistingModel(fifo_path, kTestModel, std::nullopt, dependencies);
+				const auto output = capture.Release();
+				ok &=
+				    Expect(action == ExistingModelAction::kAbort && output.contains("regular file"),
+					       "InspectExistingModel aborts on FIFO without blocking");
+			}
+
+			// 2. End-to-end download-models also rejects a pre-existing FIFO without blocking.
+			const auto fifo_models_dir = dir / "fifo-models";
+			const auto fifo_dest       = fifo_models_dir / kTestModel.filename;
+			const auto fifo_output     = dir / "fifo-output.txt";
+			fs::create_directories(fifo_models_dir, ec);
+			ok &= Expect(!ec && mkfifo(fifo_dest.c_str(), 0644) == 0,
+			             "create pre-existing FIFO at model destination");
+			const std::array test_models = {kTestModel};
+			int              fifo_exit   = 0;
+			ok &= Expect(RunTestDownload({.models_dir = fifo_models_dir, .output = fifo_output},
+			                             &fifo_exit, test_models, SuccessfulFakeDownloadFile),
+			             "run download-models with FIFO destination");
+			ok &= Expect(fifo_exit == EXIT_FAILURE && AttemptedDownloads() == 0 &&
+			                 ReadFile(fifo_output).contains("regular file"),
+			             "download-models aborts on FIFO without blocking or downloading");
+
+			// 3. Symlink, group-writable, hard-linked, and wrong-owner files abort in
+			//    InspectExistingModel even if swapped after CheckOpencvModelReadiness().
+			const auto regular_path = dir / "regular.onnx";
+			ok &= Expect(WriteFile(regular_path, kTestModelContent), "write regular model");
+
+			const auto symlink_path = dir / "symlink.onnx";
+			fs::create_symlink(regular_path, symlink_path, ec);
+			ok &= Expect(!ec, "create symlink model");
+			{
+				ScopedStreamCapture capture(std::cout);
+				const auto          action =
+				    InspectExistingModel(symlink_path, kTestModel, std::nullopt, dependencies);
+				const auto output = capture.Release();
+				ok &= Expect(action == ExistingModelAction::kAbort &&
+				                 output.contains("Failed to open existing model"),
+				             "InspectExistingModel aborts on symlink");
+			}
+
+			const auto writable_path = dir / "group-writable.onnx";
+			ok &= Expect(WriteFile(writable_path, kTestModelContent) &&
+			                 chmod(writable_path.c_str(), 0664) == 0,
+			             "create group-writable model");
+			{
+				ScopedStreamCapture capture(std::cout);
+				const auto          action =
+				    InspectExistingModel(writable_path, kTestModel, std::nullopt, dependencies);
+				const auto output = capture.Release();
+				ok &= Expect(action == ExistingModelAction::kAbort && output.contains("writable"),
+				             "InspectExistingModel aborts on group-writable file");
+			}
+
+			const auto hard_link_src = dir / "hard-link-src.onnx";
+			const auto hard_link_dst = dir / "hard-link-dst.onnx";
+			ok &= Expect(WriteFile(hard_link_src, kTestModelContent), "create hard-link source");
+			fs::create_hard_link(hard_link_src, hard_link_dst, ec);
+			ok &= Expect(!ec, "create hard-link model");
+			{
+				ScopedStreamCapture capture(std::cout);
+				const auto          action =
+				    InspectExistingModel(hard_link_dst, kTestModel, std::nullopt, dependencies);
+				const auto output = capture.Release();
+				ok &=
+				    Expect(action == ExistingModelAction::kAbort && output.contains("hard-linked"),
+					       "InspectExistingModel aborts on hard-linked file");
+			}
+
+			const uid_t wrong_owner = getuid() == 0 ? static_cast<uid_t>(1) : static_cast<uid_t>(0);
+			{
+				ScopedStreamCapture capture(std::cout);
+				const auto          action =
+				    InspectExistingModel(regular_path, kTestModel, wrong_owner, dependencies);
+				const auto output = capture.Release();
+				ok &= Expect(action == ExistingModelAction::kAbort &&
+				                 output.contains("UID " + std::to_string(wrong_owner)),
+				             "InspectExistingModel aborts on owner mismatch");
+			}
+
+			// 4. Missing required callbacks fail closed before any filesystem open().
+			const auto missing_path = dir / "does-not-exist.onnx";
+			for (const auto &bad_dependencies : std::to_array<DownloadModelsDependencies>({
+			         {
+			             .download_file        = SuccessfulFakeDownloadFile,
+			             .model_file_owner_uid = TestModelFileOwnerUid,
+			             .sha256_file          = nullptr,
+			             .fstat_file           = ::fstat,
+			         },
+			         {
+			             .download_file        = SuccessfulFakeDownloadFile,
+			             .model_file_owner_uid = TestModelFileOwnerUid,
+			             .sha256_file =
+			                 howdy::native::download_models_internal::Sha256FileDescriptor,
+			             .fstat_file = nullptr,
+			         },
+			     })) {
+				ScopedStreamCapture capture(std::cout);
+				const auto          action =
+				    InspectExistingModel(missing_path, kTestModel, std::nullopt, bad_dependencies);
+				const auto output = capture.Release();
+				ok &= Expect(action == ExistingModelAction::kAbort && output.empty(),
+				             "InspectExistingModel fails closed on null callback before open");
+			}
+
+			return ok;
+		}
+
+	}  // namespace
 
 	auto RunDownloadModelsIntegrityTests() -> bool {
 		namespace fs              = std::filesystem;
@@ -274,6 +418,7 @@ namespace howdy::test::download_models {
 			limited_staged->Cleanup();
 		}
 
+		ok &= TestExistingModelSecurity(temp_root);
 		return ok;
 	}
 

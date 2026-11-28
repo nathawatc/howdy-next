@@ -5,6 +5,7 @@
 #include "support/invoking_user.hpp"
 #include "test_support.hpp"
 
+#include <array>
 #include <cstddef>
 #include <iostream>
 #include <optional>
@@ -146,6 +147,30 @@ namespace howdy::test::dispatch {
 		};
 	}
 
+	auto RunRaw(Context &context, int argc, char **argv) -> RunResult {
+		std::ostringstream const output;
+		std::ostringstream const error;
+		auto                    *old_output = std::cout.rdbuf(output.rdbuf());
+		auto                    *old_error  = std::cerr.rdbuf(error.rdbuf());
+		ActiveContext()                     = &context;
+		const auto status = howdy::native::howdy_internal::HowdyMainWithDependencies(
+		    argc, argv,
+		    HowdyDependencies{
+		        .context                   = &context,
+		        .resolve_invoking_identity = ResolveInvokingIdentity,
+		        .effective_uid             = EffectiveUid,
+		        .command_mains             = DefaultCommandMains(),
+		    });
+		ActiveContext() = nullptr;
+		std::cout.rdbuf(old_output);
+		std::cerr.rdbuf(old_error);
+		return {
+		    .status = status,
+		    .output = output.str(),
+		    .error  = error.str(),
+		};
+	}
+
 }  // namespace howdy::test::dispatch
 
 namespace {
@@ -209,6 +234,55 @@ namespace {
 			                 result.error.contains("cannot be used multiple times") &&
 			                 !context.command_id.has_value(),
 			             "duplicate test device option is rejected as usage error");
+		}
+		return ok;
+	}
+
+	auto TestCommandOptionValueBoundary() -> bool {
+		bool ok = true;
+		for (const auto &arguments : std::vector<std::vector<std::string>>{
+		         {"howdy", "test", "--device", "--plain"},
+		         {"howdy", "test", "--device", "--plain", "/dev/video0"},
+		         {"howdy", "test", "--device", "-y", "/dev/video0"},
+		         {"howdy", "test", "--device", "-U", "alice", "/dev/video0"},
+		         {"howdy", "test", "--device", "--user", "alice", "/dev/video0"},
+		         {"howdy", "test", "--device", "--help"},
+		         {"howdy", "test", "--device", "-h"},
+		         {"howdy", "test", "--device", "--", "--help"},
+		         {"howdy", "test", "--device", "--", "/dev/video0"},
+		         {"howdy", "test", "--device", "--device", "/dev/video0"},
+		         {"howdy", "test", "--device", "-"},
+		     }) {
+			Context    context;
+			const auto result = Run(context, arguments);
+			ok &= Expect(result.status == 2 && result.output.empty() &&
+			                 result.error.contains("error: a value is required for '--device "
+			                                       "<DEVICE>' but none was supplied\n") &&
+			                 !context.command_id.has_value(),
+			             "global option or terminator after --device reports missing option value");
+			ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+			             "missing --device value skips user and privilege work");
+		}
+		{
+			Context    context;
+			const auto result =
+			    Run(context, {"howdy", "test", "--device", "/dev/video9", "-U", "bob"});
+			ok &= Expect(result.status == 0 && context.command_id == CommandId::kTest &&
+			                 context.command_invocation.has_value() &&
+			                 context.command_invocation->device ==
+			                     std::optional<std::string>{"/dev/video9"} &&
+			                 context.command_invocation->resolved_user ==
+			                     std::optional<std::string>{"bob"},
+			             "global option after consumed --device value still parses");
+		}
+		{
+			Context    context;
+			const auto result =
+			    Run(context, {"howdy", "test", "--device", "/dev/video9", "--help"});
+			ok &= Expect(result.status == 0 &&
+			                 result.output.contains("Usage: howdy test [OPTIONS]\n") &&
+			                 !context.command_id.has_value(),
+			             "help option after consumed --device value still prints command help");
 		}
 		return ok;
 	}
@@ -618,11 +692,81 @@ namespace {
 		return ok;
 	}
 
+	auto TestNullArgvFailsClosed() -> bool {
+		bool       ok      = true;
+		const auto run_raw = [](int argc, char **argv) -> howdy::test::dispatch::RunResult {
+			Context context;
+			return howdy::test::dispatch::RunRaw(context, argc, argv);
+		};
+
+		std::string           program = "howdy";
+		std::string           help    = "--help";
+		std::string           list    = "list";
+		std::array<char *, 1> null_only{nullptr};
+		std::array<char *, 1> program_only{program.data()};
+		std::array<char *, 2> null_argv0{nullptr, help.data()};
+		std::array<char *, 2> null_argv1{program.data(), nullptr};
+		std::array<char *, 3> null_argv2{program.data(), list.data(), nullptr};
+
+		struct MalformedArgvCase {
+			const char *label;
+			int         argc;
+			char      **argv;
+		};
+
+		const auto cases = std::to_array<MalformedArgvCase>({
+		    {.label = "zero argc with null argv fails closed", .argc = 0, .argv = nullptr},
+		    {.label = "negative argc with null argv fails closed", .argc = -1, .argv = nullptr},
+		    {.label = "argc 1 with null argv fails closed", .argc = 1, .argv = nullptr},
+		    {.label = "argc 2 with null argv fails closed", .argc = 2, .argv = nullptr},
+		    {
+		        .label = "zero argc with non-null argv fails closed",
+		        .argc  = 0,
+		        .argv  = null_only.data(),
+		    },
+		    {
+		        .label = "negative argc with valid argv fails closed",
+		        .argc  = -1,
+		        .argv  = program_only.data(),
+		    },
+		    {
+		        .label = "null argv[0] alone fails closed",
+		        .argc  = 1,
+		        .argv  = null_only.data(),
+		    },
+		    {
+		        .label = "null argv[0] with --help fails closed",
+		        .argc  = 2,
+		        .argv  = null_argv0.data(),
+		    },
+		    {
+		        .label = "null argv[1] fails closed",
+		        .argc  = 2,
+		        .argv  = null_argv1.data(),
+		    },
+		    {
+		        .label = "null argv[2] fails closed",
+		        .argc  = 3,
+		        .argv  = null_argv2.data(),
+		    },
+		});
+
+		for (const auto &test_case : cases) {
+			const auto result = run_raw(test_case.argc, test_case.argv);
+			ok &= Expect(result.status == 2 && result.output.empty() && !result.error.empty(),
+			             test_case.label);
+		}
+
+		return ok;
+	}
+
 	auto TestSyntaxAndCatalog() -> bool {
 		bool ok = true;
 		ok &= TestClapStyleUsageErrors();
 		ok &= TestStrictSyntaxCases();
+		ok &= TestCommandOptionValueBoundary();
 		ok &= TestCatalogDispatch();
+		ok &= TestNullArgvFailsClosed();
 		return ok;
 	}
 

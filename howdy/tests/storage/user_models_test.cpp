@@ -3,6 +3,7 @@
 #include "storage/user_model_types.hpp"
 #include "storage/user_models_test_support.hpp"
 #include "support/face_metric.hpp"
+#include "support/scoped_fd.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
@@ -10,6 +11,8 @@
 #include <chrono>
 #include <ctime>
 #include <filesystem>
+#include <functional>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -18,8 +21,10 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/un.h>
 
 namespace howdy::test::user_models {
 
@@ -107,14 +112,73 @@ namespace howdy::test::user_models {
 			             "empty model list returns kNoModel");
 		}
 
-		ok &= Expect(
-		    WriteFile(model_path,
-			          R"([{"id":1,"label":"bad","backend":"other_backend","data":[[0.1,0.2]]}])"),
-		    "write incompatible backend model");
 		{
-			const auto result = store.LoadModels("alice", backend);
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kIncompatibleBackend,
-			             "incompatible backend is detected");
+			struct LoadCompatibilityCase {
+				const char                    *label;
+				const char                    *json;
+				const char                    *expected_backend;
+				const char                    *expected_model;
+				howdy::native::UserModelStatus expected_status;
+			};
+
+			const auto cases = std::to_array<LoadCompatibilityCase>({
+			    {
+			        .label = "matching backend and model",
+			        .json =
+			            R"([{"id":1,"label":"ok","backend":"opencv_dnn_sface","model":"sface.onnx","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "sface.onnx",
+			        .expected_status  = howdy::native::UserModelStatus::kOk,
+			    },
+			    {
+			        .label = "legacy model without model field",
+			        .json =
+			            R"([{"id":1,"label":"legacy","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "sface.onnx",
+			        .expected_status  = howdy::native::UserModelStatus::kOk,
+			    },
+			    {
+			        .label = "incompatible backend",
+			        .json =
+			            R"([{"id":1,"label":"bad","backend":"other_backend","model":"sface.onnx","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "sface.onnx",
+			        .expected_status  = howdy::native::UserModelStatus::kIncompatibleBackend,
+			    },
+			    {
+			        .label = "incompatible model",
+			        .json =
+			            R"([{"id":1,"label":"bad","backend":"opencv_dnn_sface","model":"other.onnx","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "sface.onnx",
+			        .expected_status  = howdy::native::UserModelStatus::kIncompatibleModel,
+			    },
+			    {
+			        .label = "mismatched backend and model prefers backend",
+			        .json =
+			            R"([{"id":1,"label":"bad","backend":"other_backend","model":"other.onnx","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "sface.onnx",
+			        .expected_status  = howdy::native::UserModelStatus::kIncompatibleBackend,
+			    },
+			    {
+			        .label = "empty expected model accepts any stored model",
+			        .json =
+			            R"([{"id":1,"label":"any","backend":"opencv_dnn_sface","model":"other.onnx","data":[[0.1,0.2]]}])",
+			        .expected_backend = backend.c_str(),
+			        .expected_model   = "",
+			        .expected_status  = howdy::native::UserModelStatus::kOk,
+			    },
+			});
+			for (const auto &test_case : cases) {
+				ok &= Expect(WriteFile(model_path, test_case.json),
+				             std::string("write ") + test_case.label);
+				const auto result =
+				    store.LoadModels("alice", test_case.expected_backend, test_case.expected_model);
+				ok &= Expect(result.status == test_case.expected_status,
+				             std::string("LoadModels compatibility: ") + test_case.label);
+			}
 		}
 
 		ok &= Expect(WriteFile(model_path,
@@ -716,6 +780,113 @@ namespace howdy::test::user_models {
 		             "Classify fails closed to kUncertain on out-of-range status");
 		return ok;
 	}
+
+	namespace {
+
+		auto TestReadOpenNonRegularRace() -> bool {
+			namespace fs = std::filesystem;
+			using howdy::native::ScopedFd;
+			using howdy::native::UserModelStatus;
+
+			bool            ok         = true;
+			const auto      temp_root  = fs::current_path() / "howdy-user-models-read-race";
+			const auto      models_dir = temp_root / "models";
+			const auto      model_path = models_dir / "alice.dat";
+			const auto      target     = models_dir / "target.dat";
+			std::error_code ec;
+			fs::remove_all(temp_root, ec);
+			ec.clear();
+			fs::create_directories(models_dir, ec);
+			ok &= Expect(!ec, "create read-open race temp dir");
+
+			const std::string valid_json =
+			    R"([{"id":1,"label":"ok","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])";
+			const std::string backend       = "opencv_dnn_sface";
+			const auto        base_config   = MakeTestStoreConfig(models_dir, temp_root);
+			const auto        reset_regular = [&] -> bool {
+				fs::remove_all(model_path, ec);
+				ec.clear();
+				return WriteFile(model_path, valid_json);
+			};
+
+			const auto check_all_readers = [&](const char                                  *label,
+			                                   const std::function<void(const fs::path &)> &swap,
+			                                   UserModelStatus expected_status) -> void {
+				const auto hooked = WithTestHooks(base_config, {.before_read_open = swap});
+				ok &= Expect(reset_regular(), std::string(label) + ": restore regular model");
+				const auto loaded = hooked.LoadModels("alice", backend);
+				ok &= Expect(loaded.status == expected_status,
+				             std::string(label) + ": LoadModels status");
+
+				ok &= Expect(reset_regular(), std::string(label) + ": restore regular model");
+				const auto listed = hooked.ListEntries("alice", backend);
+				ok &= Expect(listed.status == expected_status,
+				             std::string(label) + ": ListEntries status");
+
+				ok &= Expect(reset_regular(), std::string(label) + ": restore regular model");
+				const auto inspected = hooked.InspectFile("alice");
+				ok &= Expect(inspected.status == expected_status,
+				             std::string(label) + ": InspectFile status");
+			};
+
+			ok &= Expect(WriteFile(target, valid_json), "create read-open race symlink target");
+			check_all_readers(
+			    "post-walk symlink swap (ELOOP)",
+			    [&](const fs::path &path) -> void {
+				    fs::remove(path, ec);
+				    ec.clear();
+				    ok &= Expect(symlink(target.c_str(), path.c_str()) == 0,
+					             "swap model path to symlink");
+			    },
+			    UserModelStatus::kInsecurePath);
+
+			check_all_readers(
+			    "post-walk directory swap",
+			    [&](const fs::path &path) -> void {
+				    fs::remove(path, ec);
+				    ec.clear();
+				    fs::create_directory(path, ec);
+				    ok &= Expect(!ec, "swap model path to directory");
+			    },
+			    UserModelStatus::kInsecurePath);
+
+			check_all_readers(
+			    "post-walk unlink (ENOENT)",
+			    [&](const fs::path &path) -> void {
+				    fs::remove(path, ec);
+				    ok &= Expect(!ec, "unlink model path after walk");
+			    },
+			    UserModelStatus::kNoModel);
+
+			const auto relative_model = fs::relative(model_path, ec);
+			const auto relative_str   = relative_model.string();
+			if (!ec && relative_str.size() < sizeof(sockaddr_un{}.sun_path)) {
+				ScopedFd bound_socket;
+				check_all_readers(
+				    "post-walk unix socket swap (ENXIO)",
+				    [&](const fs::path &path) -> void {
+					    bound_socket.Reset();
+					    fs::remove(path, ec);
+					    ec.clear();
+					    bound_socket = ScopedFd(socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0));
+					    sockaddr_un addr{};
+					    addr.sun_family = AF_UNIX;
+					    std::ranges::copy(relative_str, std::begin(addr.sun_path));
+					    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+					    const auto *sock_addr = reinterpret_cast<const sockaddr *>(&addr);
+					    const bool  bound = bound_socket.Valid() &&
+						                    bind(bound_socket.Get(), sock_addr, sizeof(addr)) == 0;
+					    ok &= Expect(bound, "swap model path to unix socket");
+				    },
+				    UserModelStatus::kInsecurePath);
+			}
+
+			fs::remove_all(temp_root, ec);
+			return ok;
+		}
+
+	}  // namespace
+
 }  // namespace howdy::test::user_models
 
 auto main() -> int {
@@ -723,6 +894,7 @@ auto main() -> int {
 	    howdy::test::user_models::TestUserModelStatusClassification(),
 	    howdy::test::user_models::TestProductionStore(),
 	    howdy::test::user_models::TestUserModelLoading(),
+	    howdy::test::user_models::TestReadOpenNonRegularRace(),
 	    howdy::test::user_models::TestUserModelDescriptorLoading(),
 	    howdy::test::user_models::TestUserModelMutationStart(),
 	    howdy::test::user_models::TestUserModelMutationFailures(),

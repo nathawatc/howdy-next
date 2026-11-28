@@ -5,6 +5,7 @@
 #include "storage/user_models_test_support.hpp"
 #include "test_support.hpp"
 
+#include <array>
 #include <cstdio>
 #include <filesystem>
 #include <string>
@@ -21,9 +22,10 @@ namespace howdy::test::user_models {
 	namespace {
 
 		constexpr auto kBackend = "opencv_dnn_sface";
+		constexpr auto kModel   = "sface.onnx";
 		constexpr auto kTwoModels =
-		    R"([{"id":1,"time":1,"label":"first","backend":"opencv_dnn_sface","data":[[0.1,0.2]]},)"
-		    R"({"id":2,"time":2,"label":"second","backend":"opencv_dnn_sface","data":[[0.3,0.4],[0.5,0.6]]}])";
+		    R"([{"id":1,"time":1,"label":"first","backend":"opencv_dnn_sface","model":"sface.onnx","data":[[0.1,0.2]]},)"
+		    R"({"id":2,"time":2,"label":"second","backend":"opencv_dnn_sface","model":"sface.onnx","data":[[0.3,0.4],[0.5,0.6]]}])";
 
 		auto WriteSecureModel(const std::filesystem::path &path, const std::string &content)
 		    -> bool {
@@ -73,7 +75,8 @@ namespace howdy::test::user_models {
 			const auto model_fd = OpenReadOnly(model_path);
 			ok &= Expect(model_fd.Valid() && lseek(model_fd.Get(), 7, SEEK_SET) == 7,
 			             "open descriptor model away from offset 0");
-			const auto result = LoadUserModelsFromFd(model_fd.Get(), display_path, kBackend, owner);
+			const auto result =
+			    LoadUserModelsFromFd(model_fd.Get(), display_path, kBackend, kModel, owner);
 			ok &= ExpectStatus(result, UserModelStatus::kOk, "descriptor model loads");
 			ok &= Expect(result.stored.encodings.size() == 3 && result.stored.models.size() == 3 &&
 			                 result.stored.models.at(0).id == 1 &&
@@ -83,18 +86,20 @@ namespace howdy::test::user_models {
 			             "descriptor model load leaves the shared offset alone");
 
 			const auto wrong_owner = LoadUserModelsFromFd(model_fd.Get(), display_path, kBackend,
-			                                              static_cast<uid_t>(owner + 1));
+			                                              kModel, static_cast<uid_t>(owner + 1));
 			ok &= ExpectStatus(wrong_owner, UserModelStatus::kInsecurePath,
 			                   "descriptor model with another owner");
 			ok &= Expect(wrong_owner.error_message.contains(display_path.string()),
 			             "descriptor model error names the display path");
 
 			ok &= Expect(fchmod(model_fd.Get(), 0620) == 0, "make descriptor model group-writable");
-			ok &= ExpectStatus(LoadUserModelsFromFd(model_fd.Get(), display_path, kBackend, owner),
-			                   UserModelStatus::kInsecurePath, "group-writable descriptor model");
+			ok &= ExpectStatus(
+			    LoadUserModelsFromFd(model_fd.Get(), display_path, kBackend, kModel, owner),
+			    UserModelStatus::kInsecurePath, "group-writable descriptor model");
 			ok &= Expect(fchmod(model_fd.Get(), 0602) == 0, "make descriptor model world-writable");
-			ok &= ExpectStatus(LoadUserModelsFromFd(model_fd.Get(), display_path, kBackend, owner),
-			                   UserModelStatus::kInsecurePath, "world-writable descriptor model");
+			ok &= ExpectStatus(
+			    LoadUserModelsFromFd(model_fd.Get(), display_path, kBackend, kModel, owner),
+			    UserModelStatus::kInsecurePath, "world-writable descriptor model");
 			ok &= Expect(fchmod(model_fd.Get(), 0600) == 0, "restore descriptor model mode");
 		}
 
@@ -106,7 +111,7 @@ namespace howdy::test::user_models {
 			const auto model_fd = OpenReadOnly(model_path);
 			ok &= ExpectStatus(LoadUserModelsFromFd(model_fd.Get(),
 			                                        "/run/howdy/pam-1000-gen000/models/alice.dat",
-			                                        kBackend, owner),
+			                                        kBackend, kModel, owner),
 			                   UserModelStatus::kInsecurePath, "hard-linked descriptor model");
 			ok &= Expect(unlink(linked_path.c_str()) == 0, "remove descriptor model hard link");
 		}
@@ -114,29 +119,32 @@ namespace howdy::test::user_models {
 		{
 			const howdy::test::ScopedFd read_write(open(model_path.c_str(), O_RDWR | O_CLOEXEC));
 			const auto                  result =
-			    LoadUserModelsFromFd(read_write.Get(), display_path, kBackend, owner);
+			    LoadUserModelsFromFd(read_write.Get(), display_path, kBackend, kModel, owner);
 			ok &= ExpectStatus(result, UserModelStatus::kInsecurePath, "writable descriptor model");
 			ok &= Expect(result.error_message.contains("must be open read-only"),
 			             "writable descriptor model reports its open mode");
 
 			const howdy::test::ScopedFd path_only(open(model_path.c_str(), O_PATH | O_CLOEXEC));
-			ok &= ExpectStatus(LoadUserModelsFromFd(path_only.Get(), display_path, kBackend, owner),
-			                   UserModelStatus::kInsecurePath, "O_PATH descriptor model");
+			ok &= ExpectStatus(
+			    LoadUserModelsFromFd(path_only.Get(), display_path, kBackend, kModel, owner),
+			    UserModelStatus::kInsecurePath, "O_PATH descriptor model");
 
-			ok &= ExpectStatus(LoadUserModelsFromFd(-1, display_path, kBackend, owner),
+			ok &= ExpectStatus(LoadUserModelsFromFd(-1, display_path, kBackend, kModel, owner),
 			                   UserModelStatus::kInsecurePath, "negative descriptor model");
 
 			const howdy::test::ScopedFd directory(
 			    open(temp_root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
-			ok &= ExpectStatus(LoadUserModelsFromFd(directory.Get(), display_path, kBackend, owner),
-			                   UserModelStatus::kInsecurePath, "directory descriptor model");
+			ok &= ExpectStatus(
+			    LoadUserModelsFromFd(directory.Get(), display_path, kBackend, kModel, owner),
+			    UserModelStatus::kInsecurePath, "directory descriptor model");
 
 			const auto fifo_path = temp_root / "alice.fifo";
 			ok &= Expect(mkfifo(fifo_path.c_str(), 0600) == 0, "create descriptor model FIFO");
 			const howdy::test::ScopedFd fifo(
 			    open(fifo_path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC));
-			ok &= ExpectStatus(LoadUserModelsFromFd(fifo.Get(), display_path, kBackend, owner),
-			                   UserModelStatus::kInsecurePath, "FIFO descriptor model");
+			ok &= ExpectStatus(
+			    LoadUserModelsFromFd(fifo.Get(), display_path, kBackend, kModel, owner),
+			    UserModelStatus::kInsecurePath, "FIFO descriptor model");
 		}
 
 		const auto load_content =
@@ -145,7 +153,7 @@ namespace howdy::test::user_models {
 			const auto path = temp_root / (label + ".dat");
 			ok &= Expect(WriteSecureModel(path, content), "write " + label + " descriptor model");
 			const auto model_fd = OpenReadOnly(path);
-			return LoadUserModelsFromFd(model_fd.Get(), display_path, kBackend, owner);
+			return LoadUserModelsFromFd(model_fd.Get(), display_path, kBackend, kModel, owner);
 		};
 
 		ok &= ExpectStatus(
@@ -159,19 +167,85 @@ namespace howdy::test::user_models {
 		                   "empty descriptor model file");
 		ok &= ExpectStatus(load_content("empty-list", "[]"), UserModelStatus::kNoModel,
 		                   "empty descriptor model list");
-		ok &= ExpectStatus(
-		    load_content(
-		        "incompatible",
-		        R"([{"id":1,"label":"bad","backend":"other_backend","data":[[0.1,0.2]]}])"),
-		    UserModelStatus::kIncompatibleBackend, "incompatible descriptor model backend");
+
+		struct CompatibilityCase {
+			const char     *label;
+			const char     *json;
+			const char     *expected_backend;
+			const char     *expected_model;
+			UserModelStatus expected_status;
+		};
+
+		const auto compatibility_cases = std::to_array<CompatibilityCase>({
+		    {
+		        .label = "matching-backend-and-model",
+		        .json =
+		            R"([{"id":1,"label":"ok","backend":"opencv_dnn_sface","model":"sface.onnx","data":[[0.1,0.2]]}])",
+		        .expected_backend = kBackend,
+		        .expected_model   = kModel,
+		        .expected_status  = UserModelStatus::kOk,
+		    },
+		    {
+		        .label = "legacy-omitted-model",
+		        .json =
+		            R"([{"id":1,"label":"legacy","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])",
+		        .expected_backend = kBackend,
+		        .expected_model   = kModel,
+		        .expected_status  = UserModelStatus::kOk,
+		    },
+		    {
+		        .label = "incompatible-backend",
+		        .json =
+		            R"([{"id":1,"label":"bad","backend":"other_backend","model":"sface.onnx","data":[[0.1,0.2]]}])",
+		        .expected_backend = kBackend,
+		        .expected_model   = kModel,
+		        .expected_status  = UserModelStatus::kIncompatibleBackend,
+		    },
+		    {
+		        .label = "incompatible-model",
+		        .json =
+		            R"([{"id":1,"label":"bad","backend":"opencv_dnn_sface","model":"other.onnx","data":[[0.1,0.2]]}])",
+		        .expected_backend = kBackend,
+		        .expected_model   = kModel,
+		        .expected_status  = UserModelStatus::kIncompatibleModel,
+		    },
+		    {
+		        .label = "both-mismatched-prefers-backend",
+		        .json =
+		            R"([{"id":1,"label":"bad","backend":"other_backend","model":"other.onnx","data":[[0.1,0.2]]}])",
+		        .expected_backend = kBackend,
+		        .expected_model   = kModel,
+		        .expected_status  = UserModelStatus::kIncompatibleBackend,
+		    },
+		    {
+		        .label = "empty-expected-model-accepts-any-model",
+		        .json =
+		            R"([{"id":1,"label":"any","backend":"opencv_dnn_sface","model":"other.onnx","data":[[0.1,0.2]]}])",
+		        .expected_backend = kBackend,
+		        .expected_model   = "",
+		        .expected_status  = UserModelStatus::kOk,
+		    },
+		});
+		for (const auto &test_case : compatibility_cases) {
+			const auto path = temp_root / (std::string(test_case.label) + ".dat");
+			ok &= Expect(WriteSecureModel(path, test_case.json),
+			             std::string("write ") + test_case.label + " descriptor model");
+			const auto model_fd = OpenReadOnly(path);
+			ok &= ExpectStatus(LoadUserModelsFromFd(model_fd.Get(), display_path,
+			                                        test_case.expected_backend,
+			                                        test_case.expected_model, owner),
+			                   test_case.expected_status,
+			                   std::string("descriptor model compatibility: ") + test_case.label);
+		}
 
 		{
 			// Once the file is unlinked (replaced or removed) it has no link left, and the load
 			// fails closed instead of using the stale contents.
 			const auto model_fd = OpenReadOnly(model_path);
 			ok &= Expect(unlink(model_path.c_str()) == 0, "unlink descriptor model");
-			ok &= ExpectStatus(LoadUserModelsFromFd(model_fd.Get(), display_path, kBackend, owner),
-			                   UserModelStatus::kInsecurePath, "unlinked descriptor model");
+			ok &= ExpectStatus(
+			    LoadUserModelsFromFd(model_fd.Get(), display_path, kBackend, kModel, owner),
+			    UserModelStatus::kInsecurePath, "unlinked descriptor model");
 		}
 
 		fs::remove_all(temp_root, ec);

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <fcntl.h>
@@ -36,6 +37,17 @@ namespace howdy::native::user_model_store_internal {
 
 	auto WithErrno(std::string message, int error_number) -> std::string {
 		return std::move(message) + " (" + SystemErrorMessage(error_number) + ")";
+	}
+
+	// O_NOFOLLOW fails a symlink with ELOOP, a directory cannot be opened for writing, and a
+	// socket cannot be opened at all (ENXIO).
+	auto OpenErrorMeansNotRegularFile(int error_number) -> bool {
+		return error_number == ELOOP || error_number == EISDIR || error_number == ENXIO;
+	}
+
+	auto NotRegularFileMessage(std::string_view label, const std::filesystem::path &path)
+	    -> std::string {
+		return std::string(label) + " must be a regular file: " + path.string();
 	}
 
 	auto UserModelInspectionFailedMessage(const std::filesystem::path &path, int error_number)
@@ -130,66 +142,60 @@ namespace howdy::native::user_model_store_internal {
 		};
 	}
 
-	auto OpenRuntimeDescriptor(const UserModelStoreConfig &config, const std::string &user)
-	    -> UserModelDescriptorResult {
-		const auto readiness = CheckReadiness(config, user);
-		const auto outcome   = Classify(readiness.status);
-		if (outcome == UserModelOutcome::kAbsent) {
-			return {.status = UserModelDescriptorStatus::kMissing};
-		}
-		if (readiness.status == UserModelStatus::kInvalidUser) {
-			return {
-			    .status        = UserModelDescriptorStatus::kInvalidUser,
-			    .error_message = std::string(kInvalidUserNameMessage),
-			};
-		}
-		if (outcome != UserModelOutcome::kOk) {
-			return {
-			    .status        = UserModelDescriptorStatus::kInvalidStorage,
-			    .error_message = readiness.error_message.empty()
-				                     ? "Failed to validate user model file"
-				                     : readiness.error_message,
-			};
-		}
+	namespace {
 
-		constexpr int open_flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK;
-		ScopedFd      model(open(readiness.path.c_str(), open_flags));
-		if (!model.Valid()) {
-			const int error_number = errno;
-			// Removed between the readiness walk and the open: as missing as before the walk.
-			if (error_number == ENOENT) {
+		auto OpenRuntimeDescriptorImpl(const UserModelStoreConfig &config, const std::string &user)
+		    -> UserModelDescriptorResult {
+			const auto readiness = CheckReadiness(config, user);
+			const auto outcome   = Classify(readiness.status);
+			if (outcome == UserModelOutcome::kAbsent) {
 				return {.status = UserModelDescriptorStatus::kMissing};
 			}
-			return {
-			    .status        = UserModelDescriptorStatus::kInvalidStorage,
-			    .error_message = WithErrno(
-			        "Failed to open user model file: " + readiness.path.string(), error_number),
-			};
-		}
-		// The walk checked the path; this checks the file the descriptor actually names.
-		auto validated = ValidateOpenedModelFd(model.Get(), readiness.path, config.owner_uid,
-		                                       EmptyModelPolicy::kReject);
-		if (validated.status != UserModelStatus::kOk) {
-			return {
-			    .status        = UserModelDescriptorStatus::kInvalidStorage,
-			    .error_message = std::move(validated.error_message),
-			};
-		}
-		return {
-		    .status = UserModelDescriptorStatus::kReady,
-		    .fd     = std::move(model),
-		};
-	}
+			if (readiness.status == UserModelStatus::kInvalidUser) {
+				return {
+				    .status        = UserModelDescriptorStatus::kInvalidUser,
+				    .error_message = std::string(kInvalidUserNameMessage),
+				};
+			}
+			if (outcome != UserModelOutcome::kOk) {
+				return {
+				    .status        = UserModelDescriptorStatus::kInvalidStorage,
+				    .error_message = readiness.error_message.empty()
+					                     ? "Failed to validate user model file"
+					                     : readiness.error_message,
+				};
+			}
 
-	auto ResolvePath(const UserModelStoreConfig &config, const std::string &user)
-	    -> UserModelPathResult {
-		const auto readiness = CheckReadiness(config, user);
-		return UserModelPathResult{
-		    .status        = readiness.status,
-		    .error_message = readiness.error_message,
-		    .path          = readiness.path,
-		};
-	}
+			constexpr int open_flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK;
+			ScopedFd      model(open(readiness.path.c_str(), open_flags));
+			if (!model.Valid()) {
+				const int error_number = errno;
+				// Removed between the readiness walk and the open: as missing as before the walk.
+				if (error_number == ENOENT) {
+					return {.status = UserModelDescriptorStatus::kMissing};
+				}
+				return {
+				    .status        = UserModelDescriptorStatus::kInvalidStorage,
+				    .error_message = WithErrno(
+				        "Failed to open user model file: " + readiness.path.string(), error_number),
+				};
+			}
+			// The walk checked the path; this checks the file the descriptor actually names.
+			auto validated = ValidateOpenedModelFd(model.Get(), readiness.path, config.owner_uid,
+			                                       EmptyModelPolicy::kReject);
+			if (validated.status != UserModelStatus::kOk) {
+				return {
+				    .status        = UserModelDescriptorStatus::kInvalidStorage,
+				    .error_message = std::move(validated.error_message),
+				};
+			}
+			return {
+			    .status = UserModelDescriptorStatus::kReady,
+			    .fd     = std::move(model),
+			};
+		}
+
+	}  // namespace
 
 }  // namespace howdy::native::user_model_store_internal
 
@@ -202,7 +208,7 @@ namespace howdy::native {
 
 	auto UserModelStore::OpenRuntimeDescriptor(const std::string &user) const
 	    -> UserModelDescriptorResult {
-		return user_model_store_internal::OpenRuntimeDescriptor(config_, user);
+		return user_model_store_internal::OpenRuntimeDescriptorImpl(config_, user);
 	}
 
 }  // namespace howdy::native

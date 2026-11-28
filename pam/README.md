@@ -9,8 +9,8 @@ PAM-specific dependencies:
 
 - Linux >= 5.3 and glibc >= 2.36 (pidfd-based compare waits)
 - Linux-PAM
-- INIReader
 - libevdev
+- gettext (`libintl` / `pam/po/` message catalogs)
 
 ## Source Layout
 

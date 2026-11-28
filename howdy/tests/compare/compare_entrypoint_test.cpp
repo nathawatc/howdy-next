@@ -1,5 +1,8 @@
 #include "compare/compare_descriptor_test_support.hpp"
 #include "compare/entrypoint.hpp"
+#include "compare/entrypoint/dependencies.hpp"
+#include "compare/sandbox.hpp"
+#include "model_assets/opencv_model_manifest.hpp"
 #include "protocol/compare_descriptors.hpp"
 #include "protocol/compare_exit.hpp"
 #include "protocol/compare_verdict.hpp"
@@ -8,6 +11,7 @@
 
 #include <array>
 #include <cerrno>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
@@ -15,11 +19,13 @@
 #include <system_error>
 
 #include <fcntl.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #ifndef HOWDY_PACKAGED_CONFIG_PATH
 #	error "HOWDY_PACKAGED_CONFIG_PATH must be defined by CMake"
@@ -63,6 +69,81 @@ namespace {
 		                    fs::perms::others_read,
 		                fs::perm_options::replace, error);
 		return !error;
+	}
+
+	// Verifies that compare rejects stored models with an incompatible backend or model name,
+	// reports kNoFaceModel on both exit status and verdict socket, and closes all protocol fds.
+	auto ExpectIncompatibleDescriptorModels(int config_fd, const fs::path &root, uid_t owner)
+	    -> bool {
+		using howdy::native::CompareExit;
+		using howdy::test::Expect;
+		using howdy::test::ScopedEnvironmentVariable;
+		using howdy::test::compare::DescriptorOpen;
+		using howdy::test::compare::OpenAboveProtocol;
+		using howdy::test::compare::ScopedDescriptorAt;
+		namespace descriptors = howdy::native::compare_descriptors;
+		namespace verdict     = howdy::native::compare_verdict;
+
+		struct IncompatibleModelCase {
+			const char *label;
+			const char *filename;
+			std::string json;
+		};
+
+		const std::string sface_model(howdy::native::kSfaceModelDescriptor.filename);
+		const auto        cases = std::to_array<IncompatibleModelCase>({
+		    {
+		        .label    = "incompatible backend",
+		        .filename = "incompatible-backend-model.dat",
+		        .json     = R"([{"id":1,"label":"bad","backend":"other_backend","model":")" +
+				            sface_model + R"(","data":[[0.1,0.2]]}])",
+		    },
+		    {
+		        .label    = "incompatible model",
+		        .filename = "incompatible-model-name.dat",
+		        .json =
+		            R"([{"id":1,"label":"bad","backend":"opencv_dnn_sface","model":"other_model.onnx","data":[[0.1,0.2]]}])",
+		    },
+		});
+
+		std::array<std::string, 2> arguments{"howdy-compare", "coverage-user"};
+		std::array<char *, 2>      argv{arguments.at(0).data(), arguments.at(1).data()};
+		bool                       ok = true;
+		for (const auto &test_case : cases) {
+			const auto bad_path = root / test_case.filename;
+			ok &= Expect(howdy::test::WriteFile(bad_path, test_case.json) &&
+			                 chmod(bad_path.c_str(), 0600) == 0,
+			             std::string("write ") + test_case.label + " descriptor-mode model");
+			const auto                bad_model = OpenAboveProtocol(bad_path, O_RDONLY);
+			const auto                pair      = howdy::test::compare::MakeVerdictPair();
+			const ScopedDescriptorAt  verdict_at(verdict::kFd, pair.compare_end.Get());
+			const ScopedDescriptorAt  config_at(descriptors::kConfigFd, config_fd);
+			const ScopedDescriptorAt  model_at(descriptors::kModelFd, bad_model.Get());
+			ScopedEnvironmentVariable verdict_env(verdict::kEnvironmentName);
+			ScopedEnvironmentVariable config_env(descriptors::kConfigEnvironmentName);
+			ScopedEnvironmentVariable model_env(descriptors::kModelEnvironmentName);
+			verdict_env.Set(verdict::kEnvironmentValue);
+			config_env.Set(descriptors::kConfigEnvironmentValue);
+			model_env.Set(descriptors::kModelEnvironmentValue);
+
+			const std::ostringstream errors;
+			int                      status = -1;
+			{
+				const howdy::test::StreamRedirect redirect(std::cerr, errors.rdbuf());
+				status = howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()),
+				                                             argv.data(), owner);
+			}
+			unsigned char verdict_byte = 0;
+			const bool    has_verdict  = read(pair.pam_end.Get(), &verdict_byte, 1) == 1;
+			const bool    fds_closed =
+			    !DescriptorOpen(descriptors::kConfigFd) && !DescriptorOpen(descriptors::kModelFd);
+			ok &= Expect(status == static_cast<int>(CompareExit::kNoFaceModel) && has_verdict &&
+			                 verdict_byte == static_cast<int>(CompareExit::kNoFaceModel) &&
+			                 !errors.str().empty() && fds_closed,
+			             std::string("descriptor mode rejects ") + test_case.label +
+			                 " with kNoFaceModel and closes descriptors");
+		}
+		return ok;
 	}
 
 	// PAM hands compare the config at fd 4 and the model at fd 5 next to the verdict socket at
@@ -212,6 +293,7 @@ namespace {
 		});
 		ok &= Expect(aborted(invalid_shape_run, "") && !invalid_shape_run.diagnostics.empty(),
 		             "descriptor mode aborts with diagnostic on invalid-shape model JSON object");
+		ok &= ExpectIncompatibleDescriptorModels(config.Get(), root, owner);
 
 		ok &= Expect(aborted(run({
 		                         .config_fd = config.Get(),
@@ -313,6 +395,326 @@ namespace {
 		return ok;
 	}
 
+	struct HelpProtocolCase {
+		const char *label;
+		const char *verdict_env;
+		const char *config_env;
+		const char *model_env;
+		bool        attach_verdict;
+		bool        attach_config;
+		bool        attach_model;
+		bool        expect_verdict_abort;
+	};
+
+	struct HelpProtocolFixture {
+		int   config_fd;
+		int   model_fd;
+		uid_t owner;
+	};
+
+	void ApplyOptionalEnvironment(howdy::test::ScopedEnvironmentVariable &variable,
+	                              const char                             *value) {
+		if (value != nullptr) {
+			variable.Set(value);
+		}
+	}
+
+	auto RunHelpProtocolCase(const HelpProtocolCase &test_case, const char *help_flag,
+	                         const HelpProtocolFixture &fixture) -> bool {
+		using howdy::native::CompareExit;
+		using howdy::test::Expect;
+		using howdy::test::ScopedEnvironmentVariable;
+		using howdy::test::compare::DescriptorOpen;
+		using howdy::test::compare::ScopedDescriptorAt;
+		namespace descriptors = howdy::native::compare_descriptors;
+		namespace verdict     = howdy::native::compare_verdict;
+
+		std::array<std::string, 2> help_arguments{"howdy-compare", help_flag};
+		std::array<char *, 2>      help_argv{
+		    help_arguments.at(0).data(),
+		    help_arguments.at(1).data(),
+		};
+		const auto               pair = howdy::test::compare::MakeVerdictPair();
+		const ScopedDescriptorAt verdict_at(verdict::kFd,
+		                                    test_case.attach_verdict ? pair.compare_end.Get() : -1);
+		const ScopedDescriptorAt config_at(descriptors::kConfigFd,
+		                                   test_case.attach_config ? fixture.config_fd : -1);
+		const ScopedDescriptorAt model_at(descriptors::kModelFd,
+		                                  test_case.attach_model ? fixture.model_fd : -1);
+		ScopedEnvironmentVariable verdict_env(verdict::kEnvironmentName);
+		ScopedEnvironmentVariable config_env(descriptors::kConfigEnvironmentName);
+		ScopedEnvironmentVariable model_env(descriptors::kModelEnvironmentName);
+		ApplyOptionalEnvironment(verdict_env, test_case.verdict_env);
+		ApplyOptionalEnvironment(config_env, test_case.config_env);
+		ApplyOptionalEnvironment(model_env, test_case.model_env);
+
+		const std::ostringstream out_stream;
+		const std::ostringstream err_stream;
+		int                      status = -1;
+		{
+			const howdy::test::StreamRedirect out_redirect(std::cout, out_stream.rdbuf());
+			const howdy::test::StreamRedirect err_redirect(std::cerr, err_stream.rdbuf());
+			status = howdy::native::RunCompareEntrypoint(static_cast<int>(help_argv.size()),
+			                                             help_argv.data(), fixture.owner);
+		}
+		unsigned char byte          = 0;
+		const ssize_t verdict_bytes = read(pair.pam_end.Get(), &byte, 1);
+		const bool    verdict_ok =
+		    test_case.expect_verdict_abort
+		        ? (verdict_bytes == 1 && byte == static_cast<unsigned char>(CompareExit::kAbort))
+		        : (verdict_bytes < 0 && errno == EAGAIN);
+		const bool descriptors_closed =
+		    !DescriptorOpen(descriptors::kConfigFd) && !DescriptorOpen(descriptors::kModelFd);
+		return Expect(status == static_cast<int>(CompareExit::kAbort) && verdict_ok &&
+		                  descriptors_closed && out_stream.str().empty() &&
+		                  err_stream.str().contains(std::string("Unknown argument: ") + help_flag),
+		              test_case.label);
+	}
+
+	auto ExpectHelpProtocolHandling(const fs::path &root) -> bool {
+		using howdy::native::CompareExit;
+		using howdy::test::Expect;
+		using howdy::test::ScopedEnvironmentVariable;
+		using howdy::test::compare::OpenAboveProtocol;
+		using howdy::test::compare::ScopedDescriptorAt;
+		namespace descriptors = howdy::native::compare_descriptors;
+		namespace verdict     = howdy::native::compare_verdict;
+
+		bool       ok         = true;
+		const auto model_path = root / "help-protocol-model.dat";
+		ok &=
+		    Expect(howdy::test::WriteFile(model_path, "[]") && chmod(model_path.c_str(), 0600) == 0,
+			       "write help-protocol fixture model");
+		const auto                config = OpenAboveProtocol(root / "config.ini", O_RDONLY);
+		const auto                model  = OpenAboveProtocol(model_path, O_RDONLY);
+		const HelpProtocolFixture fixture{
+		    .config_fd = config.Get(),
+		    .model_fd  = model.Get(),
+		    .owner     = geteuid(),
+		};
+		ok &= Expect(config.Valid() && model.Valid(), "open help-protocol config and model");
+
+		const auto protocol_cases = std::to_array<HelpProtocolCase>({
+		    {
+		        .label                = "full descriptor mode rejects help with abort verdict",
+		        .verdict_env          = verdict::kEnvironmentValue,
+		        .config_env           = descriptors::kConfigEnvironmentValue,
+		        .model_env            = descriptors::kModelEnvironmentValue,
+		        .attach_verdict       = true,
+		        .attach_config        = true,
+		        .attach_model         = true,
+		        .expect_verdict_abort = true,
+		    },
+		    {
+		        .label                = "verdict-only env rejects help with abort verdict",
+		        .verdict_env          = verdict::kEnvironmentValue,
+		        .config_env           = nullptr,
+		        .model_env            = nullptr,
+		        .attach_verdict       = true,
+		        .attach_config        = false,
+		        .attach_model         = false,
+		        .expect_verdict_abort = true,
+		    },
+		    {
+		        .label                = "config-only env rejects help and closes announced config",
+		        .verdict_env          = nullptr,
+		        .config_env           = descriptors::kConfigEnvironmentValue,
+		        .model_env            = nullptr,
+		        .attach_verdict       = false,
+		        .attach_config        = true,
+		        .attach_model         = false,
+		        .expect_verdict_abort = false,
+		    },
+		    {
+		        .label                = "model-only env rejects help and closes announced model",
+		        .verdict_env          = nullptr,
+		        .config_env           = nullptr,
+		        .model_env            = descriptors::kModelEnvironmentValue,
+		        .attach_verdict       = false,
+		        .attach_config        = false,
+		        .attach_model         = true,
+		        .expect_verdict_abort = false,
+		    },
+		    {
+		        .label                = "malformed verdict env rejects help without verdict write",
+		        .verdict_env          = "99",
+		        .config_env           = nullptr,
+		        .model_env            = nullptr,
+		        .attach_verdict       = true,
+		        .attach_config        = false,
+		        .attach_model         = false,
+		        .expect_verdict_abort = false,
+		    },
+		    {
+		        .label                = "empty config env rejects help",
+		        .verdict_env          = nullptr,
+		        .config_env           = "",
+		        .model_env            = nullptr,
+		        .attach_verdict       = false,
+		        .attach_config        = false,
+		        .attach_model         = false,
+		        .expect_verdict_abort = false,
+		    },
+		    {
+		        .label                = "wrong model env rejects help",
+		        .verdict_env          = nullptr,
+		        .config_env           = nullptr,
+		        .model_env            = "7",
+		        .attach_verdict       = false,
+		        .attach_config        = false,
+		        .attach_model         = false,
+		        .expect_verdict_abort = false,
+		    },
+		});
+
+		for (const char *help_flag : {"--help", "-h"}) {
+			for (const auto &test_case : protocol_cases) {
+				ok &= RunHelpProtocolCase(test_case, help_flag, fixture);
+			}
+
+			// Standalone invocation with no compare protocol environment variables keeps --help/-h.
+			std::array<std::string, 2> help_arguments{"howdy-compare", help_flag};
+			std::array<char *, 2>      help_argv{
+			    help_arguments.at(0).data(),
+			    help_arguments.at(1).data(),
+			};
+			const auto                pair = howdy::test::compare::MakeVerdictPair();
+			const ScopedDescriptorAt  verdict_at(verdict::kFd, pair.compare_end.Get());
+			ScopedEnvironmentVariable verdict_env(verdict::kEnvironmentName);
+			ScopedEnvironmentVariable config_env(descriptors::kConfigEnvironmentName);
+			ScopedEnvironmentVariable model_env(descriptors::kModelEnvironmentName);
+			const std::ostringstream  out_stream;
+			const std::ostringstream  err_stream;
+			int                       status = -1;
+			{
+				const howdy::test::StreamRedirect out_redirect(std::cout, out_stream.rdbuf());
+				const howdy::test::StreamRedirect err_redirect(std::cerr, err_stream.rdbuf());
+				status = howdy::native::RunCompareEntrypoint(static_cast<int>(help_argv.size()),
+				                                             help_argv.data(), fixture.owner);
+			}
+			unsigned char byte = 0;
+			ok &= Expect(status == static_cast<int>(CompareExit::kSuccess) &&
+			                 read(pair.pam_end.Get(), &byte, 1) < 0 && errno == EAGAIN &&
+			                 out_stream.str().contains("Usage: howdy-compare <user>\n") &&
+			                 err_stream.str().empty(),
+			             "standalone compare help prints usage, exits 0, and writes no verdict");
+		}
+		return ok;
+	}
+
+	auto ExpectVerdictReportMismatchAndClosedPeer(const fs::path &root) -> bool {
+		using howdy::native::CompareEntrypointDependencies;
+		using howdy::native::CompareExit;
+		using howdy::native::CompareSandboxResource;
+		using howdy::native::CompareSandboxResult;
+		using howdy::native::CompareSandboxStatus;
+		using howdy::test::Expect;
+		using howdy::test::ScopedEnvironmentVariable;
+		using howdy::test::compare::OpenAboveProtocol;
+		using howdy::test::compare::ScopedDescriptorAt;
+		namespace descriptors = howdy::native::compare_descriptors;
+		namespace verdict     = howdy::native::compare_verdict;
+
+		bool       ok         = true;
+		const auto model_path = root / "verdict-edge-model.dat";
+		ok &=
+		    Expect(howdy::test::WriteFile(model_path, "[]") && chmod(model_path.c_str(), 0600) == 0,
+			       "write verdict-edge model");
+		const auto                 config = OpenAboveProtocol(root / "config.ini", O_RDONLY);
+		const auto                 model  = OpenAboveProtocol(model_path, O_RDONLY);
+		const uid_t                owner  = geteuid();
+		std::array<std::string, 2> arguments{"howdy-compare", "coverage-user"};
+		std::array<char *, 2>      argv{arguments.at(0).data(), arguments.at(1).data()};
+
+		// 1. If fd 3 is replaced with a different SOCK_SEQPACKET socket after FindVerdictSocket,
+		// ReportVerdict detects the st_dev/st_ino mismatch and writes to neither socket.
+		{
+			const auto                original_pair    = howdy::test::compare::MakeVerdictPair();
+			const auto                replacement_pair = howdy::test::compare::MakeVerdictPair();
+			const ScopedDescriptorAt  verdict_at(verdict::kFd, original_pair.compare_end.Get());
+			const ScopedDescriptorAt  config_at(descriptors::kConfigFd, config.Get());
+			const ScopedDescriptorAt  model_at(descriptors::kModelFd, model.Get());
+			ScopedEnvironmentVariable verdict_env(verdict::kEnvironmentName);
+			ScopedEnvironmentVariable config_env(descriptors::kConfigEnvironmentName);
+			ScopedEnvironmentVariable model_env(descriptors::kModelEnvironmentName);
+			verdict_env.Set(verdict::kEnvironmentValue);
+			config_env.Set(descriptors::kConfigEnvironmentValue);
+			model_env.Set(descriptors::kModelEnvironmentValue);
+
+			struct SwapContext {
+				int  replacement_fd = -1;
+				bool swapped        = false;
+			};
+
+			SwapContext swap_context{.replacement_fd = replacement_pair.compare_end.Get()};
+			const CompareEntrypointDependencies dependencies{
+			    .context         = &swap_context,
+			    .disable_tracing = [](void *raw_context) -> CompareSandboxResult {
+				    auto &context   = *static_cast<SwapContext *>(raw_context);
+				    context.swapped = dup2(context.replacement_fd, verdict::kFd) == verdict::kFd;
+				    return {
+				        .status   = CompareSandboxStatus::kTracerAttached,
+				        .resource = CompareSandboxResource::kNone,
+				    };
+			    },
+			};
+
+			const std::ostringstream errors;
+			int                      status = -1;
+			{
+				const howdy::test::StreamRedirect redirect(std::cerr, errors.rdbuf());
+				status = howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()),
+				                                             argv.data(), owner, dependencies);
+			}
+			unsigned char byte = 0;
+			ok &= Expect(swap_context.swapped && status == static_cast<int>(CompareExit::kAbort),
+			             "verdict fd swap returns compare abort status");
+			ok &= Expect(read(original_pair.pam_end.Get(), &byte, 1) < 0 && errno == EAGAIN &&
+			                 read(replacement_pair.pam_end.Get(), &byte, 1) < 0 && errno == EAGAIN,
+			             "ReportVerdict writes nothing when fd 3 st_dev/st_ino changed");
+		}
+
+		// 2. When PAM's end of the verdict socket is already closed (EPIPE) under default SIGPIPE,
+		// ReportVerdict suppresses SIGPIPE, restores SIG_DFL, and returns exit_code instead of
+		// terminating compare with SIGPIPE.
+		{
+			const pid_t child = fork();
+			if (child == 0) {
+				struct sigaction default_pipe{};
+				default_pipe.sa_handler = SIG_DFL;
+				sigemptyset(&default_pipe.sa_mask);
+				if (sigaction(SIGPIPE, &default_pipe, nullptr) != 0) {
+					_exit(EXIT_FAILURE);
+				}
+				auto                      pair = howdy::test::compare::MakeVerdictPair();
+				const ScopedDescriptorAt  verdict_at(verdict::kFd, pair.compare_end.Get());
+				const ScopedDescriptorAt  config_at(descriptors::kConfigFd, config.Get());
+				const ScopedDescriptorAt  model_at(descriptors::kModelFd, model.Get());
+				ScopedEnvironmentVariable verdict_env(verdict::kEnvironmentName);
+				ScopedEnvironmentVariable config_env(descriptors::kConfigEnvironmentName);
+				ScopedEnvironmentVariable model_env(descriptors::kModelEnvironmentName);
+				verdict_env.Set(verdict::kEnvironmentValue);
+				config_env.Set(descriptors::kConfigEnvironmentValue);
+				model_env.Set(descriptors::kModelEnvironmentValue);
+
+				pair.pam_end.Reset();
+				const int status = howdy::native::RunCompareEntrypoint(
+				    static_cast<int>(argv.size()), argv.data(), owner);
+				struct sigaction after_pipe{};
+				const bool       restored = sigaction(SIGPIPE, nullptr, &after_pipe) == 0 &&
+				                            after_pipe.sa_handler == SIG_DFL;
+				_exit(status == static_cast<int>(CompareExit::kNoFaceModel) && restored
+				          ? EXIT_SUCCESS
+						  : EXIT_FAILURE);
+			}
+			int wait_status = 0;
+			ok &= Expect(child > 0 && waitpid(child, &wait_status, 0) == child &&
+			                 WIFEXITED(wait_status) && WEXITSTATUS(wait_status) == EXIT_SUCCESS,
+			             "ReportVerdict handles closed verdict peer (EPIPE) without SIGPIPE death");
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -325,6 +727,8 @@ auto main() -> int {
 
 	bool ok = true;
 	ok &= ExpectDescriptorMode(root);
+	ok &= ExpectHelpProtocolHandling(root);
+	ok &= ExpectVerdictReportMismatchAndClosedPeer(root);
 
 	std::error_code cleanup_error;
 	fs::remove_all(root, cleanup_error);

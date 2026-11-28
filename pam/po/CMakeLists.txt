@@ -8,7 +8,14 @@ find_program(GETTEXT_MSGATTRIB_EXECUTABLE NAMES msgattrib)
 if(NOT GETTEXT_MSGFMT_EXECUTABLE)
   message(FATAL_ERROR "Building translations requires msgfmt from gettext")
 endif()
-if(BUILD_TESTING AND (NOT GETTEXT_XGETTEXT_EXECUTABLE OR NOT GETTEXT_MSGCMP_EXECUTABLE OR NOT GETTEXT_MSGATTRIB_EXECUTABLE))
+if(
+ BUILD_TESTING
+ AND (
+  NOT GETTEXT_XGETTEXT_EXECUTABLE
+  OR NOT GETTEXT_MSGCMP_EXECUTABLE
+  OR NOT GETTEXT_MSGATTRIB_EXECUTABLE
+ )
+)
   message(FATAL_ERROR "Translation tests require xgettext, msgcmp, and msgattrib from gettext")
 endif()
 
@@ -100,7 +107,12 @@ if(GETTEXT_XGETTEXT_EXECUTABLE AND GETTEXT_MSGMERGE_EXECUTABLE)
   "${HOWDY_POT_FILE}"
  )
   endforeach()
-  add_custom_target(howdy-update-po DEPENDS howdy-pot ${HOWDY_MSGMERGE_COMMANDS})
+  add_custom_target(
+   howdy-update-po
+   ${HOWDY_MSGMERGE_COMMANDS}
+   DEPENDS howdy-pot
+   VERBATIM
+  )
 endif()
 
 add_custom_target(howdy-gmo ALL DEPENDS ${HOWDY_TRANSLATION_OUTPUTS})

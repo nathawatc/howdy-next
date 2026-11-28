@@ -2,6 +2,7 @@
 
 #include "app/command_invocation.hpp"
 #include "config/runtime_config_loader.hpp"
+#include "storage/user_model_status.hpp"
 
 #include <cstdint>
 #include <string>
@@ -68,5 +69,8 @@ namespace howdy::native::test_cli_internal {
 
 	auto HasGraphicalDisplayEnvironment(std::string_view display, std::string_view wayland_display,
 	                                    std::string_view runtime_dir) -> bool;
+
+	[[nodiscard]] auto UserModelLoadWarning(howdy::native::UserModelStatus status)
+	    -> std::string_view;
 
 }  // namespace howdy::native::test_cli_internal

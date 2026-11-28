@@ -586,11 +586,9 @@ namespace {
 			const char *control_token = nullptr;
 			const int   control_result =
 			    pam_get_authtok(control_handle.Get(), PAM_AUTHTOK, &control_token, nullptr);
-			state.response_mode = howdy::test::auth_flow::ResponseMode::kSecret;
-			const auto [production_result, production_token] =
-			    production_prompt.RequestAuthToken(pam_handle.Get());
-			ok &= Expect(production_result == control_result &&
-			                 (production_token != nullptr) == (control_token != nullptr),
+			state.response_mode         = howdy::test::auth_flow::ResponseMode::kSecret;
+			const int production_result = production_prompt.RequestAuthToken(pam_handle.Get());
+			ok &= Expect(production_result == control_result,
 			             "production auth-token adapter matches pam_get_authtok semantics");
 			ok &= Expect(state.last_msg_type == control_state.last_msg_type &&
 			                 state.last_msg_type == PAM_PROMPT_ECHO_OFF,
@@ -768,6 +766,65 @@ namespace {
 				             "invalid timeout stops before PAM conversation or detection notice");
 				ok &= Expect(prompt_context.spawn_calls == 0,
 				             "invalid timeout stops before spawning compare process");
+			}
+		}
+
+		{
+			struct ExistingTokenCase {
+				const char *label;
+				int         child_exit;
+				int         expected_pam_status;
+			};
+
+			const auto cases = std::to_array<ExistingTokenCase>({
+			    {
+			        .label               = "compare success with preset PAM_AUTHTOK",
+			        .child_exit          = static_cast<int>(CompareExit::kSuccess),
+			        .expected_pam_status = PAM_SUCCESS,
+			    },
+			    {
+			        .label               = "compare failure with preset PAM_AUTHTOK",
+			        .child_exit          = static_cast<int>(CompareExit::kTooDark),
+			        .expected_pam_status = PAM_AUTH_ERR,
+			    },
+			});
+			for (const auto &test_case : cases) {
+				EligibilityFlowFixture fixture;
+				fixture.runtime.detection_notice = false;
+				auto        dependencies         = MakeEligibilityFlowDependencies(&fixture);
+				FakeContext prompt_context;
+				dependencies.prompt_coordinator =
+				    howdy::test::prompt_coordinator::Operations(&prompt_context);
+				ConversationState     state;
+				struct pam_conv const conversation{
+				    .conv        = TestConversation,
+				    .appdata_ptr = &state,
+				};
+				ScopedPamHandle pam_handle;
+				ok &= Expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
+				             std::string(test_case.label) + ": starts PAM handle");
+				if (pam_handle.Get() == nullptr) {
+					continue;
+				}
+				const char *preset_token = "preset-token";
+				const howdy::test::auth_flow::ScopedAuthTokenItemOverride present(PAM_SUCCESS,
+				                                                                  preset_token);
+				const pid_t child_pid = SpawnExitingChild(test_case.child_exit);
+				ok &= Expect(child_pid > 0, std::string(test_case.label) + ": spawns compare");
+				if (child_pid <= 0) {
+					continue;
+				}
+				prompt_context.next_child_pid = child_pid;
+				const int result              = RunAuthenticationEntrypoint(
+				    pam_handle.Get(), input_arguments, true,
+				    {.context = &dependencies, .authenticate = IdentifyForTest});
+				ok &= Expect(result == test_case.expected_pam_status,
+				             std::string(test_case.label) + ": maps compare outcome");
+				ok &= Expect(prompt_context.preflight_calls == 0 &&
+				                 prompt_context.prompt_submitter_constructions == 0 &&
+				                 prompt_context.auth_token_calls == 0,
+				             std::string(test_case.label) +
+				                 ": preset PAM_AUTHTOK suppresses prompt workaround and re-prompt");
 			}
 		}
 		return ok;

@@ -17,8 +17,11 @@
 #include <thread>
 #include <utility>
 
+#include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
+
+#include <sys/poll.h>
 
 using howdy::test::Expect;
 
@@ -147,6 +150,16 @@ auto ExpectAbortRequestUnblocksWithoutPipeWakeup() -> bool {
 	    .msg       = "Password: ",
 	};
 
+	// Keep a duplicate of the abort pipe's write end open past RequestAbort() until after
+	// prompt_thread.join() so closing the conversation's own write end does not trigger POLLHUP
+	// on the read end; the prompt must unblock solely via the 100 ms poll() timeout checking
+	// abort_requested_.
+	const ScopedFd keep_write_open(fcntl(abort_pipe.at(1).Get(), F_DUPFD_CLOEXEC, 3));
+	ok &= Expect(keep_write_open.Valid(), "abort wake test duplicates abort pipe write end");
+	if (!ok) {
+		return false;
+	}
+
 	InputOperationContext operations{.restore_failure = true};
 	auto const conversation = std::shared_ptr<NativePromptConversation>(CreateInputConversation(
 	    {
@@ -170,6 +183,10 @@ auto ExpectAbortRequestUnblocksWithoutPipeWakeup() -> bool {
 	    master_fd.Get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
 	    kPromptReadTimeoutMs);
 	ok &= Expect(prompt_bytes > 0, "abort wake test prompt is written to tty");
+
+	ok &= Expect(result_future.wait_for(std::chrono::milliseconds(150)) ==
+	                 std::future_status::timeout,
+	             "abort wake test stays blocked before RequestAbort");
 
 	conversation->RequestAbort();
 	// The prompt polls every 100 ms; the wide margin only absorbs a loaded runner.
@@ -722,5 +739,66 @@ auto ExpectNativePromptInputEdges() -> bool {
 	ok &= Expect(push_threw && full_buffer.Full() &&
 	                 full_buffer.Size() == howdy::pam::native_prompt_input::kMaxPromptResponseBytes,
 	             "PushBack overflow throws without corrupting buffer length");
+	return ok;
+}
+
+auto ExpectPromptInputAfterPriorAbortFailsClosed() -> bool {
+	bool                    ok = true;
+	ScopedFd                master_fd;
+	ScopedFd                slave_fd;
+	std::array<ScopedFd, 2> abort_pipe;
+	ok &= Expect(OpenPtyPair(&master_fd, &slave_fd), "prior-abort test opens pseudo terminal");
+	ok &= Expect(OpenPipe(&abort_pipe), "prior-abort test creates abort pipe");
+	if (!ok) {
+		return false;
+	}
+
+	auto conversation = CreateConversation({
+	    .tty_fd         = std::move(slave_fd),
+	    .abort_read_fd  = std::move(abort_pipe.at(0)),
+	    .abort_write_fd = std::move(abort_pipe.at(1)),
+	});
+	conversation->RequestAbort();
+
+	struct PriorAbortCase {
+		const char *label;
+		int         msg_style;
+		bool        hide_input;
+	};
+
+	const auto cases = std::to_array<PriorAbortCase>({
+	    {.label = "echo-off prompt", .msg_style = PAM_PROMPT_ECHO_OFF, .hide_input = true},
+	    {.label = "echo-on prompt", .msg_style = PAM_PROMPT_ECHO_ON, .hide_input = false},
+	});
+	for (const auto &test_case : cases) {
+		const struct pam_message message = {
+		    .msg_style = test_case.msg_style,
+		    .msg       = "Password: ",
+		};
+		char     *response = nullptr;
+		const int direct   = NativePromptConversationTestAccess::PromptInput(
+		    *conversation, message, &response, test_case.hide_input);
+		ok &= Expect(direct == PAM_CONV_ERR && response == nullptr,
+		             std::string("PromptInput after prior RequestAbort fails closed (") +
+		                 test_case.label + ")");
+
+		const struct pam_message *message_ptr       = &message;
+		struct pam_response      *dispatch_response = nullptr;
+		const int                 dispatch_result   = NativePromptConversationTestAccess::Dispatch(
+		    1, &message_ptr, &dispatch_response, conversation.get());
+		ok &= Expect(dispatch_result == PAM_CONV_ERR && dispatch_response == nullptr,
+		             std::string("Dispatch after prior RequestAbort fails closed (") +
+		                 test_case.label + ")");
+	}
+
+	struct pollfd master_poll{
+	    .fd      = master_fd.Get(),
+	    .events  = POLLIN,
+	    .revents = 0,
+	};
+	ok &= Expect(poll(&master_poll, 1, 0) == 0,
+	             "PromptInput after prior RequestAbort writes nothing to tty");
+	ok &= Expect(!NativePromptConversationTestAccess::TerminalRestoreFailed(*conversation),
+	             "PromptInput after prior RequestAbort does not alter terminal state");
 	return ok;
 }

@@ -6,6 +6,7 @@
 #include "internal.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/auth_helper_process.hpp"
+#include "runtime/auth_helper_process/internal.hpp"
 #include "runtime/child_process.hpp"
 #include "support/bit_flags.hpp"
 #include "support/error_message.hpp"
@@ -19,7 +20,6 @@
 #include <utility>
 
 #include <fcntl.h>
-#include <spawn.h>
 #include <unistd.h>
 
 #include <sys/socket.h>
@@ -33,18 +33,11 @@ namespace {
 	using howdy::pam::auth_helper_process::internal::HelperSpawn;
 	using howdy::pam::auth_helper_process::internal::LogAuthHelperFailure;
 	using howdy::pam::auth_helper_process::internal::ProcessChannel;
-
-	constexpr auto kNullDevice = "/dev/null";
+	using howdy::pam::runtime::internal::kNullDevice;
 
 	auto ProductionDuplicateFd(void *context, int fd, int minimum_fd) -> int {
 		(void)context;
 		return fcntl(fd, F_DUPFD_CLOEXEC, minimum_fd);
-	}
-
-	auto ProductionActionsAddopen(void *context, posix_spawn_file_actions_t *actions, int fd,
-	                              const char *path, int flags) -> int {
-		(void)context;
-		return posix_spawn_file_actions_addopen(actions, fd, path, flags, 0);
 	}
 
 	auto ProductionClose(void *context, int fd) -> int {
@@ -146,7 +139,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		    .socketpair           = howdy::pam::runtime::internal::Socketpair,
 		    .duplicate_fd         = ProductionDuplicateFd,
 		    .actions_init         = howdy::pam::runtime::internal::ActionsInit,
-		    .actions_addopen      = ProductionActionsAddopen,
+		    .actions_addopen      = howdy::pam::runtime::internal::ActionsAddopen,
 		    .actions_adddup2      = howdy::pam::runtime::internal::ActionsAdddup2,
 		    .actions_addclosefrom = howdy::pam::runtime::internal::ActionsAddclosefrom,
 		    .actions_destroy      = howdy::pam::runtime::internal::ActionsDestroy,

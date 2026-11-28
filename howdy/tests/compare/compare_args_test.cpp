@@ -20,6 +20,98 @@ namespace {
 		return result;
 	}
 
+	auto ExpectProtocolModeRejections() -> bool {
+		using howdy::native::CompareArgsMode;
+		using howdy::native::CompareArgsStatus;
+		using howdy::native::CompareExit;
+
+		bool ok = true;
+
+		// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+		const auto invalid_mode = static_cast<CompareArgsMode>(255);
+		for (const auto mode : {CompareArgsMode::kProtocol, invalid_mode}) {
+			struct Case {
+				std::vector<std::string> args;
+				std::string              expected_message;
+				const char              *label;
+			};
+
+			const std::vector<Case> cases = {
+			    {
+			        .args             = {"howdy-compare", "--help"},
+			        .expected_message = "Unknown argument: --help",
+			        .label            = "protocol mode rejects --help in PAM username position",
+			    },
+			    {
+			        .args             = {"howdy-compare", "-h"},
+			        .expected_message = "Unknown argument: -h",
+			        .label            = "protocol mode rejects -h in PAM username position",
+			    },
+			    {
+			        .args             = {"howdy-compare", "--"},
+			        .expected_message = "Unknown argument: --",
+			        .label            = "protocol mode rejects -- in PAM username position",
+			    },
+			    {
+			        .args             = {"howdy-compare", "-"},
+			        .expected_message = "Unknown argument: -",
+			        .label            = "protocol mode rejects - in PAM username position",
+			    },
+			    {
+			        .args             = {"howdy-compare", "--help", "alice"},
+			        .expected_message = "Unknown argument: --help",
+			        .label            = "protocol mode rejects --help before username",
+			    },
+			    {
+			        .args             = {"howdy-compare", "alice", "--help"},
+			        .expected_message = "Unknown argument: --help",
+			        .label            = "protocol mode rejects trailing --help after username",
+			    },
+			    {
+			        .args             = {"howdy-compare", "alice", "-h"},
+			        .expected_message = "Unknown argument: -h",
+			        .label            = "protocol mode rejects trailing -h after username",
+			    },
+			    {
+			        .args             = {"howdy-compare", ""},
+			        .expected_message = "",
+			        .label            = "protocol mode rejects empty username",
+			    },
+			    {
+			        .args             = {"howdy-compare", "../alice"},
+			        .expected_message = std::string(howdy::native::kInvalidUserNameMessage),
+			        .label            = "protocol mode rejects traversal username",
+			    },
+			};
+
+			for (const auto &test_case : cases) {
+				auto       args   = test_case.args;
+				auto       argv   = ArgvFrom(args);
+				const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
+				                                                    argv.data(), mode);
+				const bool message_ok =
+				    test_case.expected_message.empty()
+				        ? result.message.empty()
+				        : (result.message.contains(test_case.expected_message) &&
+				           result.message.ends_with('\n'));
+				ok &= Expect(result.status == CompareArgsStatus::kError &&
+				                 result.exit_code == CompareExit::kAbort && message_ok,
+				             test_case.label);
+			}
+		}
+
+		std::vector<std::string> valid_args   = {"howdy-compare", "alice"};
+		auto                     valid_argv   = ArgvFrom(valid_args);
+		const auto               valid_result = howdy::native::ParseCompareArgs(
+		    static_cast<int>(valid_argv.size()), valid_argv.data(), CompareArgsMode::kProtocol);
+		ok &= Expect(valid_result.status == CompareArgsStatus::kOk &&
+		                 valid_result.exit_code == CompareExit::kSuccess &&
+		                 valid_result.args.user == "alice",
+		             "protocol mode accepts valid username");
+
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -47,16 +139,17 @@ auto main() -> int {
 		             "surplus user message populated");
 	}
 
-	{
-		std::vector<std::string> args = {"howdy-compare", "--help"};
+	for (const char *help_flag : {"--help", "-h"}) {
+		std::vector<std::string> args = {"howdy-compare", help_flag};
 		auto                     argv = ArgvFrom(args);
 		const auto               result =
 		    howdy::native::ParseCompareArgs(static_cast<int>(argv.size()), argv.data());
 		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kHelp,
-		             "help produces help status");
+		             "standalone help produces help status");
 		ok &= Expect(result.exit_code == howdy::native::CompareExit::kSuccess,
-		             "help returns success");
-		ok &= Expect(result.message.contains("Usage: howdy-compare"), "help text populated");
+		             "standalone help returns success");
+		ok &= Expect(result.message.contains("Usage: howdy-compare"),
+		             "standalone help text populated");
 	}
 
 	{
@@ -69,11 +162,11 @@ auto main() -> int {
 		const auto result =
 		    howdy::native::ParseCompareArgs(static_cast<int>(argv.size()), argv.data());
 		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kError,
-		             "help in PAM username position is error");
+		             "trailing help option after username is error");
 		ok &= Expect(result.exit_code == howdy::native::CompareExit::kAbort,
-		             "help in PAM username position aborts");
+		             "trailing help option after username aborts");
 		ok &= Expect(result.message.contains("Unknown argument: --help"),
-		             "help in PAM username position treated as unknown option");
+		             "trailing help option after username treated as unknown option");
 	}
 
 	{
@@ -86,12 +179,14 @@ auto main() -> int {
 		const auto result =
 		    howdy::native::ParseCompareArgs(static_cast<int>(argv.size()), argv.data());
 		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kError,
-		             "short help in PAM username position is error");
+		             "trailing short help option after username is error");
 		ok &= Expect(result.exit_code == howdy::native::CompareExit::kAbort,
-		             "short help in PAM username position aborts");
+		             "trailing short help option after username aborts");
 		ok &= Expect(result.message.contains("Unknown argument: -h"),
-		             "short help in PAM username position treated as unknown option");
+		             "trailing short help option after username treated as unknown option");
 	}
+
+	ok &= ExpectProtocolModeRejections();
 
 	{
 		std::vector<std::string> args = {"howdy-compare", "--bad"};
@@ -142,11 +237,12 @@ auto main() -> int {
 		auto       argv = ArgvFrom(args);
 		const auto result =
 		    howdy::native::ParseCompareArgs(static_cast<int>(argv.size()), argv.data());
-		ok &= Expect(
-		    result.status == howdy::native::CompareArgsStatus::kError &&
-		        result.exit_code == howdy::native::CompareExit::kAbort &&
-		        (message.empty() ? result.message.empty() : result.message.contains(message)),
-		    label);
+		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kError &&
+		                 result.exit_code == howdy::native::CompareExit::kAbort &&
+		                 (message.empty() ? result.message.empty()
+		                                  : (result.message.contains(message) &&
+		                                     result.message.ends_with('\n'))),
+		             label);
 	};
 	expect_error({"howdy-compare", "--config", "/x.ini", "alice"}, "Unknown argument: --config",
 	             "--config is no longer accepted");

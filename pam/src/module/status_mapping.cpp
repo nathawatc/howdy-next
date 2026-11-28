@@ -69,7 +69,8 @@ auto MapCompareWaitStatus(int status) -> CompareStatusDecision {
 			default:
 				decision.conversation_kind    = ConversationKind::kError;
 				decision.conversation_message = BuildUnknownErrorMessage(exit_status);
-				decision.log_message          = "Face verification failed: unknown error";
+				decision.log_message =
+				    std::format("Face verification failed: unknown error ({})", exit_status);
 				break;
 		}
 		return decision;

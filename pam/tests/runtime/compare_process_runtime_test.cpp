@@ -17,7 +17,11 @@
 #include <cerrno>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -31,6 +35,7 @@
 #include <sys/eventfd.h>
 #include <sys/poll.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -40,6 +45,7 @@ namespace {
 		int               waitid_error       = 0;
 		int               waitid_any_error   = 0;  // every waitid, by PID as well as by pidfd
 		bool              fail_pidfd_signal  = false;
+		int               pidfd_signal_error = 0;
 		bool              fail_kill          = false;
 		bool              signal_refused     = false;
 		int               release_fd         = -1;  // closed by the first poll after a refusal
@@ -52,6 +58,8 @@ namespace {
 		int               fail_poll_call = 0;
 		int               term_calls     = 0;
 		int               kill_calls     = 0;
+		int               waitid_calls   = 0;
+		int               waitpid_calls  = 0;
 		int               reaped_status  = 0;
 	};
 
@@ -145,6 +153,10 @@ auto TestKill(pid_t pid, int signal) -> int {
 }
 
 auto TestPidfdSendSignal(int pidfd, int signal, siginfo_t *info, unsigned int flags) -> int {
+	if (WaitState().pidfd_signal_error != 0) {
+		errno = WaitState().pidfd_signal_error;
+		return -1;
+	}
 	if (WaitState().fail_pidfd_signal) {
 		errno = EPERM;
 		return -1;
@@ -155,6 +167,7 @@ auto TestPidfdSendSignal(int pidfd, int signal, siginfo_t *info, unsigned int fl
 
 // Records what a pidfd reap consumed, in wait(2) form, ignoring peeks and empty polls.
 auto TestWaitid(idtype_t id_type, id_t id, siginfo_t *info, int options) -> int {
+	++WaitState().waitid_calls;
 	if (WaitState().waitid_any_error != 0) {
 		errno = WaitState().waitid_any_error;
 		return -1;
@@ -176,6 +189,7 @@ auto TestWaitid(idtype_t id_type, id_t id, siginfo_t *info, int options) -> int 
 }
 
 auto TestWaitpid(pid_t pid, int *status, int options) -> pid_t {
+	++WaitState().waitpid_calls;
 	const pid_t result = RealWaitpid(pid, status, options);
 	if (result == pid && status != nullptr) {
 		WaitState().reaped_status = *status;
@@ -552,11 +566,20 @@ namespace {
 		const howdy::native::ScopedFd pidfd(raw_pidfd);
 		const howdy::native::ScopedFd verdict_fd(raw_verdict_fd);
 		const bool reaped = child_pid > 0 && waitpid(child_pid, nullptr, 0) == child_pid;
+		const bool binds_stdin_null =
+		    !capture.addopen.empty() &&
+		    capture.addopen.front() == howdy::test::prompt_coordinator::OpenAction{
+		                                   .fd    = STDIN_FILENO,
+		                                   .path  = "/dev/null",
+		                                   .flags = O_RDONLY,
+		                               };
 
 		return Expect(result == 0, label + " returns spawn success") &&
 		       Expect(pidfd.Get() > STDERR_FILENO, label + " takes a pidfd for the child") &&
 		       Expect(verdict_fd.Get() > STDERR_FILENO,
 		              label + " returns the verdict socket above stdio") &&
+		       Expect(binds_stdin_null && capture.addopen_actions == capture.initialized_actions,
+		              label + " redirects stdin to /dev/null on the initialized actions") &&
 		       Expect(PlacesDescriptors(capture),
 		              label + " places the verdict socket, config and model at fds 3 to 5") &&
 		       Expect(reaped, label + " leaves the child for the caller to reap") &&
@@ -645,7 +668,8 @@ namespace {
 
 		return Expect(result == ENOMEM, "file-actions init failure preserves error") &&
 		       Expect(capture.init_calls == 1, "file-actions init failure initializes once") &&
-		       Expect(capture.adddup2_calls == 0 && capture.addclosefrom_calls == 0,
+		       Expect(capture.addopen_calls == 0 && capture.adddup2_calls == 0 &&
+		                  capture.addclosefrom_calls == 0,
 		              "file-actions init failure adds no file actions") &&
 		       Expect(unused_verdict == -1,
 		              "file-actions init failure returns no verdict socket") &&
@@ -912,6 +936,257 @@ namespace {
 		       Expect(ChildReaped(child_pid), "unconfirmed-PID test reaps the child afterwards");
 	}
 
+	// On Linux 5.3 (waitid(P_PIDFD) returns EINVAL), PeekTracked falls back to P_PID in both
+	// SignalByPid and AwaitExit even before Wait() has been called, while pid <= 0 never invokes
+	// waitid(P_PID, pid).
+	auto TestPeekTrackedLinux53EinvalFallback() -> bool {
+		bool ok = true;
+
+		// 1. SignalByPid falls back to P_PID on EINVAL before Wait() runs.
+		const pid_t blocked = SpawnBlockedChild();
+		if (!Expect(blocked > 0, "Linux 5.3 signal-peek test spawns child")) {
+			return false;
+		}
+		const howdy::native::ScopedFd blocked_pidfd(howdy::pam::runtime::OpenChildPidfd(blocked));
+		howdy::pam::runtime::TrackedChild blocked_child(blocked, blocked_pidfd.Get());
+		WaitState().waitid_error      = EINVAL;
+		WaitState().fail_pidfd_signal = true;
+		WaitState().kill_calls        = 0;
+		const int signal_result       = blocked_child.Signal(SIGKILL);
+		WaitState().fail_pidfd_signal = false;
+		WaitState().waitid_error      = 0;
+		int       status              = 0;
+		const int reaped =
+		    blocked_child.Wait(true, &status) == howdy::pam::runtime::ChildState::kReaped ? 1 : 0;
+		ok &= Expect(signal_result == 0 && WaitState().kill_calls == 1,
+		             "SignalByPid falls back to P_PID when waitid(P_PIDFD) returns EINVAL");
+		ok &= Expect(reaped == 1 && WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL,
+		             "child signalled via Linux 5.3 EINVAL fallback is reaped with SIGKILL");
+
+		// 2. Non-EINVAL waitid(P_PIDFD) failure does NOT fall back to P_PID.
+		const pid_t filtered = SpawnBlockedChild();
+		if (!Expect(filtered > 0, "filtered P_PIDFD peek test spawns child")) {
+			return false;
+		}
+		const howdy::native::ScopedFd filtered_pidfd(howdy::pam::runtime::OpenChildPidfd(filtered));
+		howdy::pam::runtime::TrackedChild filtered_child(filtered, filtered_pidfd.Get());
+		WaitState().waitid_error      = EPERM;
+		WaitState().fail_pidfd_signal = true;
+		WaitState().kill_calls        = 0;
+		const int filtered_signal     = filtered_child.Signal(SIGKILL);
+		WaitState().fail_pidfd_signal = false;
+		WaitState().waitid_error      = 0;
+		ok &= Expect(filtered_signal == EPERM && WaitState().kill_calls == 0,
+		             "non-EINVAL waitid(P_PIDFD) error refuses PID fallback in SignalByPid");
+		(void)howdy::pam::runtime::KillAndReap(filtered_child);
+
+		// 3. AwaitExit falls back to P_PID on EINVAL before Wait(), and pid <= 0 fails closed.
+		const pid_t exited = SpawnChild(EXIT_SUCCESS);
+		if (!Expect(exited > 0, "Linux 5.3 await-exit test spawns child")) {
+			return false;
+		}
+		siginfo_t ready_info{};
+		(void)RealWaitid(P_PID, static_cast<id_t>(exited), &ready_info,
+		                 howdy::native::CombineBitsAs<int>(WEXITED, WNOWAIT));
+		// Closed fd forces poll() -> POLLNVAL -> poll_pidfd = false -> PeekTracked with
+		// pidfd_wait_usable_ still true.
+		const int stale_fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+		if (!Expect(stale_fd >= 0 && close(stale_fd) == 0, "prepare closed fd for AwaitExit")) {
+			(void)waitpid(exited, nullptr, 0);
+			return false;
+		}
+		howdy::pam::runtime::TrackedChild exited_child(exited, stale_fd);
+		WaitState().waitid_error = EINVAL;
+		const auto start         = std::chrono::steady_clock::now();
+		const bool saw_exit      = exited_child.AwaitExit(500ms);
+		const auto elapsed       = std::chrono::steady_clock::now() - start;
+
+		howdy::pam::runtime::TrackedChild unknown_pid_child(-1, stale_fd);
+		const bool                        unknown_exited = unknown_pid_child.AwaitExit(500ms);
+		WaitState().waitid_error                         = 0;
+		ok &= Expect(saw_exit && elapsed < 200ms,
+		             "AwaitExit falls back to P_PID on Linux 5.3 EINVAL before Wait()");
+		ok &=
+		    Expect(waitpid(exited, nullptr, 0) == exited, "Linux 5.3 await-exit test reaps child");
+		ok &= Expect(!unknown_exited && unknown_pid_child.WasReapedElsewhere(),
+		             "AwaitExit with pid <= 0 marks reaped elsewhere on EINVAL without waitid(-1)");
+		return ok;
+	}
+
+	// Without a usable PID (pid <= 0), a non-ESRCH pidfd_send_signal failure returns that error
+	// without marking the child reaped elsewhere or calling kill(), so pidfd Wait() still works.
+	auto TestSignalWithoutPidPreservesNonEsrchError() -> bool {
+		const pid_t child_pid = SpawnBlockedChild();
+		if (!Expect(child_pid > 0, "signal-without-pid test spawns child")) {
+			return false;
+		}
+		const howdy::native::ScopedFd pidfd(howdy::pam::runtime::OpenChildPidfd(child_pid));
+		if (!Expect(pidfd.Valid(), "signal-without-pid test opens child pidfd")) {
+			(void)kill(child_pid, SIGKILL);
+			(void)waitpid(child_pid, nullptr, 0);
+			return false;
+		}
+
+		struct SignalCase {
+			pid_t pid;
+			bool  use_pidfd;
+			int   injected_error;
+			int   expected_error;
+			bool  expected_reaped;
+		};
+
+		constexpr auto cases = std::to_array<SignalCase>({
+		    {
+		        .pid             = -1,
+		        .use_pidfd       = true,
+		        .injected_error  = EPERM,
+		        .expected_error  = EPERM,
+		        .expected_reaped = false,
+		    },
+		    {
+		        .pid             = 0,
+		        .use_pidfd       = true,
+		        .injected_error  = ENOSYS,
+		        .expected_error  = ENOSYS,
+		        .expected_reaped = false,
+		    },
+		    {
+		        .pid             = -1,
+		        .use_pidfd       = true,
+		        .injected_error  = ESRCH,
+		        .expected_error  = ECHILD,
+		        .expected_reaped = true,
+		    },
+		    {
+		        .pid             = 0,
+		        .use_pidfd       = true,
+		        .injected_error  = ESRCH,
+		        .expected_error  = ECHILD,
+		        .expected_reaped = true,
+		    },
+		    {
+		        .pid             = -1,
+		        .use_pidfd       = false,
+		        .injected_error  = 0,
+		        .expected_error  = ECHILD,
+		        .expected_reaped = true,
+		    },
+		    {
+		        .pid             = 0,
+		        .use_pidfd       = false,
+		        .injected_error  = 0,
+		        .expected_error  = ECHILD,
+		        .expected_reaped = true,
+		    },
+		});
+
+		bool ok = true;
+		for (const auto &test_case : cases) {
+			howdy::pam::runtime::TrackedChild child(test_case.pid,
+			                                        test_case.use_pidfd ? pidfd.Get() : -1);
+			WaitState().pidfd_signal_error = test_case.injected_error;
+			WaitState().kill_calls         = 0;
+			const int result               = child.Signal(SIGKILL);
+			WaitState().pidfd_signal_error = 0;
+			ok &= Expect(result == test_case.expected_error &&
+			                 child.WasReapedElsewhere() == test_case.expected_reaped &&
+			                 WaitState().kill_calls == 0,
+			             "Signal with pid <= 0 classifies pidfd error without calling kill");
+			if (!test_case.expected_reaped) {
+				int status = 0;
+				ok &=
+				    Expect(child.Wait(false, &status) == howdy::pam::runtime::ChildState::kRunning,
+					       "non-ESRCH pidfd signal failure leaves pidfd child waitable");
+			}
+		}
+
+		howdy::pam::runtime::TrackedChild cleanup(-1, pidfd.Get());
+		const auto                        reaped = howdy::pam::runtime::KillAndReap(cleanup);
+		ok &= Expect(reaped.has_value() && WIFSIGNALED(*reaped) && WTERMSIG(*reaped) == SIGKILL,
+		             "signal-without-pid test stops and reaps child through pidfd");
+		ok &= Expect(ChildReaped(child_pid), "signal-without-pid child is reaped");
+		return ok;
+	}
+
+	// On Linux 5.3 (waitid(P_PIDFD) returns EINVAL), OpenChildPidfd falls back to P_PID to accept
+	// our own child and still reject a non-child with ECHILD.
+	auto TestOpenChildPidfdLinux53EinvalFallback() -> bool {
+		bool        ok        = true;
+		const pid_t child_pid = SpawnBlockedChild();
+		if (!Expect(child_pid > 0, "Linux 5.3 OpenChildPidfd test spawns child")) {
+			return false;
+		}
+		WaitState().waitid_error = EINVAL;
+		const howdy::native::ScopedFd child_pidfd(howdy::pam::runtime::OpenChildPidfd(child_pid));
+		errno                    = 0;
+		const int self_pidfd     = howdy::pam::runtime::OpenChildPidfd(getpid());
+		const int self_error     = errno;
+		WaitState().waitid_error = 0;
+
+		ok &= Expect(child_pidfd.Get() > STDERR_FILENO,
+		             "OpenChildPidfd accepts our child via P_PID fallback on Linux 5.3 EINVAL");
+		ok &= Expect(self_pidfd < 0 && self_error == ECHILD,
+		             "OpenChildPidfd rejects non-child with ECHILD via P_PID fallback on EINVAL");
+		howdy::pam::runtime::TrackedChild child(child_pid, child_pidfd.Get());
+		(void)howdy::pam::runtime::KillAndReap(child);
+		ok &= Expect(ChildReaped(child_pid), "Linux 5.3 OpenChildPidfd child is reaped");
+		return ok;
+	}
+
+	// Without a usable PID (pid <= 0), Wait() and AwaitExit() fail closed with ECHILD / false and
+	// never call waitpid() or waitid(P_PID, <=0).
+	auto TestTrackedChildWithoutPidFailsClosed() -> bool {
+		const pid_t child_pid = SpawnBlockedChild();
+		if (!Expect(child_pid > 0, "tracked-child-without-pid test spawns child")) {
+			return false;
+		}
+		const howdy::native::ScopedFd pidfd(howdy::pam::runtime::OpenChildPidfd(child_pid));
+		if (!Expect(pidfd.Valid(), "tracked-child-without-pid test opens pidfd")) {
+			(void)kill(child_pid, SIGKILL);
+			(void)waitpid(child_pid, nullptr, 0);
+			return false;
+		}
+
+		bool ok = true;
+		for (const pid_t bad_pid : {pid_t{-1}, pid_t{0}}) {
+			// 1. Wait with pid <= 0 and no pidfd fails closed without waitpid().
+			howdy::pam::runtime::TrackedChild no_pidfd(bad_pid, -1);
+			int                               status = 0;
+			WaitState().waitpid_calls                = 0;
+			errno                                    = 0;
+			const auto wait_no_pidfd                 = no_pidfd.Wait(false, &status);
+			ok &= Expect(wait_no_pidfd == howdy::pam::runtime::ChildState::kError &&
+			                 errno == ECHILD && no_pidfd.WasReapedElsewhere() &&
+			                 WaitState().waitpid_calls == 0,
+			             "Wait with pid <= 0 and no pidfd fails closed without waitpid");
+
+			// 2. Wait with pid <= 0 and pidfd on Linux 5.3 EINVAL fails closed without waitpid().
+			howdy::pam::runtime::TrackedChild einval_pidfd(bad_pid, pidfd.Get());
+			WaitState().waitid_error  = EINVAL;
+			WaitState().waitpid_calls = 0;
+			errno                     = 0;
+			const auto wait_einval    = einval_pidfd.Wait(false, &status);
+			WaitState().waitid_error  = 0;
+			ok &=
+			    Expect(wait_einval == howdy::pam::runtime::ChildState::kError && errno == ECHILD &&
+				           einval_pidfd.WasReapedElsewhere() && WaitState().waitpid_calls == 0,
+				       "Wait with pid <= 0 on Linux 5.3 EINVAL fails closed without waitpid");
+
+			// 3. AwaitExit with pid <= 0 and no pidfd fails closed without waitid().
+			howdy::pam::runtime::TrackedChild await_no_pidfd(bad_pid, -1);
+			WaitState().waitid_calls = 0;
+			const bool exited        = await_no_pidfd.AwaitExit(500ms);
+			ok &= Expect(!exited && await_no_pidfd.WasReapedElsewhere() &&
+			                 WaitState().waitid_calls == 0,
+			             "AwaitExit with pid <= 0 and no pidfd fails closed without waitid");
+		}
+
+		howdy::pam::runtime::TrackedChild cleanup(-1, pidfd.Get());
+		(void)howdy::pam::runtime::KillAndReap(cleanup);
+		ok &= Expect(ChildReaped(child_pid), "tracked-child-without-pid child is reaped");
+		return ok;
+	}
+
 	// A pidfd wait refused for any reason but a missing P_PIDFD fails closed instead of moving to
 	// a waitpid that could reap another child which reused the PID.
 	auto TestFilteredPidfdWaitDoesNotUsePid() -> bool {
@@ -1036,9 +1311,349 @@ namespace {
 		int                                           raw_verdict_fd = -1;
 		const int                                     result = howdy::pam::compare_process::Spawn(
 		    files.Request(), &child_pid, &raw_pidfd, &raw_verdict_fd, empty_operations);
+		PosixSpawnCapture capture;
+		auto              missing_addopen    = PosixSpawnOperations(&capture);
+		missing_addopen.file_actions_addopen = nullptr;
+		int       addopen_pidfd              = -1;
+		int       addopen_verdict            = -1;
+		const int missing_addopen_result     = howdy::pam::compare_process::Spawn(
+		    files.Request(), &child_pid, &addopen_pidfd, &addopen_verdict, missing_addopen);
 		return Expect(result == EINVAL, "spawn rejects missing operations callbacks") &&
 		       Expect(raw_pidfd == -1 && raw_verdict_fd == -1,
-		              "rejected spawn leaves pidfd and verdict descriptors unset");
+		              "rejected spawn leaves pidfd and verdict descriptors unset") &&
+		       Expect(missing_addopen_result == EINVAL && addopen_pidfd == -1 &&
+		                  addopen_verdict == -1 && capture.init_calls == 0,
+		              "spawn rejects null file_actions_addopen callback before setup");
+	}
+
+	enum class HostStdioState : std::uint8_t {
+		kInherited,
+		kCloseOnExec,
+		kClosed,
+	};
+
+	struct StdioActionCase {
+		const char    *label;
+		HostStdioState stdin_state;
+		HostStdioState stdout_state;
+		HostStdioState stderr_state;
+		bool           expect_stdout_null;
+		bool           expect_stderr_null;
+	};
+
+	auto ConfigureHostStdioFd(int fd, HostStdioState state) -> bool {
+		if (state == HostStdioState::kClosed) {
+			return close(fd) == 0 || errno == EBADF;
+		}
+		const int open_flags = fd == STDIN_FILENO ? O_RDONLY : O_WRONLY;
+		// Keep the temporary fd strictly above STDERR_FILENO so dup2 never aliases `fd` and
+		// ~ScopedFd never closes the target stdio slot we just configured.
+		const auto owned = howdy::test::prompt_coordinator::OpenNullAboveStdio(
+		    howdy::native::CombineBitsAs<int>(open_flags, O_CLOEXEC));
+		if (!owned.Valid() || dup2(owned.Get(), fd) != fd) {
+			return false;
+		}
+		if (state == HostStdioState::kCloseOnExec) {
+			return fcntl(fd, F_SETFD, FD_CLOEXEC) == 0;
+		}
+		return fcntl(fd, F_SETFD, 0) == 0;
+	}
+
+	auto RunStdioActionCaseInSubprocess(const StdioActionCase &test_case) -> bool {
+		using howdy::test::prompt_coordinator::OpenAction;
+		const pid_t probe = fork();
+		if (probe == 0) {
+			const CompareRequestFiles files;
+			if (!ConfigureHostStdioFd(STDIN_FILENO, test_case.stdin_state) ||
+			    !ConfigureHostStdioFd(STDOUT_FILENO, test_case.stdout_state) ||
+			    !ConfigureHostStdioFd(STDERR_FILENO, test_case.stderr_state)) {
+				_exit(EXIT_FAILURE);
+			}
+			PosixSpawnCapture capture;
+			pid_t             child_pid      = -1;
+			int               raw_pidfd      = -1;
+			int               raw_verdict_fd = -1;
+			const int         result =
+			    howdy::pam::compare_process::Spawn(files.Request(), &child_pid, &raw_pidfd,
+				                                   &raw_verdict_fd, PosixSpawnOperations(&capture));
+			const howdy::native::ScopedFd pidfd(raw_pidfd);
+			const howdy::native::ScopedFd verdict_fd(raw_verdict_fd);
+			const bool reaped = child_pid > 0 && waitpid(child_pid, nullptr, 0) == child_pid;
+
+			std::vector<OpenAction> expected_opens = {
+			    {.fd = STDIN_FILENO, .path = "/dev/null", .flags = O_RDONLY},
+			};
+			if (test_case.expect_stdout_null) {
+				expected_opens.push_back(
+				    {.fd = STDOUT_FILENO, .path = "/dev/null", .flags = O_WRONLY});
+			}
+			if (test_case.expect_stderr_null) {
+				expected_opens.push_back(
+				    {.fd = STDERR_FILENO, .path = "/dev/null", .flags = O_WRONLY});
+			}
+			const bool ok = result == 0 && reaped && pidfd.Get() > STDERR_FILENO &&
+			                verdict_fd.Get() > STDERR_FILENO && capture.addopen == expected_opens &&
+			                PlacesDescriptors(capture) && capture.closefrom_fd == kFirstUnusedFd;
+			_exit(ok ? EXIT_SUCCESS : EXIT_FAILURE);
+		}
+		int status = 0;
+		return Expect(probe > 0 && waitpid(probe, &status, 0) == probe && WIFEXITED(status) &&
+		                  WEXITSTATUS(status) == EXIT_SUCCESS,
+		              test_case.label);
+	}
+
+	auto TestProductionSpawnStdioFileActions() -> bool {
+		const auto cases = std::to_array<StdioActionCase>({
+		    {
+		        .label              = "inherited stdio redirects only stdin to /dev/null",
+		        .stdin_state        = HostStdioState::kInherited,
+		        .stdout_state       = HostStdioState::kInherited,
+		        .stderr_state       = HostStdioState::kInherited,
+		        .expect_stdout_null = false,
+		        .expect_stderr_null = false,
+		    },
+		    {
+		        .label              = "closed stdin and stdout redirect fds 0 and 1 to /dev/null",
+		        .stdin_state        = HostStdioState::kClosed,
+		        .stdout_state       = HostStdioState::kClosed,
+		        .stderr_state       = HostStdioState::kInherited,
+		        .expect_stdout_null = true,
+		        .expect_stderr_null = false,
+		    },
+		    {
+		        .label              = "CLOEXEC stdout and closed stderr redirect all stdio fds",
+		        .stdin_state        = HostStdioState::kInherited,
+		        .stdout_state       = HostStdioState::kCloseOnExec,
+		        .stderr_state       = HostStdioState::kClosed,
+		        .expect_stdout_null = true,
+		        .expect_stderr_null = true,
+		    },
+		    {
+		        .label              = "all closed stdio fds redirect fds 0, 1, and 2 to /dev/null",
+		        .stdin_state        = HostStdioState::kClosed,
+		        .stdout_state       = HostStdioState::kClosed,
+		        .stderr_state       = HostStdioState::kClosed,
+		        .expect_stdout_null = true,
+		        .expect_stderr_null = true,
+		    },
+		    {
+		        .label              = "CLOEXEC stderr redirects fds 0 and 2 while keeping stdout",
+		        .stdin_state        = HostStdioState::kCloseOnExec,
+		        .stdout_state       = HostStdioState::kInherited,
+		        .stderr_state       = HostStdioState::kCloseOnExec,
+		        .expect_stdout_null = false,
+		        .expect_stderr_null = true,
+		    },
+		});
+		bool       ok    = true;
+		for (const auto &test_case : cases) {
+			ok &= RunStdioActionCaseInSubprocess(test_case);
+		}
+		return ok;
+	}
+
+	auto TestProductionAddopenFailure() -> bool {
+		const pid_t probe = fork();
+		if (probe == 0) {
+			const CompareRequestFiles files;
+			if (!ConfigureHostStdioFd(STDOUT_FILENO, HostStdioState::kClosed) ||
+			    !ConfigureHostStdioFd(STDERR_FILENO, HostStdioState::kCloseOnExec)) {
+				_exit(EXIT_FAILURE);
+			}
+			for (const int fail_index : {0, 1, 2}) {
+				PosixSpawnCapture capture;
+				capture.addopen_fail_index = fail_index;
+				capture.addopen_result     = ENOMEM;
+				pid_t     child_pid        = -1;
+				int       raw_pidfd        = -1;
+				int       raw_verdict_fd   = -1;
+				const int result           = howdy::pam::compare_process::Spawn(
+				    files.Request(), &child_pid, &raw_pidfd, &raw_verdict_fd,
+				    PosixSpawnOperations(&capture));
+				const bool ok = result == ENOMEM && child_pid == -1 && raw_pidfd == -1 &&
+				                raw_verdict_fd == -1 && capture.spawn_calls == 0 &&
+				                capture.adddup2_calls == 0 && capture.destroy_calls == 1 &&
+				                capture.addopen_calls == fail_index + 1;
+				if (!ok) {
+					_exit(EXIT_FAILURE);
+				}
+			}
+			_exit(EXIT_SUCCESS);
+		}
+		int status = 0;
+		return Expect(probe > 0 && waitpid(probe, &status, 0) == probe && WIFEXITED(status) &&
+		                  WEXITSTATUS(status) == EXIT_SUCCESS,
+		              "addopen failure for stdin, stdout, or stderr aborts spawn and cleans up");
+	}
+
+	constexpr auto kStdioProbeInheritedStdoutMode = "--stdio-probe-inherited-stdout";
+	constexpr auto kStdioProbeAllNullMode         = "--stdio-probe-all-null";
+
+	auto DescriptorIsNullDevice(int fd) -> bool {
+		struct stat fd_status{};
+		struct stat null_status{};
+		if (fstat(fd, &fd_status) != 0 || stat("/dev/null", &null_status) != 0) {
+			return false;
+		}
+		return S_ISCHR(fd_status.st_mode) && fd_status.st_dev == null_status.st_dev &&
+		       fd_status.st_ino == null_status.st_ino && fd_status.st_rdev == null_status.st_rdev;
+	}
+
+	auto RunStdioProbeMode(std::string_view mode) -> int {
+		if (!DescriptorIsNullDevice(STDIN_FILENO) || !DescriptorIsNullDevice(STDERR_FILENO)) {
+			return EXIT_FAILURE;
+		}
+		char byte = '\0';
+		if (read(STDIN_FILENO, &byte, 1) != 0) {
+			return EXIT_FAILURE;
+		}
+		if (mode == kStdioProbeInheritedStdoutMode) {
+			constexpr std::string_view marker = "ok";
+			return std::cmp_equal(write(STDOUT_FILENO, marker.data(), marker.size()), marker.size())
+			           ? EXIT_SUCCESS
+					   : EXIT_FAILURE;
+		}
+		if (mode == kStdioProbeAllNullMode) {
+			return DescriptorIsNullDevice(STDOUT_FILENO) ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
+		return EXIT_FAILURE;
+	}
+
+	auto TryRunStdioProbeFromArgs(int argc, char **argv) -> std::optional<int> {
+		if (argc != 2 || argv == nullptr) {
+			return std::nullopt;
+		}
+		const auto arguments = std::span(argv, static_cast<std::size_t>(argc));
+		if (arguments.back() == nullptr) {
+			return std::nullopt;
+		}
+		const std::string_view arg(arguments.back());
+		if (arg == kStdioProbeInheritedStdoutMode || arg == kStdioProbeAllNullMode) {
+			return RunStdioProbeMode(arg);
+		}
+		return std::nullopt;
+	}
+
+	auto SpawnSelfStdioProbe(const howdy::pam::compare_process::SpawnRequest &request) -> int {
+		const auto           &mode_arg = *static_cast<const std::string *>(request.context);
+		std::string           self_path("/proc/self/exe");
+		std::string           mode(mode_arg);
+		std::array<char *, 3> argv{self_path.data(), mode.data(), nullptr};
+		std::array<char *, 1> envp{nullptr};
+		return howdy::pam::runtime::SpawnChild(request.child_pid, request.child_pidfd,
+		                                       {
+		                                           .path    = self_path.c_str(),
+		                                           .actions = request.actions,
+		                                           .argv    = argv.data(),
+		                                           .envp    = envp.data(),
+		                                       });
+	}
+
+	auto RunRealChildStdioProbe(std::string mode_arg) -> bool {
+		const CompareRequestFiles files;
+		auto                      operations = howdy::pam::compare_process::ProductionOperations();
+		operations.context                   = &mode_arg;
+		operations.spawn                     = SpawnSelfStdioProbe;
+		pid_t     child_pid                  = -1;
+		int       raw_pidfd                  = -1;
+		int       raw_verdict_fd             = -1;
+		const int result                     = howdy::pam::compare_process::Spawn(
+		    files.Request(), &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
+		const howdy::native::ScopedFd pidfd(raw_pidfd);
+		const howdy::native::ScopedFd verdict_fd(raw_verdict_fd);
+		if (result != 0 || child_pid <= 0 || !pidfd.Valid() || !verdict_fd.Valid()) {
+			return false;
+		}
+		howdy::pam::runtime::TrackedChild child(child_pid, pidfd.Get());
+		int                               status = 0;
+		return child.Wait(true, &status) == howdy::pam::runtime::ChildState::kReaped &&
+		       WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS;
+	}
+
+	auto OpenPipeAboveStdio(howdy::native::ScopedFd &read_end, howdy::native::ScopedFd &write_end)
+	    -> bool {
+		std::array<int, 2> fds{-1, -1};
+		if (pipe2(fds.data(), O_CLOEXEC) != 0) {
+			return false;
+		}
+		read_end.Reset(fds.at(0));
+		write_end.Reset(fds.at(1));
+		return howdy::test::prompt_coordinator::MoveFdAboveStdio(read_end) &&
+		       howdy::test::prompt_coordinator::MoveFdAboveStdio(write_end);
+	}
+
+	auto TestRealChildIsolatesStdinAndClosedStderr() -> bool {
+		// Host stdin carries secret input; stdout is an inherited pipe; stderr is closed.
+		const pid_t stdin_probe = fork();
+		if (stdin_probe == 0) {
+			howdy::native::ScopedFd stdin_read;
+			howdy::native::ScopedFd stdin_write;
+			howdy::native::ScopedFd stdout_read;
+			howdy::native::ScopedFd stdout_write;
+			if (!OpenPipeAboveStdio(stdin_read, stdin_write) ||
+			    !OpenPipeAboveStdio(stdout_read, stdout_write)) {
+				_exit(EXIT_FAILURE);
+			}
+			constexpr std::string_view secret = "secret-password\n";
+			if (!std::cmp_equal(write(stdin_write.Get(), secret.data(), secret.size()),
+			                    secret.size())) {
+				_exit(EXIT_FAILURE);
+			}
+			// Close the write end before spawning so even a regressed child reading stdin gets EOF
+			// instead of deadlocking the test.
+			stdin_write.Reset();
+			if (dup2(stdin_read.Get(), STDIN_FILENO) != STDIN_FILENO ||
+			    dup2(stdout_write.Get(), STDOUT_FILENO) != STDOUT_FILENO ||
+			    !ConfigureHostStdioFd(STDERR_FILENO, HostStdioState::kClosed) ||
+			    fcntl(STDERR_FILENO, F_GETFD) >= 0 || errno != EBADF) {
+				_exit(EXIT_FAILURE);
+			}
+			const bool child_ok = RunRealChildStdioProbe(kStdioProbeInheritedStdoutMode);
+			// Close both local stdout write ends before reading stdout_read so a child failure
+			// yields immediate EOF instead of blocking read().
+			stdout_write.Reset();
+			(void)close(STDOUT_FILENO);
+			std::array<char, 32> captured_stdout{};
+			const ssize_t        out_bytes =
+			    read(stdout_read.Get(), captured_stdout.data(), captured_stdout.size());
+			std::array<char, 32> remaining_stdin{};
+			const ssize_t        in_bytes =
+			    read(STDIN_FILENO, remaining_stdin.data(), remaining_stdin.size());
+			const bool stdout_ok =
+			    out_bytes == 2 && std::string_view(captured_stdout.data(), 2) == "ok";
+			const bool secret_intact =
+			    std::cmp_equal(in_bytes, secret.size()) &&
+			    std::string_view(remaining_stdin.data(), secret.size()) == secret;
+			_exit(child_ok && stdout_ok && secret_intact ? EXIT_SUCCESS : EXIT_FAILURE);
+		}
+		int stdin_status = 0;
+		return Expect(stdin_probe > 0 && waitpid(stdin_probe, &stdin_status, 0) == stdin_probe &&
+		                  WIFEXITED(stdin_status) && WEXITSTATUS(stdin_status) == EXIT_SUCCESS,
+		              "real spawned child receives /dev/null on stdin and closed stderr while "
+		              "keeping inherited stdout");
+	}
+
+	auto TestRealChildReplacesCloexecStdoutAndClosedStderr() -> bool {
+		// Host stdout is FD_CLOEXEC and stderr is closed; all stdio fds become /dev/null.
+		const pid_t cloexec_probe = fork();
+		if (cloexec_probe == 0) {
+			if (!ConfigureHostStdioFd(STDOUT_FILENO, HostStdioState::kCloseOnExec) ||
+			    !ConfigureHostStdioFd(STDERR_FILENO, HostStdioState::kClosed) ||
+			    fcntl(STDERR_FILENO, F_GETFD) >= 0 || errno != EBADF) {
+				_exit(EXIT_FAILURE);
+			}
+			_exit(RunRealChildStdioProbe(kStdioProbeAllNullMode) ? EXIT_SUCCESS : EXIT_FAILURE);
+		}
+		int cloexec_status = 0;
+		return Expect(cloexec_probe > 0 &&
+		                  waitpid(cloexec_probe, &cloexec_status, 0) == cloexec_probe &&
+		                  WIFEXITED(cloexec_status) && WEXITSTATUS(cloexec_status) == EXIT_SUCCESS,
+		              "real spawned child binds FD_CLOEXEC stdout and closed stderr to /dev/null");
+	}
+
+	auto TestProductionSpawnIsolatesChildStdio() -> bool {
+		return TestRealChildIsolatesStdinAndClosedStderr() &&
+		       TestRealChildReplacesCloexecStdoutAndClosedStderr();
 	}
 
 	auto TestProductionSpawnFailsClosedWithoutPidOrPidfd() -> bool {
@@ -1062,7 +1677,10 @@ namespace {
 
 }  // namespace
 
-auto main() -> int {
+auto main(int argc, char **argv) -> int {
+	if (const auto probe_status = TryRunStdioProbeFromArgs(argc, argv); probe_status.has_value()) {
+		return *probe_status;
+	}
 	bool ok = true;
 	ok &= TestGracePollFailure();
 	ok &= TestReadyChildPrecedesCancellation();
@@ -1088,6 +1706,9 @@ auto main() -> int {
 	ok &= TestProductionClosefromFailure();
 	ok &= TestProductionSpawnFailure();
 	ok &= TestProductionSpawnRejectsNullCallbacks();
+	ok &= TestProductionSpawnStdioFileActions();
+	ok &= TestProductionAddopenFailure();
+	ok &= TestProductionSpawnIsolatesChildStdio();
 	ok &= TestProductionSpawnFailsClosedWithoutPidOrPidfd();
 	ok &= TestProductionSpawnWithoutVerdictSocket();
 	ok &= TestProductionSpawnReturnsPidfd();
@@ -1100,6 +1721,10 @@ auto main() -> int {
 	ok &= TestStopChildWithoutPidfd();
 	ok &= TestPidfdMoveFailureIsNotChildGone();
 	ok &= TestUnconfirmedPidIsNotSignalled();
+	ok &= TestPeekTrackedLinux53EinvalFallback();
+	ok &= TestSignalWithoutPidPreservesNonEsrchError();
+	ok &= TestOpenChildPidfdLinux53EinvalFallback();
+	ok &= TestTrackedChildWithoutPidFailsClosed();
 	ok &= TestFilteredPidfdWaitDoesNotUsePid();
 	return ok ? 0 : 1;
 }

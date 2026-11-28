@@ -7,6 +7,8 @@
 #include "support/invoking_user.hpp"
 #include "test_support.hpp"
 
+#include <array>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -106,12 +108,312 @@ namespace howdy::test::config_cli {
 				                 "/some/test/path/nvim",
 				             "absolute EDITOR path is accepted");
 			}
-			{
-				ScopedEnvironmentVariable const editor_env("EDITOR", "nvim -f");
+			for (const std::string_view unsupported_editor : std::to_array<std::string_view>({
+			         "",
+			         "nvim -f",
+			         ".",
+			         "..",
+			         "./",
+			         "../",
+			         "./nvim",
+			         "bin/nvim",
+			         "../nvim",
+			         "/",
+			         "/usr/bin/",
+			         "/.",
+			         "/..",
+			         "/usr/bin/.",
+			         "/usr/bin/..",
+			     })) {
+				ScopedEnvironmentVariable const editor_env("EDITOR", unsupported_editor);
 				ok &= Expect(howdy::native::config_internal::SelectEditorPreference() == "micro",
-				             "command-line EDITOR is rejected");
+				             "unsupported EDITOR falls back to default");
 			}
 
+			return ok;
+		}
+
+		class ScopedCurrentPath {
+		public:
+			explicit ScopedCurrentPath(const std::filesystem::path &target) {
+				std::error_code ec;
+				previous_ = std::filesystem::current_path(ec);
+				if (!ec) {
+					std::filesystem::current_path(target, ec);
+					changed_ = !ec;
+				}
+			}
+
+			~ScopedCurrentPath() {
+				if (changed_) {
+					std::error_code ec;
+					std::filesystem::current_path(previous_, ec);
+				}
+			}
+
+			ScopedCurrentPath(const ScopedCurrentPath &)                     = delete;
+			auto operator=(const ScopedCurrentPath &) -> ScopedCurrentPath & = delete;
+			ScopedCurrentPath(ScopedCurrentPath &&)                          = delete;
+			auto operator=(ScopedCurrentPath &&) -> ScopedCurrentPath &      = delete;
+
+			[[nodiscard]] auto Changed() const noexcept -> bool {
+				return changed_;
+			}
+
+		private:
+			std::filesystem::path previous_;
+			bool                  changed_ = false;
+		};
+
+		auto PathSearchRejectsEmptyAndRelativeEntries() -> bool {
+			namespace fs = std::filesystem;
+			using howdy::native::config_internal::DefaultConfigEditDependencies;
+			using howdy::native::config_internal::EditorRunResult;
+
+			const std::string temp_template =
+			    (fs::current_path() / "howdy-config-path-search-XXXXXX").string();
+			std::vector<char> writable(temp_template.begin(), temp_template.end());
+			writable.push_back('\0');
+			const char *created = mkdtemp(writable.data());
+			if (!Expect(created != nullptr, "path-search test creates temp directory")) {
+				return false;
+			}
+
+			bool            ok         = true;
+			const fs::path  temp_root  = created;
+			const fs::path  cwd_dir    = temp_root / "cwd";
+			const fs::path  rel_bin    = cwd_dir / "relbin";
+			const fs::path  abs_bin    = temp_root / "abs-bin";
+			const fs::path  custom_bin = temp_root / "custom-bin";
+			const fs::path  empty_dir  = temp_root / "empty-bin";
+			const fs::path  marker     = temp_root / "marker.txt";
+			const fs::path  target     = temp_root / "target.ini";
+			std::error_code ec;
+
+			for (const auto &dir : {cwd_dir, rel_bin, abs_bin, custom_bin, empty_dir}) {
+				fs::create_directories(dir, ec);
+				ok &= Expect(!ec, "path-search test creates fixture directory");
+				ec.clear();
+			}
+			ok &= Expect(WriteFile(target, kIntegrationOriginalContent),
+			             "path-search test writes target config");
+
+			const auto write_marker_editor = [&](const fs::path  &path,
+			                                     std::string_view tag) -> bool {
+				const std::string script =
+				    "#!/bin/sh\nprintf '" + std::string(tag) + "\\n' > '" + marker.string() + "'\n";
+				return WriteFile(path, script) && chmod(path.c_str(), 0755) == 0;
+			};
+			ok &= Expect(write_marker_editor(temp_root / "micro", "parent") &&
+			                 write_marker_editor(cwd_dir / "micro", "cwd") &&
+			                 write_marker_editor(rel_bin / "micro", "relbin") &&
+			                 write_marker_editor(abs_bin / "micro", "abs") &&
+			                 write_marker_editor(custom_bin / "custom", "custom"),
+			             "path-search test writes parent, cwd, relbin, abs, and custom editors");
+
+			{
+				const ScopedCurrentPath cwd_guard(cwd_dir);
+				ok &= Expect(cwd_guard.Changed(), "path-search test switches to cwd fixture");
+
+				struct PathCase {
+					const char     *label;
+					std::string     path_env;
+					std::string     editor;
+					EditorRunResult expected_result;
+					std::string     expected_marker;
+				};
+
+				const auto cases = std::to_array<PathCase>({
+				    {
+				        .label           = "empty PATH never executes from CWD",
+				        .path_env        = "",
+				        .editor          = "micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "colon-only PATH never executes from CWD",
+				        .path_env        = ":",
+				        .editor          = "micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "double-colon PATH never executes from CWD",
+				        .path_env        = "::",
+				        .editor          = "micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "dot PATH never executes from CWD",
+				        .path_env        = ".",
+				        .editor          = "micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "parent-relative PATH never executes from parent dir",
+				        .path_env        = "..",
+				        .editor          = "micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "relative PATH segment never executes",
+				        .path_env        = "relbin",
+				        .editor          = "micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "dot-slash relative PATH segment never executes",
+				        .path_env        = "./relbin",
+				        .editor          = "micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "trailing empty PATH segment never executes from CWD",
+				        .path_env        = empty_dir.string() + ":",
+				        .editor          = "micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "leading empty PATH segment skips CWD for empty abs dir",
+				        .path_env        = ":" + empty_dir.string(),
+				        .editor          = "micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "leading empty PATH segment skips CWD to absolute dir",
+				        .path_env        = ":" + abs_bin.string(),
+				        .editor          = "micro",
+				        .expected_result = EditorRunResult::kSucceeded,
+				        .expected_marker = "abs\n",
+				    },
+				    {
+				        .label           = "relative segments before absolute dir are skipped",
+				        .path_env        = ".:..:relbin:./relbin::" + abs_bin.string(),
+				        .editor          = "micro",
+				        .expected_result = EditorRunResult::kSucceeded,
+				        .expected_marker = "abs\n",
+				    },
+				    {
+				        .label           = "empty editor string with empty PATH is unavailable",
+				        .path_env        = "",
+				        .editor          = "",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "empty editor string falls back when abs PATH has micro",
+				        .path_env        = abs_bin.string(),
+				        .editor          = "",
+				        .expected_result = EditorRunResult::kSucceeded,
+				        .expected_marker = "abs\n",
+				    },
+				    {
+				        .label           = "dot-slash relative editor path is rejected directly",
+				        .path_env        = "",
+				        .editor          = "./micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "subdir relative editor path is rejected directly",
+				        .path_env        = "",
+				        .editor          = "relbin/micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "parent-relative editor path is rejected directly",
+				        .path_env        = "",
+				        .editor          = "../cwd/micro",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "dot bare editor is rejected directly",
+				        .path_env        = empty_dir.string(),
+				        .editor          = ".",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "dot-dot bare editor is rejected directly",
+				        .path_env        = empty_dir.string(),
+				        .editor          = "..",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "root path editor is rejected directly",
+				        .path_env        = empty_dir.string(),
+				        .editor          = "/",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "trailing-slash absolute editor is rejected directly",
+				        .path_env        = empty_dir.string(),
+				        .editor          = abs_bin.string() + "/",
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "absolute dot-leaf editor is rejected directly",
+				        .path_env        = empty_dir.string(),
+				        .editor          = (abs_bin / ".").string(),
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "absolute dot-dot-leaf editor is rejected directly",
+				        .path_env        = empty_dir.string(),
+				        .editor          = (abs_bin / "..").string(),
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label    = "embedded NUL in absolute editor path is rejected",
+				        .path_env = empty_dir.string(),
+				        .editor = (abs_bin / "micro").string() + std::string("\0x", std::size_t{2}),
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				    {
+				        .label           = "embedded NUL in bare editor name is rejected",
+				        .path_env        = custom_bin.string(),
+				        .editor          = std::string("custom\0x", std::size_t{8}),
+				        .expected_result = EditorRunResult::kUnavailable,
+				        .expected_marker = "",
+				    },
+				});
+
+				const auto dependencies = DefaultConfigEditDependencies({temp_root});
+				for (const auto &test_case : cases) {
+					fs::remove(marker, ec);
+					ec.clear();
+					ScopedEnvironmentVariable const path_guard("PATH", test_case.path_env);
+					const auto                      result = dependencies.run_editor(
+					    dependencies.context, test_case.editor, target, std::nullopt);
+					if (test_case.expected_marker.empty()) {
+						ok &= Expect(result == test_case.expected_result &&
+						                 !fs::exists(marker, ec) && !ec,
+						             test_case.label);
+					} else {
+						ok &= Expect(result == test_case.expected_result &&
+						                 ReadFile(marker) == test_case.expected_marker,
+						             test_case.label);
+					}
+				}
+			}
+
+			fs::remove_all(temp_root, ec);
 			return ok;
 		}
 
@@ -655,6 +957,7 @@ namespace howdy::test::config_cli {
 		bool ok = true;
 		ok &= DirectRootHonorsEnvironmentEditor();
 		ok &= EditorPreferenceSelection();
+		ok &= PathSearchRejectsEmptyAndRelativeEntries();
 		ok &= BoundaryAwareEntrypointPreservesInvalidEdit();
 		ok &= FallbackEditorExecution();
 		ok &= ProductionConfigReadsAreBounded();

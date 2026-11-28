@@ -13,6 +13,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#include <string>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -202,6 +203,61 @@ namespace {
 		       Expect(ChildReaped(child_pid), "pidfd carry test reaps the child");
 	}
 
+	auto TestWorkaroundSetupThrowCleansUpSpawnedChild() -> bool {
+		struct ThrowCase {
+			const char *label;
+			bool        non_standard;
+		};
+
+		const auto cases = std::to_array<ThrowCase>({
+		    {.label = "std::exception", .non_standard = false},
+		    {.label = "non-standard exception", .non_standard = true},
+		});
+
+		bool ok = true;
+		for (const auto &test_case : cases) {
+			const pid_t child_pid = SpawnBlockedChild();
+			if (!Expect(child_pid > 0, std::string(test_case.label) + ": spawns blocked child")) {
+				return false;
+			}
+			FakeContext context;
+			context.next_child_pid          = child_pid;
+			context.next_child_pidfd        = howdy::pam::runtime::OpenChildPidfd(child_pid);
+			const int          handed_pidfd = context.next_child_pidfd;
+			std::array<int, 2> verdict_pipe{-1, -1};
+			const bool         piped = pipe2(verdict_pipe.data(), O_CLOEXEC) == 0;
+			(void)close(verdict_pipe.at(1));
+			context.next_verdict_fd         = verdict_pipe.at(0);
+			context.throw_preflight         = !test_case.non_standard;
+			context.throw_preflight_unknown = test_case.non_standard;
+
+			PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
+			                              Operations(&context, WatchdogWaitForCompare),
+			                              Timeout(1s));
+			const auto        result = coordinator.Run(MakeCompareRequest());
+
+			errno                     = 0;
+			const bool pidfd_closed   = fcntl(handed_pidfd, F_GETFD) < 0 && errno == EBADF;
+			errno                     = 0;
+			const bool verdict_closed = fcntl(verdict_pipe.at(0), F_GETFD) < 0 && errno == EBADF;
+			ok &= Expect(handed_pidfd > STDERR_FILENO && piped,
+			             std::string(test_case.label) + ": prepared pidfd and verdict fd");
+			ok &= Expect(result.decision == PromptCoordinatorDecision::kPamResult &&
+			                 result.pam_status == PAM_SYSTEM_ERR,
+			             std::string(test_case.label) + ": maps setup throw to PAM_SYSTEM_ERR");
+			ok &= Expect(context.terminate_calls == 1 && context.terminated_pid == child_pid,
+			             std::string(test_case.label) + ": CleanupSpawnedChild cancels child");
+			ok &= Expect(ChildReaped(child_pid),
+			             std::string(test_case.label) + ": CleanupSpawnedChild reaps child");
+			ok &= Expect(pidfd_closed && verdict_closed,
+			             std::string(test_case.label) +
+			                 ": CleanupSpawnedChild closes pidfd and verdict fd");
+			ok &= Expect(context.auth_token_calls == 0,
+			             std::string(test_case.label) + ": setup throw never requests auth token");
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -211,5 +267,6 @@ auto main() -> int {
 	ok &= TestWatchdogTimeoutKeepsPasswordFallback();
 	ok &= TestPamSuccessReapsBeforeWatchdog();
 	ok &= TestCoordinatorCarriesSpawnPidfd();
+	ok &= TestWorkaroundSetupThrowCleansUpSpawnedChild();
 	return ok ? 0 : 1;
 }

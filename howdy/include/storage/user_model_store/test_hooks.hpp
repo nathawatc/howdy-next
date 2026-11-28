@@ -7,6 +7,8 @@
 namespace howdy::native::user_model_store_test_hooks {
 
 	struct Hooks {
+		// Runs after the read-only path walk succeeds and before LoadDocument/InspectFile open().
+		std::function<void(const std::filesystem::path &)> before_read_open;
 		std::function<void(const std::filesystem::path &)> before_lock;
 		std::function<void(const std::filesystem::path &)> after_lock_before_revalidate;
 		// Runs after the post-lock recheck, before a write stages its replacement.

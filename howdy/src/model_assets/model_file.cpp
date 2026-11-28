@@ -101,7 +101,9 @@ namespace howdy::native {
 			};
 		}
 
-		const ScopedFd fd(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+		// O_NONBLOCK prevents blocking indefinitely if a FIFO replaces the regular file between
+		// lstat() and open(); the fstat() check below rejects non-regular files.
+		const ScopedFd fd(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
 		if (!fd.Valid()) {
 			const int error_number = errno;
 			return {

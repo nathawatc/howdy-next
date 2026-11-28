@@ -35,10 +35,6 @@ namespace howdy::native::config_internal {
 
 		namespace fs = std::filesystem;
 
-		auto IsSupportedEditorPreference(std::string_view editor) -> bool {
-			return !editor.empty() && editor.find_first_of(" \t\n\r\v\f") == std::string_view::npos;
-		}
-
 		void RemoveIfExists(const fs::path &path) {
 			std::error_code ec;
 			fs::remove(path, ec);

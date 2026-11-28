@@ -16,8 +16,57 @@
 #include <sys/wait.h>
 
 namespace {
+
+	struct AuthTokenOverrideState {
+		bool        enabled = false;
+		int         result  = PAM_BAD_ITEM;
+		const void *token   = nullptr;
+	};
+
+	auto AuthTokenOverride() -> AuthTokenOverrideState & {
+		static AuthTokenOverrideState state;
+		return state;
+	}
+
+}  // namespace
+
+extern "C" auto TestPamGetItem(const pam_handle_t *pamh, int item_type, const void **item)
+    -> int __asm__("__wrap_pam_get_item");
+extern "C" auto RealPamGetItem(const pam_handle_t *pamh, int item_type, const void **item)
+    -> int __asm__("__real_pam_get_item");
+
+auto TestPamGetItem(const pam_handle_t *pamh, int item_type, const void **item) -> int {
+	const auto &override_state = AuthTokenOverride();
+	if (override_state.enabled && item_type == PAM_AUTHTOK && pamh != nullptr && item != nullptr) {
+		*item = override_state.token;
+		return override_state.result;
+	}
+	return RealPamGetItem(pamh, item_type, item);
+}
+
+namespace howdy::test::auth_flow {
+
+	ScopedAuthTokenItemOverride::ScopedAuthTokenItemOverride(int result, const void *token) noexcept
+	    : previous_enabled_(AuthTokenOverride().enabled)
+	    , previous_result_(AuthTokenOverride().result)
+	    , previous_token_(AuthTokenOverride().token) {
+		AuthTokenOverride().enabled = true;
+		AuthTokenOverride().result  = result;
+		AuthTokenOverride().token   = token;
+	}
+
+	ScopedAuthTokenItemOverride::~ScopedAuthTokenItemOverride() {
+		AuthTokenOverride().enabled = previous_enabled_;
+		AuthTokenOverride().result  = previous_result_;
+		AuthTokenOverride().token   = previous_token_;
+	}
+
+}  // namespace howdy::test::auth_flow
+
+namespace {
 	using howdy::test::auth_flow::ConversationState;
 	using howdy::test::auth_flow::EligibilityFlowFixture;
+	using howdy::test::auth_flow::ScopedAuthTokenItemOverride;
 	using howdy::test::auth_flow::ScopedPamHandle;
 	using howdy::test::auth_flow::TestConversation;
 
@@ -61,7 +110,26 @@ namespace {
 			return false;
 		}
 
+		ok &= Expect(!AuthTokenPresent(nullptr), "null PAM handle reports absent auth token");
 		ok &= Expect(!AuthTokenPresent(pam_handle.Get()), "missing auth token is absent");
+		{
+			const char                       *preset_token = "preset-token";
+			const ScopedAuthTokenItemOverride present(PAM_SUCCESS, preset_token);
+			ok &= Expect(AuthTokenPresent(pam_handle.Get()), "present PAM_AUTHTOK is detected");
+			ok &= Expect(!AuthTokenPresent(nullptr),
+			             "null PAM handle still reports absent auth token under override");
+		}
+		{
+			const ScopedAuthTokenItemOverride null_token(PAM_SUCCESS, nullptr);
+			ok &= Expect(!AuthTokenPresent(pam_handle.Get()),
+			             "PAM_SUCCESS with null PAM_AUTHTOK is absent");
+		}
+		{
+			const char                       *stale_token = "stale-token";
+			const ScopedAuthTokenItemOverride error_result(PAM_BAD_ITEM, stale_token);
+			ok &= Expect(!AuthTokenPresent(pam_handle.Get()),
+			             "non-PAM_SUCCESS pam_get_item fails closed even with non-null item");
+		}
 
 		return ok;
 	}

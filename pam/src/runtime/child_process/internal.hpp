@@ -55,6 +55,8 @@ namespace howdy::pam::runtime::internal {
 		return true;
 	}
 
+	inline constexpr auto kNullDevice = "/dev/null";
+
 	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 	__attribute__((visibility("hidden"))) inline auto
 	Socketpair(void *context, int domain, int type, int protocol, int *socket_fds) -> int {
@@ -66,6 +68,13 @@ namespace howdy::pam::runtime::internal {
 	ActionsInit(void *context, posix_spawn_file_actions_t *actions) -> int {
 		(void)context;
 		return posix_spawn_file_actions_init(actions);
+	}
+
+	__attribute__((visibility("hidden"))) inline auto
+	ActionsAddopen(void *context, posix_spawn_file_actions_t *actions, int fd, const char *path,
+	               int flags) -> int {
+		(void)context;
+		return posix_spawn_file_actions_addopen(actions, fd, path, flags, 0);
 	}
 
 	__attribute__((visibility("hidden"))) inline auto

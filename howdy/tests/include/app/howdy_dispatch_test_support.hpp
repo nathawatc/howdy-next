@@ -39,6 +39,7 @@ namespace howdy::test::dispatch {
 	    -> RunResult;
 	auto Run(Context &context, std::vector<std::string> arguments, CommandMain list_callback,
 	         CommandMains command_mains) -> RunResult;
+	auto RunRaw(Context &context, int argc, char **argv) -> RunResult;
 	auto RunHowdyCompletionTests() -> bool;
 
 }  // namespace howdy::test::dispatch

@@ -63,9 +63,9 @@ namespace howdy::native {
 			if (width < 1 || height < 1) {
 				return "YuNet detection width and height must render as at least one pixel";
 			}
-			if (!IntegerRenderingSumIsSafe(static_cast<double>(x) + width - 1.0) ||
-			    !IntegerRenderingSumIsSafe(static_cast<double>(y) + height - 1.0) ||
-			    !IntegerRenderingSumIsSafe(static_cast<double>(y) + height + 12.0)) {
+			if (!IntegerRenderingSumIsSafe(static_cast<double>(x) + width) ||
+			    !IntegerRenderingSumIsSafe(static_cast<double>(y) + height + 12.0) ||
+			    !IntegerRenderingSumIsSafe(static_cast<double>(y) - 8.0)) {
 				return "YuNet output box geometry overflows preview rendering";
 			}
 			return std::nullopt;

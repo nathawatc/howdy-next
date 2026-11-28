@@ -9,6 +9,7 @@ project(
 )
 
 include(cmake/howdy_cross_compilation.cmake)
+include(cmake/howdy_fuzzing.cmake)
 include(cmake/howdy_privileged_test_paths.cmake)
 include(cmake/howdy_test_timeouts.cmake)
 
@@ -113,26 +114,30 @@ set(HOWDY_ENABLE_FUZZING
     CACHE STRING "Build libFuzzer targets: AUTO (when libFuzzer links), ON or OFF"
 )
 set_property(CACHE HOWDY_ENABLE_FUZZING PROPERTY STRINGS AUTO ON OFF)
+howdy_parse_fuzzing_mode("${HOWDY_ENABLE_FUZZING}" "${BUILD_TESTING}" howdy_fuzzing_mode)
 set(HOWDY_BUILD_FUZZERS OFF)
-if(BUILD_TESTING AND NOT HOWDY_ENABLE_FUZZING STREQUAL "OFF")
-  # libFuzzer ships with Clang; probe that a fuzz target links rather than trusting the ID.
+if(BUILD_TESTING AND NOT howdy_fuzzing_mode STREQUAL "OFF")
+  # libFuzzer ships with Clang; probe the exact sanitizer flags used by howdy_add_native_fuzzer.
   cmake_push_check_state(RESET)
-  set(CMAKE_REQUIRED_FLAGS "-fsanitize=fuzzer")
-  set(CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=fuzzer")
+  set(CMAKE_REQUIRED_FLAGS "${HOWDY_FUZZER_SANITIZER_FLAGS}")
+  set(CMAKE_REQUIRED_LINK_OPTIONS "${HOWDY_FUZZER_SANITIZER_FLAGS}")
   check_cxx_source_compiles(
    [=[
     #include <cstddef>
     #include <cstdint>
     extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *, std::size_t) { return 0; }
    ]=]
-   HOWDY_HAVE_LIBFUZZER
+   HOWDY_HAVE_LIBFUZZER_SANITIZERS
   )
   cmake_pop_check_state()
-  if(HOWDY_HAVE_LIBFUZZER)
+  if(HOWDY_HAVE_LIBFUZZER_SANITIZERS)
     set(HOWDY_BUILD_FUZZERS ON)
-  elseif(NOT HOWDY_ENABLE_FUZZING STREQUAL "AUTO")
-    # Anything but AUTO here was an explicit request.
-    message(FATAL_ERROR "HOWDY_ENABLE_FUZZING=ON requires a compiler with libFuzzer (Clang)")
+  elseif(howdy_fuzzing_mode STREQUAL "ON")
+    message(
+     FATAL_ERROR
+     "HOWDY_ENABLE_FUZZING=ON requires a compiler with "
+     "${HOWDY_FUZZER_SANITIZER_FLAGS} support (Clang)"
+    )
   endif()
 endif()
 message(STATUS "Howdy libFuzzer targets: ${HOWDY_BUILD_FUZZERS}")
@@ -177,10 +182,11 @@ add_compile_options(
  "$<$<AND:$<BOOL:${HOWDY_WARNINGS_AS_ERRORS}>,${howdy_cxx_compiler}>:-Werror>"
 )
 
-add_compile_definitions(
- "$<$<CONFIG:Release>:_FORTIFY_SOURCE=3>"
- "$<$<CONFIG:RelWithDebInfo>:_FORTIFY_SOURCE=3>"
- "$<$<CONFIG:MinSizeRel>:_FORTIFY_SOURCE=3>"
+# Use -Wp, so our undef/redef lands after distro CXXFLAGS using either -D or -Wp,-D under -Werror.
+set(howdy_fortify_guard
+    "$<AND:${howdy_cxx_compiler},$<CONFIG:Release,RelWithDebInfo,MinSizeRel>>")
+add_compile_options(
+ "$<${howdy_fortify_guard}:SHELL:-Wp,-U_FORTIFY_SOURCE -Wp,-D_FORTIFY_SOURCE=3>"
 )
 
 add_link_options(

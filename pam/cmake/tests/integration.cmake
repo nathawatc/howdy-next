@@ -15,6 +15,18 @@ add_test(NAME pam-installed-setuid-state-verifier
 howdy_set_test_timeouts()
 
 if(HOWDY_ENABLE_PRIVILEGED_TESTS)
+  set(
+   pam_e2e_artifact_targets
+   howdy
+   howdy_compare
+   howdy_auth_helper
+   pam_howdy
+   howdy_packaged_config
+   howdy_docs
+   howdy-gmo
+   pam_installed_path_validator
+   pam_installed_state_verifier
+  )
   if(HOWDY_HAVE_PAM_START_CONFDIR)
     add_executable(
    pam_installed_e2e_driver
@@ -39,23 +51,13 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
    pam_installed_runtime_e2e_driver
    PRIVATE pam_runtime howdy_user_models
   )
-    add_custom_target(
-   howdy-installed-e2e-artifacts
-   DEPENDS
-    howdy
-    howdy_compare
-    howdy_auth_helper
-    pam_howdy
-    howdy_packaged_config
-    howdy_docs
-    howdy-gmo
-    pam_installed_e2e_driver
-    pam_installed_compare_e2e_probe
-    pam_installed_runtime_e2e_driver
-    pam_installed_install_environment_test
-    pam_installed_path_validator
-    pam_installed_state_verifier
-  )
+    list(
+     APPEND pam_e2e_artifact_targets
+     pam_installed_e2e_driver
+     pam_installed_compare_e2e_probe
+     pam_installed_runtime_e2e_driver
+     pam_installed_install_environment_test
+    )
     # Each argument stays quoted so an empty directory keeps its position.
     function(pam_add_installed_e2e_test test_name runner)
       add_test(
@@ -91,6 +93,10 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
    COMMAND bash -c "echo 'SKIP: pam_start_confdir unavailable'; exit 77"
   )
   endif()
+  add_custom_target(
+   howdy-installed-e2e-artifacts
+   DEPENDS ${pam_e2e_artifact_targets}
+  )
   set_tests_properties(
   installed-pam-setuid-e2e installed-pam-setuid-install-environment
   PROPERTIES

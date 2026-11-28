@@ -13,7 +13,8 @@
 namespace howdy::native {
 
 	auto LoadUserModelsFromFd(int model_fd, const std::filesystem::path &display_path,
-	                          const std::string &expected_backend, uid_t owner_uid)
+	                          const std::string &expected_backend,
+	                          const std::string &expected_model, uid_t owner_uid)
 	    -> UserModelLoadResult {
 		const auto read_only = CheckReadOnlyFd(model_fd, display_path, kUserModelFileLabel);
 		if (!read_only.ok) {
@@ -24,7 +25,8 @@ namespace howdy::native {
 		}
 		auto document = user_model_store_internal::LoadDocumentFromFd(
 		    model_fd, display_path,
-		    {.backend = expected_backend, .model = {}, .strict_shape = false}, owner_uid);
+		    {.backend = expected_backend, .model = expected_model, .strict_shape = false},
+		    owner_uid);
 		return user_model_store_internal::FlattenLoadedModels(document);
 	}
 

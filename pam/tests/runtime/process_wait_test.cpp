@@ -1,6 +1,6 @@
-#include "../../src/runtime/auth_helper_process/internal.hpp"
 #include "protocol/compare_exit.hpp"
 #include "protocol/compare_verdict.hpp"
+#include "runtime/auth_helper_process/internal.hpp"
 #include "runtime/child_process.hpp"
 #include "runtime/compare_process.hpp"
 #include "runtime/compare_process_test_support.hpp"

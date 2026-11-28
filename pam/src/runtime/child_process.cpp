@@ -66,10 +66,20 @@ namespace {
 	}
 
 	// Peeks through the pidfd while pidfd waits work, which names the child for certain, and by
-	// PID otherwise.
-	auto PeekTracked(bool pidfd_wait_usable, int pidfd, pid_t pid) noexcept -> ChildPeek {
-		return pidfd_wait_usable ? PeekChild(P_PIDFD, static_cast<id_t>(pidfd))
-		                         : PeekChild(P_PID, static_cast<id_t>(pid));
+	// PID otherwise. On Linux 5.3 (no waitid(P_PIDFD), EINVAL), disables pidfd waits and falls
+	// through to P_PID when a PID is known.
+	auto PeekTracked(bool &pidfd_wait_usable, int pidfd, pid_t pid) noexcept -> ChildPeek {
+		if (pidfd_wait_usable) {
+			const ChildPeek peek = PeekChild(P_PIDFD, static_cast<id_t>(pidfd));
+			if (peek != ChildPeek::kUnavailable || errno != EINVAL) {
+				return peek;
+			}
+			pidfd_wait_usable = false;
+		}
+		if (pid <= 0) {
+			return ChildPeek::kNotOurs;
+		}
+		return PeekChild(P_PID, static_cast<id_t>(pid));
 	}
 
 #ifdef HOWDY_HAVE_PIDFD_SPAWN
@@ -199,8 +209,12 @@ namespace howdy::pam::runtime {
 			if (pidfd_send_signal(pidfd_, signal, nullptr, 0) == 0) {
 				return 0;
 			}
-			if (errno == ESRCH) {
+			const int signal_error = errno;
+			if (signal_error == ESRCH) {
 				return ReapedElsewhere();
+			}
+			if (pid_ <= 0) {
+				return signal_error;
 			}
 		}
 		return SignalByPid(signal);

@@ -153,7 +153,10 @@ namespace howdy::native::runtime_descriptor_message {
 		for (const int descriptor : decoded.descriptors) {
 			owned.emplace_back(descriptor);
 		}
-		if (received == 0 && message.msg_controllen == 0) {
+		// Only a genuine peer-close EOF has zero payload, zero control data, and no truncation
+		// flags; a 0-byte packet whose SCM_RIGHTS control data was dropped sets MSG_CTRUNC.
+		if (received == 0 && message.msg_controllen == 0 &&
+		    !HasAnyBits(message.msg_flags, MSG_TRUNC, MSG_CTRUNC)) {
 			return {.status = ReceiveStatus::kEndOfFile};
 		}
 		if (!decoded.valid) {

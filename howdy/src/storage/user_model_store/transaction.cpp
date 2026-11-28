@@ -2,7 +2,6 @@
 #include "internal.hpp"
 #include "readiness/internal.hpp"
 #include "storage/user_model_limits.hpp"
-#include "storage/user_model_path.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_store.hpp"
 #include "storage/user_model_store/test_hooks.hpp"
@@ -14,7 +13,6 @@
 #include "support/file_lock.hpp"
 #include "support/file_security.hpp"
 #include "support/scoped_fd.hpp"
-#include "support/user_names.hpp"
 
 #include <cerrno>
 #include <expected>
@@ -174,12 +172,14 @@ namespace howdy::native::user_model_store_internal {
 				return FailedAtomicRenameCommitResult(exchange_result);
 			}
 			// The exchange must have swapped out the opened model. If another actor replaced it
-			// after the identity check, exchange back and report the model changed.
+			// after the identity check, exchange back and sync the directory before unlinking the
+			// staged file so a crash cannot leave the replacement under the staged name.
 			if (const auto failure = IdentityFailure(staged.Path(), opened_fd);
 			    failure.has_value()) {
 				if (RenameUnlessInjected(staged.Path(), path, AtomicRenameMode::kExchange,
 				                         hooks.rollback_exchange_errno) ==
-				    AtomicRenameResult::kSuccess) {
+				        AtomicRenameResult::kSuccess &&
+				    SyncModelsDirectory(path, hooks)) {
 					return *failure;
 				}
 				staged.Disarm();
@@ -333,17 +333,6 @@ namespace howdy::native::user_model_store_internal {
 			    .status        = status,
 			    .error_message = std::move(message),
 			};
-		}
-
-		// O_NOFOLLOW fails a symlink with ELOOP, a directory cannot be opened for writing, and a
-		// socket cannot be opened at all (ENXIO).
-		auto OpenErrorMeansNotRegularFile(int error_number) -> bool {
-			return error_number == ELOOP || error_number == EISDIR || error_number == ENXIO;
-		}
-
-		auto NotRegularFileMessage(std::string_view label, const std::filesystem::path &path)
-		    -> std::string {
-			return std::string(label) + " must be a regular file: " + path.string();
 		}
 
 		// The writers' lock file, inside the models directory, which writers must be able to
@@ -593,58 +582,50 @@ namespace howdy::native::user_model_store_internal {
 		constexpr mode_t kUserModelsDirMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
 
 		// A writer's path walk. An append may create the models directory before the lock; every
-		// other step uses the read-only ResolvePath.
+		// other step uses the read-only CheckReadiness.
 		auto ResolveWritablePath(const UserModelStoreConfig &config, const std::string &user,
-		                         bool create_directory) -> UserModelPathResult {
+		                         bool create_directory) -> UserModelReadinessResult {
+			auto resolved = CheckReadiness(config, user);
 			if (!create_directory) {
-				return ResolvePath(config, user);
+				return resolved;
+			}
+			if (resolved.status == UserModelStatus::kNoModel) {
+				return UserModelReadinessResult{
+				    .status = UserModelStatus::kOk,
+				    .path   = std::move(resolved.path),
+				};
+			}
+			if (resolved.status != UserModelStatus::kNoModelDirectory) {
+				return resolved;
 			}
 
-			const auto model_path = ResolveUserModelPath(config.models_dir, user);
-			if (!model_path) {
-				return UserModelPathResult{
-				    .status        = UserModelStatus::kInvalidUser,
-				    .error_message = kInvalidUserNameMessage,
+			const auto create_result = CreateSecureDirectoryTree(
+			    config.models_dir, kUserModelsDirectoryLabel, kUserModelsDirMode, 0700,
+			    config.owner_uid, config.validation_root);
+			if (!create_result.ok) {
+				return UserModelReadinessResult{
+				    .status        = create_result.error_code == 0
+					                     ? UserModelStatus::kInsecurePath
+					                     : UserModelStatus::kDirectoryCreateFailed,
+				    .error_message = create_result.error_code == 0
+					                     ? create_result.error_message
+					                     : "Failed to create secure user models directory: " +
+					                           config.models_dir.string(),
 				};
 			}
 
-			std::error_code ec;
-			if (!std::filesystem::exists(config.models_dir, ec)) {
-				if (ec) {
-					return UserModelPathResult{
-					    .status        = UserModelStatus::kParseError,
-					    .error_message = WithErrno("Failed to inspect user models directory: " +
-						                               config.models_dir.string(),
-						                           ec.value()),
-					};
-				}
-				const auto create_result = CreateSecureDirectoryTree(
-				    config.models_dir, kUserModelsDirectoryLabel, kUserModelsDirMode, 0700,
-				    config.owner_uid, config.validation_root);
-				if (!create_result.ok) {
-					return UserModelPathResult{
-					    .status        = create_result.error_code == 0
-						                     ? UserModelStatus::kInsecurePath
-						                     : UserModelStatus::kDirectoryCreateFailed,
-					    .error_message = create_result.error_code == 0
-						                     ? create_result.error_message
-						                     : "Failed to create secure user models directory: " +
-						                           config.models_dir.string(),
-					};
-				}
-			}
-
-			// Then the same walk and classification readers use. A free model path is no failure
-			// here; a models directory gone since the check above was removed under this writer.
-			auto resolved = ResolvePath(config, user);
+			// Re-run the same lstat-based walk readers use. A free model path is no failure here;
+			// a models directory gone since CreateSecureDirectoryTree was removed under this
+			// writer.
+			resolved = CheckReadiness(config, user);
 			if (resolved.status == UserModelStatus::kNoModel) {
-				return UserModelPathResult{
+				return UserModelReadinessResult{
 				    .status = UserModelStatus::kOk,
 				    .path   = std::move(resolved.path),
 				};
 			}
 			if (resolved.status == UserModelStatus::kNoModelDirectory) {
-				return UserModelPathResult{
+				return UserModelReadinessResult{
 				    .status        = UserModelStatus::kModelChanged,
 				    .error_message = std::string(kUserModelChangedMessage),
 				};
@@ -679,7 +660,7 @@ namespace howdy::native::user_model_store_internal {
 
 			// Never create the models directory after the lock: one missing now was removed under
 			// this writer, so its lock no longer serializes anything.
-			const auto secured_path = ResolvePath(config, user);
+			const auto secured_path = CheckReadiness(config, user);
 			if (secured_path.status == UserModelStatus::kNoModelDirectory) {
 				return {.failure = ModelChangedFailure()};
 			}

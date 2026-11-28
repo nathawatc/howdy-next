@@ -17,6 +17,8 @@ namespace howdy::pam::compare_process {
 		void *context                                                                  = nullptr;
 		int (*socketpair)(void *, int domain, int type, int protocol, int *socket_fds) = nullptr;
 		int (*file_actions_init)(void *, posix_spawn_file_actions_t *)                 = nullptr;
+		int (*file_actions_addopen)(void *, posix_spawn_file_actions_t *, int fd, const char *path,
+		                            int flags)                                         = nullptr;
 		int (*file_actions_adddup2)(void *, posix_spawn_file_actions_t *, int fd,
 		                            int new_fd)                                        = nullptr;
 		int (*file_actions_addclosefrom)(void *, posix_spawn_file_actions_t *,
@@ -26,10 +28,12 @@ namespace howdy::pam::compare_process {
 	};
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
-	// Spawns compare in descriptor mode: the verdict socket at fd 3, the request's config and
-	// model at fds 4 and 5 (protocol/compare_descriptors.hpp), nothing above. All three are
-	// required, so a socket or file action that cannot be set up fails the spawn. On success
-	// `child_pidfd` receives an owned pidfd for the child taken right after spawn, and
+	// Spawns compare in descriptor mode: stdin bound to /dev/null, any closed or FD_CLOEXEC
+	// stdout/stderr bound to /dev/null (preserving open inheritable stdout/stderr for diagnostics
+	// and end_report), the verdict socket at fd 3, the request's config and model at fds 4 and 5
+	// (protocol/compare_descriptors.hpp), and nothing above. All three descriptors and stdio
+	// actions are required, so a socket or file action that cannot be set up fails the spawn. On
+	// success `child_pidfd` receives an owned pidfd for the child taken right after spawn, and
 	// `verdict_fd` the owned, non-blocking PAM end of the verdict socket compare reports its exit
 	// code on (protocol/compare_verdict.hpp); the caller passes both to the wait. All
 	// out-parameters, the username and both descriptors are required (EINVAL otherwise). When no

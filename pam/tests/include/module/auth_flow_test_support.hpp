@@ -319,11 +319,10 @@ namespace howdy::test::auth_flow {
 		return nullptr;
 	}
 
-	inline auto FlowRequestAuthToken(void *context, pam_handle_t *pamh)
-	    -> std::tuple<int, const char *> {
+	inline auto FlowRequestAuthToken(void *context, pam_handle_t *pamh) -> int {
 		(void)context;
 		(void)pamh;
-		return {PAM_SUCCESS, nullptr};
+		return PAM_SUCCESS;
 	}
 
 	inline auto MakeEligibilityFlowDependencies(EligibilityFlowFixture *fixture)

@@ -449,9 +449,7 @@ namespace howdy::pam {
 
 	auto PromptCoordinator::RequestPassword() noexcept -> int {
 		try {
-			const auto [result, password] = operations_.RequestAuthToken(pamh_);
-			(void)password;
-			return result;
+			return operations_.RequestAuthToken(pamh_);
 		} catch (const std::exception &error) {
 			pam_syslog(pamh_, LOG_ERR, "Password request failed: %s", error.what());
 		} catch (...) {

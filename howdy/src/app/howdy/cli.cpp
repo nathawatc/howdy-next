@@ -154,6 +154,15 @@ namespace howdy::native::howdy_cli_internal {
 			return std::nullopt;
 		}
 
+		auto CommandOptionTakesValue(const CommandDescriptor *command, std::string_view arg)
+		    -> bool {
+			if (command == nullptr) {
+				return false;
+			}
+			const auto *command_option = FindCommandOption(*command, arg);
+			return command_option != nullptr && !command_option->argument_name.empty();
+		}
+
 		auto ParseCommandOption(const ParsedCommandLine &parsed, const CommandDescriptor &command,
 		                        const CommandOptionDescriptor &option, std::size_t &index,
 		                        std::vector<const CommandOptionDescriptor *> &seen_options,
@@ -259,15 +268,48 @@ namespace howdy::native::howdy_cli_internal {
 		return 2;
 	}
 
+	namespace {
+		auto ValidateArgv(int argc, char **argv) -> std::optional<std::span<char *>> {
+			if (argc <= 0 || argv == nullptr) {
+				return std::nullopt;
+			}
+			const auto arguments = std::span(argv, static_cast<std::size_t>(argc));
+			if (std::ranges::any_of(arguments, [](const char *argument) -> bool {
+				    return argument == nullptr;
+			    })) {
+				return std::nullopt;
+			}
+			return arguments;
+		}
+	}  // namespace
+
 	auto ParseCommandLine(int argc, char **argv, ParsedCommandLine &parsed)
 	    -> std::optional<CliSyntaxError> {
-		const auto arguments =
-		    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
-		bool options_ended = false;
+		const auto validated_arguments = ValidateArgv(argc, argv);
+		if (!validated_arguments.has_value()) {
+			return CliSyntaxError{
+			    .kind  = CliSyntaxErrorKind::kUnexpectedArgument,
+			    .value = {},
+			};
+		}
+		const auto               arguments                      = *validated_arguments;
+		bool                     options_ended                  = false;
+		const CommandDescriptor *command                        = nullptr;
+		bool                     expecting_command_option_value = false;
 		for (std::size_t index = 1; index < arguments.size(); ++index) {
 			const std::string_view arg(arguments.subspan(index, 1).front());
 			if (!options_ended && arg == "--") {
-				options_ended = true;
+				options_ended                  = true;
+				expecting_command_option_value = false;
+				continue;
+			}
+			// Preserve the token immediately following a value-taking command option so global
+			// options (e.g. --plain, -U, --help) are not stripped before ParseCommandInvocation
+			// can reject the missing option value.
+			if (expecting_command_option_value) {
+				expecting_command_option_value = false;
+				parsed.arguments.push_back(
+				    {.value = std::string(arg), .options_enabled = !options_ended});
 				continue;
 			}
 			if (!options_ended) {
@@ -289,8 +331,11 @@ namespace howdy::native::howdy_cli_internal {
 					};
 				}
 				parsed.command = std::string(arg);
+				command        = FindCommand(*parsed.command);
 				continue;
 			}
+			expecting_command_option_value =
+			    !options_ended && CommandOptionTakesValue(command, arg);
 			parsed.arguments.push_back(
 			    {.value = std::string(arg), .options_enabled = !options_ended});
 		}

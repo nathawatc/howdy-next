@@ -1,6 +1,7 @@
 #include "config/config_template.hpp"
 
 #include "config/config_schema.hpp"
+#include "support/ascii.hpp"
 
 #include <algorithm>
 #include <optional>
@@ -20,27 +21,21 @@ namespace howdy::native::config_template {
 			return {.ok = false, .error = std::move(message)};
 		}
 
-		auto IsAsciiSpace(char value) -> bool {
-			return value == ' ' || value == '\t' || value == '\n' || value == '\r' ||
-			       value == '\f' || value == '\v';
-		}
-
 		auto IsSafeIniName(std::string_view value) -> bool {
 			if (!value.empty() && (IsAsciiSpace(value.front()) || IsAsciiSpace(value.back()))) {
 				return false;
 			}
 			return std::ranges::all_of(value, [](const char raw_character) -> bool {
-				const auto character = static_cast<unsigned char>(raw_character);
-				return character >= 0x20U && character != 0x7fU && character != '[' &&
-				       character != ']' && character != ';' && character != '#' && character != '=';
+				return !IsAsciiControl(raw_character) && raw_character != '[' &&
+				       raw_character != ']' && raw_character != ';' && raw_character != '#' &&
+				       raw_character != '=';
 			});
 		}
 
 		auto IsSafeDescription(std::string_view value) -> bool {
 			return !value.empty() &&
 			       std::ranges::all_of(value, [](const char raw_character) -> bool {
-				       const auto character = static_cast<unsigned char>(raw_character);
-				       return character >= 0x20U && character != 0x7fU;
+				       return !IsAsciiControl(raw_character);
 			       });
 		}
 
@@ -49,10 +44,9 @@ namespace howdy::native::config_template {
 				return false;
 			}
 			return std::ranges::all_of(value, [](const char raw_character) -> bool {
-				const auto character = static_cast<unsigned char>(raw_character);
-				return character >= 0x20U && character != 0x7fU && character != ';' &&
-				       character != '#' && character != '=' && character != '[' &&
-				       character != ']' && character != '\'' && character != '"';
+				return !IsAsciiControl(raw_character) && raw_character != ';' &&
+				       raw_character != '#' && raw_character != '=' && raw_character != '[' &&
+				       raw_character != ']' && raw_character != '\'' && raw_character != '"';
 			});
 		}
 

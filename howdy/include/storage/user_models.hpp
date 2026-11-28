@@ -14,7 +14,8 @@ namespace howdy::native {
 	// nor others can write. The read is positional, so the shared file offset does not move.
 	// `display_path` only names the source in messages.
 	[[nodiscard]] auto LoadUserModelsFromFd(int model_fd, const std::filesystem::path &display_path,
-	                                        const std::string &expected_backend, uid_t owner_uid)
+	                                        const std::string &expected_backend,
+	                                        const std::string &expected_model, uid_t owner_uid)
 	    -> UserModelLoadResult;
 
 }  // namespace howdy::native

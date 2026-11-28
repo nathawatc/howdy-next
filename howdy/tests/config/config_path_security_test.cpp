@@ -140,6 +140,27 @@ namespace howdy::test {
 		                 lock_result.message);
 		fs::remove(lock_failure_path, ec);
 		ec.clear();
+
+		ok &= Expect(WriteConfigTestFile(lock_failure_path, "") &&
+		                 chmod(lock_failure_path.c_str(), 0600) == 0,
+		             "create 0600 lock file before hard-link test");
+		const auto lock_hardlink = fs::path(lock_failure_path.string() + ".hardlink");
+		fs::remove(lock_hardlink, ec);
+		ec.clear();
+		ok &= Expect(link(lock_failure_path.c_str(), lock_hardlink.c_str()) == 0,
+		             "hard-link config lock file");
+		lock_result = howdy::native::UpdateConfigValue(
+		    context.config_path, {.key = "disabled", .value = "false"},
+		    {.validate_runtime = false, .validation_root = {context.temp_root}});
+		ok &= Expect(lock_result.status == howdy::native::ConfigWriteStatus::kLockFailed &&
+		                 lock_result.message.starts_with("Failed to lock config file: ") &&
+		                 lock_result.message.contains("hard-linked"),
+		             "update_config_value rejects hard-linked config lock file: " +
+		                 lock_result.message);
+		fs::remove(lock_hardlink, ec);
+		ec.clear();
+		fs::remove(lock_failure_path, ec);
+		ec.clear();
 		ok &= ExpectLockReplacedWhileWaitingFails(context, false);
 		ok &= ExpectLockReplacedWhileWaitingFails(context, true);
 

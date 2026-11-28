@@ -47,8 +47,8 @@ namespace howdy::native {
 		                               const std::string &expected_model = {}) const
 		    -> UserModelListResult;
 		[[nodiscard]] auto InspectFile(const std::string &user) const -> UserModelInspectResult;
-		[[nodiscard]] auto LoadModels(const std::string &user,
-		                              const std::string &expected_backend) const
+		[[nodiscard]] auto LoadModels(const std::string &user, const std::string &expected_backend,
+		                              const std::string &expected_model = {}) const
 		    -> UserModelLoadResult;
 		[[nodiscard]] auto AppendEntry(const std::string       &user,
 		                               const NewUserModelEntry &entry) const

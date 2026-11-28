@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
-#include <tuple>
 
 #include <security/pam_appl.h>
 
@@ -48,7 +47,7 @@ namespace howdy::pam {
 	                                                               pam_handle_t *pamh);
 	using CreateSecretPromptConversationFn = std::unique_ptr<SecretPromptConversation> (*)(
 	    void *context, pam_handle_t *pamh, SecretPromptObserver observer);
-	using RequestAuthTokenFn = std::tuple<int, const char *> (*)(void *context, pam_handle_t *pamh);
+	using RequestAuthTokenFn = int (*)(void *context, pam_handle_t *pamh);
 
 	class PromptCoordinatorOperations {
 	public:
@@ -115,8 +114,7 @@ namespace howdy::pam {
 			return create_secret_prompt_conversation_(context_, pamh, observer);
 		}
 
-		[[nodiscard]] auto RequestAuthToken(pam_handle_t *pamh) const
-		    -> std::tuple<int, const char *> {
+		[[nodiscard]] auto RequestAuthToken(pam_handle_t *pamh) const -> int {
 			return request_auth_token_(context_, pamh);
 		}
 

@@ -25,6 +25,16 @@
 
 namespace howdy::test::prompt_coordinator {
 
+	struct OpenAction {
+		int         fd = -1;
+		std::string path;
+		int         flags = 0;
+	};
+
+	inline auto operator==(const OpenAction &left, const OpenAction &right) -> bool {
+		return left.fd == right.fd && left.path == right.path && left.flags == right.flags;
+	}
+
 	struct Dup2Action {
 		int fd     = -1;
 		int new_fd = -1;
@@ -32,7 +42,14 @@ namespace howdy::test::prompt_coordinator {
 
 	struct PosixSpawnCapture {
 		int init_calls    = 0;
-		int adddup2_calls = 0;
+		int addopen_calls = 0;
+		// Every open action in order, as Spawn added them.
+		std::vector<OpenAction> addopen;
+		// addopen_result is returned by the call with this index (0-based), or by every call when
+		// it is -1.
+		int addopen_fail_index = -1;
+		int addopen_result     = 0;
+		int adddup2_calls      = 0;
 		// Every dup2 action in order, as Spawn added them.
 		std::vector<Dup2Action> adddup2;
 		// adddup2_result is returned by the call with this index (0-based), or by every call when
@@ -51,6 +68,7 @@ namespace howdy::test::prompt_coordinator {
 		int                               closefrom_fd        = -1;
 		pid_t                             next_pid            = 4242;
 		posix_spawn_file_actions_t       *initialized_actions = nullptr;
+		posix_spawn_file_actions_t       *addopen_actions     = nullptr;
 		posix_spawn_file_actions_t       *closefrom_actions   = nullptr;
 		posix_spawn_file_actions_t       *destroyed_actions   = nullptr;
 		const posix_spawn_file_actions_t *spawn_actions       = nullptr;
@@ -76,6 +94,22 @@ namespace howdy::test::prompt_coordinator {
 		++capture.init_calls;
 		capture.initialized_actions = actions;
 		return capture.init_result;
+	}
+
+	inline auto CapturePosixSpawnFileActionsAddopen(void                       *context,
+	                                                posix_spawn_file_actions_t *actions, int fd,
+	                                                const char *path, int flags) -> int {
+		auto     &capture       = *static_cast<PosixSpawnCapture *>(context);
+		const int index         = capture.addopen_calls++;
+		capture.addopen_actions = actions;
+		capture.addopen.push_back({
+		    .fd    = fd,
+		    .path  = path == nullptr ? std::string{} : std::string(path),
+		    .flags = flags,
+		});
+		return capture.addopen_fail_index < 0 || capture.addopen_fail_index == index
+		           ? capture.addopen_result
+				   : 0;
 	}
 
 	// NOLINTBEGIN(bugprone-easily-swappable-parameters)
@@ -149,6 +183,7 @@ namespace howdy::test::prompt_coordinator {
 		    .context                   = context,
 		    .socketpair                = CaptureSocketpair,
 		    .file_actions_init         = CapturePosixSpawnFileActionsInit,
+		    .file_actions_addopen      = CapturePosixSpawnFileActionsAddopen,
 		    .file_actions_adddup2      = CapturePosixSpawnFileActionsAdddup2,
 		    .file_actions_addclosefrom = CapturePosixSpawnFileActionsAddclosefrom,
 		    .file_actions_destroy      = CapturePosixSpawnFileActionsDestroy,
@@ -166,7 +201,33 @@ namespace howdy::test::prompt_coordinator {
 		return std::nullopt;
 	}
 
+	// Moves an owned descriptor strictly above STDERR_FILENO so test fixtures never alias or
+	// backfill stdio slots (0..2) even when the test closes host stdio.
+	inline auto MoveFdAboveStdio(howdy::native::ScopedFd &fd) -> bool {
+		if (!fd.Valid()) {
+			return false;
+		}
+		if (fd.Get() > STDERR_FILENO) {
+			return true;
+		}
+		const int raised = fcntl(fd.Get(), F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+		if (raised < 0) {
+			return false;
+		}
+		fd.Reset(raised);
+		return true;
+	}
+
+	inline auto OpenNullAboveStdio(int flags) -> howdy::native::ScopedFd {
+		howdy::native::ScopedFd fd(open("/dev/null", flags));
+		if (!MoveFdAboveStdio(fd)) {
+			return {};
+		}
+		return fd;
+	}
+
 	// Real descriptors for a compare request, which the production Spawn copies before placing.
+	// Kept strictly above STDERR_FILENO so tests that close host stdio never alias them.
 	class CompareRequestFiles {
 	public:
 		[[nodiscard]] auto Request(const std::string &username = "alice") const
@@ -183,8 +244,8 @@ namespace howdy::test::prompt_coordinator {
 		}
 
 	private:
-		howdy::native::ScopedFd config_{open("/dev/null", O_RDONLY | O_CLOEXEC)};
-		howdy::native::ScopedFd model_{open("/dev/null", O_RDONLY | O_CLOEXEC)};
+		howdy::native::ScopedFd config_{OpenNullAboveStdio(O_RDONLY | O_CLOEXEC)};
+		howdy::native::ScopedFd model_{OpenNullAboveStdio(O_RDONLY | O_CLOEXEC)};
 	};
 
 	// Waits for a child the test forked itself. Production takes the pidfd at spawn; a test may

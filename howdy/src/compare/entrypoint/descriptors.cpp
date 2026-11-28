@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include <fcntl.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include <sys/socket.h>
@@ -53,16 +54,25 @@ namespace howdy::native::compare_entrypoint_private {
 
 	// Also reports the exit code on the verdict socket, so PAM still learns it if the application
 	// reaps compare first. Best effort: a failed write leaves PAM with only the exit status, which
-	// fails closed when it is gone.
+	// fails closed when it is gone. Suppress SIGPIPE around write() via sigaction (allowed by
+	// seccomp) so a closed peer turns into EPIPE instead of killing compare before it returns.
 	auto ReportVerdict(const VerdictSocket &socket, int exit_code) noexcept -> int {
 		struct stat status{};
 		if (socket.announced && fstat(howdy::native::compare_verdict::kFd, &status) == 0 &&
 		    S_ISSOCK(status.st_mode) && status.st_dev == socket.device &&
 		    status.st_ino == socket.inode) {
-			const auto verdict = static_cast<unsigned char>(exit_code);
+			struct sigaction ignore_pipe{};
+			ignore_pipe.sa_handler = SIG_IGN;
+			sigemptyset(&ignore_pipe.sa_mask);
+			struct sigaction previous_pipe{};
+			const bool       suppressed = sigaction(SIGPIPE, &ignore_pipe, &previous_pipe) == 0;
+			const auto       verdict    = static_cast<unsigned char>(exit_code);
 			(void)howdy::native::RetryOnEintr([&] -> ssize_t {
 				return write(howdy::native::compare_verdict::kFd, &verdict, sizeof(verdict));
 			});
+			if (suppressed) {
+				(void)sigaction(SIGPIPE, &previous_pipe, nullptr);
+			}
 		}
 		return exit_code;
 	}
@@ -72,8 +82,11 @@ namespace howdy::native::compare_entrypoint_private {
 	// value is compare's from here on and is closed on every path; type, owner, mode and link
 	// checks are left to the loaders.
 	auto TakeRuntimeDescriptors(bool verdict_announced) noexcept -> RuntimeDescriptors {
-		namespace descriptors = howdy::native::compare_descriptors;
-		const auto announced  = [](const char *name, std::string_view expected) -> bool {
+		namespace descriptors  = howdy::native::compare_descriptors;
+		const auto env_present = [](const char *name) -> bool {
+			return std::getenv(name) != nullptr;
+		};
+		const auto announced = [](const char *name, std::string_view expected) -> bool {
 			const char *const value = std::getenv(name);
 			return value != nullptr && std::string_view(value) == expected;
 		};
@@ -85,7 +98,11 @@ namespace howdy::native::compare_entrypoint_private {
 			return true;
 		};
 		RuntimeDescriptors result;
-		const bool         config_announced =
+		result.protocol_mode = verdict_announced ||
+		                       env_present(howdy::native::compare_verdict::kEnvironmentName) ||
+		                       env_present(descriptors::kConfigEnvironmentName) ||
+		                       env_present(descriptors::kModelEnvironmentName);
+		const bool config_announced =
 		    announced(descriptors::kConfigEnvironmentName, descriptors::kConfigEnvironmentValue);
 		const bool model_announced =
 		    announced(descriptors::kModelEnvironmentName, descriptors::kModelEnvironmentValue);

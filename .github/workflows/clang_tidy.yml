@@ -24,16 +24,16 @@ jobs:
         with:
           fetch-depth: 2
 
+      # The container user does not own the checkout, so git refuses the repo
+      # ("dubious ownership") before howdy_version_metadata or tidy_incremental runs.
+      - name: Trust workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       # Tidy only needs compile_commands.json and generated headers, not objects.
       - name: Configure
         run: |
           cmake --preset debug
           cmake --build --preset debug --target howdy_version_metadata
-
-      # The container user does not own the checkout, so git refuses the repo
-      # ("dubious ownership") and `git diff` falls back to --no-index mode.
-      - name: Trust workspace
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Tidy changed code
         run: cmake -DBUILD_DIR=build/debug -DBASE=HEAD^1 -P cmake/tidy_incremental.cmake

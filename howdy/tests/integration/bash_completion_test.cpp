@@ -266,6 +266,30 @@ auto main(int argc, char **argv) -> int {
 		Check(session, "version has no values", {"howdy", "version", ""});
 		Check(session, "help disables completion", {"howdy", "config", "--help", "f"});
 		Check(session, "help suppresses user", {"howdy", "--help", "-U", ""});
+		Check(session, "consumed short user value looking like -U completes commands",
+		      {"howdy", "-U", "-U", ""}, {"add", "clear", "list", "remove", "test"});
+		Check(session, "consumed long user value looking like --user completes commands",
+		      {"howdy", "--user", "--user", "l"}, {"list"});
+		Check(session, "consumed post-command user value looking like -U completes options",
+		      {"howdy", "add", "-U", "-U", "-"}, short_options);
+		Check(session, "consumed user value looking like --device still completes --device",
+		      {"howdy", "test", "-U", "--device", "--d"}, {"--device"});
+		Check(session, "pending test device value produces no completions",
+		      {"howdy", "test", "--device", ""});
+		Check(session, "pending test device value suppresses option completion",
+		      {"howdy", "test", "--device", "-"});
+		Check(session, "device option rejects -U as value and suppresses user completion",
+		      {"howdy", "test", "--device", "-U", ""});
+		Check(session, "device option rejects -U as value and disables option completion",
+		      {"howdy", "test", "--device", "-U", "-"});
+		Check(session, "device option rejects -- as value and disables completion",
+		      {"howdy", "test", "--device", "--", ""});
+		Check(session, "device option rejects -- as value and disables option completion",
+		      {"howdy", "test", "--device", "--", "-"});
+		Check(session, "end-of-options allows set value completion",
+		      {"howdy", "set", "--", "detection_notice", ""}, {"false", "true"});
+		Check(session, "end-of-options prevents -U positional from completing users",
+		      {"howdy", "set", "--", "-U", ""});
 		session.Finish();
 		return 0;
 	} catch (const std::exception &error) {

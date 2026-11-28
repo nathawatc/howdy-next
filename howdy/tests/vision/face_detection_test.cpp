@@ -38,6 +38,87 @@ namespace {
 		return ok;
 	}
 
+	auto ExpectIntegerGeometryBounds() -> bool {
+		struct BoundCase {
+			const char *name;
+			float       x;
+			float       y;
+			float       width;
+			float       height;
+			bool        expect_valid;
+		};
+
+		const auto int_min = static_cast<float>(std::numeric_limits<int>::min());
+		const auto cases   = std::to_array<BoundCase>({
+		    {
+		        .name         = "x + width == INT_MAX + 1 overflows cv::Rect::br()",
+		        .x            = 2'147'483'520.0F,
+		        .y            = 2.0F,
+		        .width        = 128.0F,
+		        .height       = 4.0F,
+		        .expect_valid = false,
+		    },
+		    {
+		        .name         = "x + width == INT_MAX is accepted",
+		        .x            = 2'147'483'520.0F,
+		        .y            = 2.0F,
+		        .width        = 127.0F,
+		        .height       = 4.0F,
+		        .expect_valid = true,
+		    },
+		    {
+		        .name         = "y == INT_MIN underflows preview label y - 8",
+		        .x            = 1.0F,
+		        .y            = int_min,
+		        .width        = 3.0F,
+		        .height       = 1.0F,
+		        .expect_valid = false,
+		    },
+		    {
+		        .name         = "y == INT_MIN + 128 keeps y - 8 in range",
+		        .x            = 1.0F,
+		        .y            = -2'147'483'520.0F,
+		        .width        = 3.0F,
+		        .height       = 1.0F,
+		        .expect_valid = true,
+		    },
+		    {
+		        .name         = "y + height + 12 == INT_MAX + 1 overflows preview label",
+		        .x            = 1.0F,
+		        .y            = 2'147'483'520.0F,
+		        .width        = 3.0F,
+		        .height       = 116.0F,
+		        .expect_valid = false,
+		    },
+		    {
+		        .name         = "y + height + 12 == INT_MAX is accepted",
+		        .x            = 1.0F,
+		        .y            = 2'147'483'520.0F,
+		        .width        = 3.0F,
+		        .height       = 115.0F,
+		        .expect_valid = true,
+		    },
+		});
+
+		bool ok = true;
+		for (const auto &test_case : cases) {
+			auto row            = ValidRows();
+			row.at<float>(0, 0) = test_case.x;
+			row.at<float>(0, 1) = test_case.y;
+			row.at<float>(0, 2) = test_case.width;
+			row.at<float>(0, 3) = test_case.height;
+			if (test_case.expect_valid) {
+				const auto result = howdy::native::ParseYunetDetections(row);
+				ok &= Expect(howdy::native::FaceDetectionSucceeded(result) &&
+				                 result.detections.size() == 1,
+				             test_case.name);
+			} else {
+				ok &= Rejected(row, test_case.name);
+			}
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -132,6 +213,7 @@ auto main() -> int {
 	    static_cast<float>(std::numeric_limits<int>::min());
 	subpixel_height_at_int_min.at<float>(0, 3) = 0.5F;
 	ok &= Rejected(subpixel_height_at_int_min, "subpixel height at INT_MIN y");
+	ok &= ExpectIntegerGeometryBounds();
 
 	return ok ? 0 : 1;
 }

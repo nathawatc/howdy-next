@@ -61,8 +61,13 @@ function(howdy_isolate_cross_pkg_config)
   # Clear stale FindPkgConfig cache entries across configure runs
   get_cmake_property(variables VARIABLES)
   foreach(prefix IN LISTS ARGN)
+    set(
+      stale_cache_regex
+      "^(${prefix}_|pkgcfg_lib_${prefix}_|__pkg_config_checked_${prefix}$"
+    )
+    string(APPEND stale_cache_regex "|__pkg_config_arguments_${prefix}$)")
     foreach(variable IN LISTS variables)
-      if(variable MATCHES "^(${prefix}_|pkgcfg_lib_${prefix}_|__pkg_config_checked_${prefix}$|__pkg_config_arguments_${prefix}$)")
+      if(variable MATCHES "${stale_cache_regex}")
         unset("${variable}" CACHE)
         unset("${variable}" PARENT_SCOPE)
       endif()

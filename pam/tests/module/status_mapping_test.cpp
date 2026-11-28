@@ -178,7 +178,7 @@ auto main() -> int {
 		ok &= Expect(decision.conversation_kind == ConversationKind::kError,
 		             "unknown exit returns error conversation");
 		ok &= Expect(decision.conversation_message == "Unknown error: 99", "unknown exit message");
-		ok &= Expect(decision.log_message == "Face verification failed: unknown error",
+		ok &= Expect(decision.log_message == "Face verification failed: unknown error (99)",
 		             "unknown exit log");
 	}
 

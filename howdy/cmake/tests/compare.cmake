@@ -1,7 +1,21 @@
 add_test(NAME native-compare-help COMMAND howdy_compare --help)
+set_property(
+ TEST native-compare-help
+ PROPERTY
+  ENVIRONMENT_MODIFICATION
+  "HOWDY_COMPARE_VERDICT_FD=unset:"
+  "HOWDY_COMPARE_CONFIG_FD=unset:"
+  "HOWDY_COMPARE_MODEL_FD=unset:"
+)
 howdy_assert_binary_result(native-compare-unknown-arg howdy_compare 12 ""
  "Unknown argument: --unknown\n" --unknown)
 howdy_assert_binary_result(native-compare-pam-help-user howdy_compare 12 ""
+ "Unknown argument: --help\n" --help)
+set_tests_properties(
+ native-compare-pam-help-user
+ PROPERTIES ENVIRONMENT "HOWDY_COMPARE_VERDICT_FD=3"
+)
+howdy_assert_binary_result(native-compare-trailing-help howdy_compare 12 ""
  "Unknown argument: --help\n" alice --help)
 howdy_assert_binary_result(native-compare-missing-user howdy_compare 12 "" "")
 howdy_add_native_test(

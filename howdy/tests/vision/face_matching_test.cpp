@@ -101,6 +101,113 @@ namespace {
 		return actual;
 	}
 
+	auto ExpectL2NormNormalizationInvariants() -> bool {
+		bool        ok           = true;
+		const float nan          = std::numeric_limits<float>::quiet_NaN();
+		const float infinity     = std::numeric_limits<float>::infinity();
+		const float max_finite   = std::numeric_limits<float>::max();
+		const auto  max_distance = max_finite;
+
+		const std::vector<std::vector<float>> unnormalizable_vectors = {
+		    {},
+		    {0.0F, 0.0F},
+		    {-0.0F, 0.0F},
+		    {nan, 1.0F},
+		    {infinity, 0.0F},
+		    {-infinity, 0.0F},
+		    {max_finite, 0.0F},
+		    {1.0e20F, 1.0e20F},
+		    {1.0e-30F, 0.0F},
+		    {1.0e-22F, 0.0F},
+		    {1.0e-10F, 0.0F},
+		    {-1.0e-10F, 0.0F},
+		    {1.0e-7F, 0.0F},
+		    {9.99e-7F, 0.0F},
+		    std::vector<float>(128U, 1.0e-8F),
+		};
+		for (const auto &bad_vector : unnormalizable_vectors) {
+			ok &= Expect(howdy::native::face_matching_detail::UnitVector(bad_vector).empty(),
+			             "UnitVector rejects zero, non-finite, overflowing, and tiny vectors");
+		}
+
+		const std::vector<std::vector<float>> normalizable_vectors = {
+		    {2.0e-6F, 0.0F},
+		    {-2.0e-6F, 0.0F},
+		    {1.0e-5F, 1.0e-5F},
+		    std::vector<float>(128U, 1.0e-6F),
+		};
+		for (const auto &good_vector : normalizable_vectors) {
+			const auto unit = howdy::native::face_matching_detail::UnitVector(good_vector);
+			ok &= Expect(unit.size() == good_vector.size() && AllFinite(unit),
+			             "UnitVector normalizes valid small vectors into finite vectors");
+			const float squared = std::inner_product(unit.begin(), unit.end(), unit.begin(), 0.0F);
+			ok &= ExpectNear(std::sqrt(squared), 1.0F, 1.0e-5F,
+			                 "UnitVector output lies on the unit sphere");
+		}
+
+		const std::vector<std::vector<float>> tiny_vectors = {
+		    {1.0e-22F, 0.0F}, {1.0e-10F, 0.0F}, {-1.0e-10F, 0.0F},
+		    {1.0e-7F, 0.0F},  {9.99e-7F, 0.0F},
+		};
+		for (const auto &tiny_vector : tiny_vectors) {
+			for (const float threshold : {1.128F, 1.41F, infinity}) {
+				const auto tiny_probe = CheckMatch({{1.0F, 0.0F}, {-1.0F, 0.0F}}, tiny_vector,
+				                                   FaceMetric::kL2Norm, threshold);
+				ok &= Expect(tiny_probe.index == -1 && tiny_probe.score == max_distance &&
+				                 !tiny_probe.accepted,
+				             "tiny l2norm probe fails closed instead of matching unit candidates");
+
+				const auto tiny_candidate =
+				    CheckMatch({tiny_vector}, {1.0F, 0.0F}, FaceMetric::kL2Norm, threshold);
+				ok &= Expect(tiny_candidate.index == -1 && tiny_candidate.score == max_distance &&
+				                 !tiny_candidate.accepted,
+				             "tiny l2norm candidate fails closed instead of matching unit probe");
+
+				const auto both_tiny = CheckMatch({tiny_vector}, {-tiny_vector.front(), 0.0F},
+				                                  FaceMetric::kL2Norm, threshold);
+				ok &= Expect(both_tiny.index == -1 && both_tiny.score == max_distance &&
+				                 !both_tiny.accepted,
+				             "opposite tiny l2norm vectors fail closed");
+			}
+			const auto skipped_tiny_candidate =
+			    CheckMatch({tiny_vector, {-1.0F, 0.0F}}, {1.0F, 0.0F}, FaceMetric::kL2Norm, 1.41F);
+			ok &=
+			    Expect(skipped_tiny_candidate.index == 1 && !skipped_tiny_candidate.accepted,
+				       "tiny l2norm candidate is skipped in favor of valid antiparallel candidate");
+			ok &= ExpectNear(skipped_tiny_candidate.score, 2.0F, 1.0e-6F,
+			                 "antiparallel valid candidate after skipped tiny scores two");
+		}
+
+		const auto small_antiparallel =
+		    CheckMatch({{-2.0e-6F, 0.0F}}, {2.0e-6F, 0.0F}, FaceMetric::kL2Norm, 1.41F);
+		ok &= Expect(small_antiparallel.index == 0 && !small_antiparallel.accepted,
+		             "small valid antiparallel l2norm vectors are rejected at 1.41 cap");
+		ok &= ExpectNear(small_antiparallel.score, 2.0F, 1.0e-6F,
+		                 "small valid antiparallel l2norm vectors score two");
+
+		const auto small_vs_unit_opposite =
+		    CheckMatch({{-1.0F, 0.0F}}, {2.0e-6F, 0.0F}, FaceMetric::kL2Norm, 1.41F);
+		ok &= Expect(small_vs_unit_opposite.index == 0 && !small_vs_unit_opposite.accepted,
+		             "small valid probe against opposite unit candidate is rejected at 1.41 cap");
+		ok &= ExpectNear(small_vs_unit_opposite.score, 2.0F, 1.0e-6F,
+		                 "small valid probe against opposite unit candidate scores two");
+
+		const auto small_orthogonal =
+		    CheckMatch({{0.0F, 1.0F}}, {2.0e-6F, 0.0F}, FaceMetric::kL2Norm, 1.41F);
+		ok &= Expect(small_orthogonal.index == 0 && !small_orthogonal.accepted,
+		             "small valid orthogonal l2norm probe is rejected at 1.41 cap");
+		ok &= ExpectNear(small_orthogonal.score, std::numbers::sqrt2_v<float>, 1.0e-6F,
+		                 "small valid orthogonal l2norm probe scores sqrt(2)");
+
+		const auto small_parallel =
+		    CheckMatch({{1.0F, 0.0F}}, {2.0e-6F, 0.0F}, FaceMetric::kL2Norm, 0.0F);
+		ok &= Expect(small_parallel.index == 0 && small_parallel.score == 0.0F &&
+		                 small_parallel.accepted,
+		             "small valid parallel l2norm probe scores zero and is accepted");
+
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -305,6 +412,8 @@ auto main() -> int {
 		ok &= Expect(zero_candidate.index == 1 && zero_candidate.accepted,
 		             "zero l2norm candidate is skipped");
 	}
+
+	ok &= ExpectL2NormNormalizationInvariants();
 
 	{
 		const auto match = CheckMatch({{5.0F, 5.0F}, {1.0F, 1.0F}, {3.0F, 3.0F}}, {0.0F, 0.0F},

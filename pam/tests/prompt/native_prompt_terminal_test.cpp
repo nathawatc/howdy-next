@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cerrno>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -408,5 +409,235 @@ auto ExpectPamTtyResolution() -> bool {
 		             "PAM_TTY FIFO setup fails only when /dev/shm is unavailable");
 		std::cerr << "SKIP: /dev/shm FIFO PAM_TTY case (" << std::strerror(error) << ")\n";
 	}
+	return ok;
+}
+
+namespace {
+
+	struct PreOpenGateFixture {
+		std::string first_path;
+		std::string second_path;
+		int         pipe_read  = -1;
+		int         pipe_write = -1;
+	};
+
+	[[noreturn]] void RunPreOpenGateChild(const PreOpenGateFixture &fixture) {
+		if (setsid() < 0) {
+			_exit(EXIT_FAILURE);
+		}
+		const int terminal_fd = open(fixture.first_path.c_str(), O_RDWR | O_CLOEXEC);
+		const int alias_fd    = open("/dev/tty", O_RDWR | O_CLOEXEC | O_NOCTTY);
+		const int other_fd    = open(fixture.second_path.c_str(), O_RDWR | O_CLOEXEC | O_NOCTTY);
+		if (terminal_fd < 0 || alias_fd < 0 || other_fd < 0) {
+			_exit(EXIT_FAILURE);
+		}
+
+		const auto first_target  = ResolveNativePromptTty(fixture.first_path);
+		const auto second_target = ResolveNativePromptTty(fixture.second_path);
+		const auto null_target   = ResolveNativePromptTty("/dev/null");
+		const auto alias_target  = ResolveNativePromptTty("/dev/tty");
+		if (!first_target.has_value() || !second_target.has_value() || !null_target.has_value() ||
+		    !alias_target.has_value()) {
+			_exit(EXIT_FAILURE);
+		}
+
+		const NativeStdioDescriptors non_tty_stdio{
+		    .input  = fixture.pipe_read,
+		    .output = fixture.pipe_write,
+		    .error  = fixture.pipe_write,
+		};
+		const NativeStdioDescriptors closed_stdio{};
+		const NativeStdioDescriptors fg_pty_stdio{
+		    .input  = terminal_fd,
+		    .output = fixture.pipe_write,
+		    .error  = fixture.pipe_write,
+		};
+		const NativeStdioDescriptors fg_stderr_stdio{
+		    .input  = -1,
+		    .output = fixture.pipe_write,
+		    .error  = terminal_fd,
+		};
+		const NativeStdioDescriptors fg_alias_stdio{
+		    .input  = alias_fd,
+		    .output = fixture.pipe_write,
+		    .error  = fixture.pipe_write,
+		};
+		const NativeStdioDescriptors non_controlling_stdio{
+		    .input  = other_fd,
+		    .output = fixture.pipe_write,
+		    .error  = fixture.pipe_write,
+		};
+		const NativeStdioDescriptors mixed_stdio{
+		    .input  = other_fd,
+		    .output = terminal_fd,
+		    .error  = fixture.pipe_write,
+		};
+
+		const std::array checks = {
+		    !NativePromptTtyMatchesForegroundStdio(*first_target, non_tty_stdio),
+		    !NativePromptTtyMatchesForegroundStdio(*null_target, non_tty_stdio),
+		    !NativePromptTtyMatchesForegroundStdio(*alias_target, closed_stdio),
+		    !NativePromptTtyMatchesForegroundStdio(*null_target, fg_pty_stdio),
+		    !NativePromptTtyMatchesForegroundStdio(*second_target, fg_pty_stdio),
+		    NativePromptTtyMatchesForegroundStdio(*first_target, fg_pty_stdio),
+		    NativePromptTtyMatchesForegroundStdio(*first_target, fg_stderr_stdio),
+		    NativePromptTtyMatchesForegroundStdio(*alias_target, fg_pty_stdio),
+		    NativePromptTtyMatchesForegroundStdio(*first_target, fg_alias_stdio),
+		    !NativePromptTtyMatchesForegroundStdio(*second_target, fg_alias_stdio),
+		    !NativePromptTtyMatchesForegroundStdio({}, fg_pty_stdio),
+		    !NativePromptTtyMatchesForegroundStdio(*second_target, non_controlling_stdio),
+		    !NativePromptTtyMatchesForegroundStdio(*alias_target, non_controlling_stdio),
+		    !NativePromptTtyMatchesForegroundStdio(*second_target, mixed_stdio),
+		    NativePromptTtyMatchesForegroundStdio(*first_target, mixed_stdio),
+		};
+		for (std::size_t index = 0; index < checks.size(); ++index) {
+			if (!checks.at(index)) {
+				_exit(static_cast<int>(10U + index));
+			}
+		}
+		_exit(EXIT_SUCCESS);
+	}
+
+	[[noreturn]] void RunPreOpenBackgroundChild(const std::string &first_path) {
+		if (setsid() < 0 || open(first_path.c_str(), O_RDWR | O_CLOEXEC) < 0) {
+			_exit(EXIT_FAILURE);
+		}
+		const pid_t bg_child = fork();
+		if (bg_child == 0) {
+			const int  terminal_fd  = open(first_path.c_str(), O_RDWR | O_CLOEXEC | O_NOCTTY);
+			const auto first_target = ResolveNativePromptTty(first_path);
+			const auto alias_target = ResolveNativePromptTty("/dev/tty");
+			if (setpgid(0, 0) != 0 || terminal_fd < 0 || !first_target.has_value() ||
+			    !alias_target.has_value() || tcgetpgrp(terminal_fd) == getpgrp()) {
+				_exit(EXIT_FAILURE);
+			}
+			const NativeStdioDescriptors bg_stdio{
+			    .input  = terminal_fd,
+			    .output = terminal_fd,
+			    .error  = terminal_fd,
+			};
+			const bool rejected = !NativePromptTtyMatchesForegroundStdio(*first_target, bg_stdio) &&
+			                      !NativePromptTtyMatchesForegroundStdio(*alias_target, bg_stdio);
+			_exit(rejected ? EXIT_SUCCESS : EXIT_FAILURE);
+		}
+		int status = 0;
+		if (bg_child < 0 || howdy::native::RetryOnEintr([&] -> pid_t {
+			                    return waitpid(bg_child, &status, 0);
+		                    }) != bg_child) {
+			_exit(EXIT_FAILURE);
+		}
+		_exit(WIFEXITED(status) ? WEXITSTATUS(status) : EXIT_FAILURE);
+	}
+
+	[[noreturn]] void RunPreOpenConversationChild(const PreOpenGateFixture &fixture) {
+		if (setsid() < 0) {
+			_exit(EXIT_FAILURE);
+		}
+		const int terminal_fd = open(fixture.first_path.c_str(), O_RDWR | O_CLOEXEC);
+		if (terminal_fd < 0 || dup2(terminal_fd, STDIN_FILENO) != STDIN_FILENO ||
+		    dup2(terminal_fd, STDOUT_FILENO) != STDOUT_FILENO ||
+		    dup2(terminal_fd, STDERR_FILENO) != STDERR_FILENO) {
+			_exit(EXIT_FAILURE);
+		}
+		if (terminal_fd > STDERR_FILENO) {
+			close(terminal_fd);
+		}
+
+		int                   appdata = 42;
+		struct pam_conv const conv{
+		    .conv        = NativePromptTerminalTestConv,
+		    .appdata_ptr = &appdata,
+		};
+		pam_handle_t *pamh = nullptr;
+		if (howdy::test::PamStartForTest("howdy-preopen-test", "test-user", &conv, &pamh) !=
+		    PAM_SUCCESS) {
+			_exit(EXIT_FAILURE);
+		}
+
+		const auto check_available = [&](const char *tty, bool expected) -> bool {
+			if (pam_set_item(pamh, PAM_TTY, tty) != PAM_SUCCESS) {
+				return false;
+			}
+			const NativePromptConversation conversation(pamh);
+			return conversation.Available() == expected;
+		};
+
+		const bool ok = check_available("/dev/null", false) &&
+		                check_available(fixture.second_path.c_str(), false) &&
+		                check_available(fixture.first_path.c_str(), true) &&
+		                check_available("/dev/tty", true);
+		pam_end(pamh, PAM_SUCCESS);
+		_exit(ok ? EXIT_SUCCESS : EXIT_FAILURE);
+	}
+
+}  // namespace
+
+auto ExpectPreOpenStdioTtyGate() -> bool {
+	ScopedFd                first_master;
+	ScopedFd                first_slave;
+	ScopedFd                second_master;
+	ScopedFd                second_slave;
+	std::array<ScopedFd, 2> pipes;
+	bool                    ok = true;
+	ok &= Expect(OpenPtyPair(&first_master, &first_slave), "pre-open gate opens first PTY");
+	ok &= Expect(OpenPtyPair(&second_master, &second_slave), "pre-open gate opens second PTY");
+	ok &= Expect(OpenPipe(&pipes), "pre-open gate opens non-tty pipes");
+	if (!ok) {
+		return false;
+	}
+
+	// ptsname() uses a single static buffer; copy the first result before calling it again.
+	const char       *first_name  = ptsname(first_master.Get());
+	const std::string first_path  = first_name == nullptr ? "" : first_name;
+	const char       *second_name = ptsname(second_master.Get());
+	const std::string second_path = second_name == nullptr ? "" : second_name;
+	if (!Expect(first_name != nullptr && second_name != nullptr,
+	            "pre-open gate resolves PTY paths")) {
+		return false;
+	}
+
+	const PreOpenGateFixture fixture{
+	    .first_path  = first_path,
+	    .second_path = second_path,
+	    .pipe_read   = pipes.at(0).Get(),
+	    .pipe_write  = pipes.at(1).Get(),
+	};
+
+	const auto run_child = [](auto fn, const char *label) -> bool {
+		const pid_t child = fork();
+		if (child == 0) {
+			fn();
+		}
+		if (!Expect(child > 0, label)) {
+			return false;
+		}
+		int         status = 0;
+		const pid_t waited = howdy::native::RetryOnEintr([&] -> pid_t {
+			return waitpid(child, &status, 0);
+		});
+		const bool  ok_exit =
+		    waited == child && WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS;
+		return Expect(ok_exit,
+		              std::string(label) + " (status=" + std::to_string(status) + ", code=" +
+		                  std::to_string(WIFEXITED(status) ? WEXITSTATUS(status) : -1) + ")");
+	};
+
+	ok &= run_child(
+	    [&] -> void {
+		    RunPreOpenGateChild(fixture);
+	    },
+	    "pre-open foreground stdio TTY gate accepts matching/alias targets and rejects "
+	    "non-matching /dev character devices");
+	ok &= run_child(
+	    [&] -> void {
+		    RunPreOpenBackgroundChild(fixture.first_path);
+	    },
+	    "pre-open foreground stdio TTY gate rejects background process group");
+	ok &= run_child(
+	    [&] -> void {
+		    RunPreOpenConversationChild(fixture);
+	    },
+	    "NativePromptConversation rejects /dev/null and mismatched PTY while accepting matching "
+	    "PTY and /dev/tty");
 	return ok;
 }
