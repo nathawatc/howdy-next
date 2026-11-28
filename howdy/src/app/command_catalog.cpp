@@ -178,11 +178,12 @@ namespace howdy::native {
 		                .parses_after_command = true,
 		            },
 		            {
-		                .id                   = GlobalOptionId::kPlain,
-		                .short_name           = "",
-		                .long_name            = "--plain",
-		                .argument_name        = "",
-		                .summary              = "Disable interactive prompts where supported",
+		                .id            = GlobalOptionId::kPlain,
+		                .short_name    = "",
+		                .long_name     = "--plain",
+		                .argument_name = "",
+		                .summary =
+		                    "Use plain/CSV output and disable interactive prompts where supported",
 		                .completion           = GlobalOptionCompletionKind::kNone,
 		                .parses_after_command = true,
 		            },
